@@ -1,0 +1,247 @@
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import Decimal from 'decimal.js';
+import { paginate, PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { add, money, mul, round, sub, toPrisma } from '../../common/utils/money';
+import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { InventoryService } from '../inventory/inventory.service';
+import { SequenceService } from '../shared/sequence.service';
+import { CreatePurchaseDto } from './dto/create-purchase.dto';
+
+@Injectable()
+export class PurchasesService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly inventory: InventoryService,
+    private readonly sequences: SequenceService,
+    private readonly audit: AuditService,
+  ) {}
+
+  /**
+   * Records a purchase atomically: creates the purchase + items, a FIFO batch
+   * per line (in BASE units), increments stock via the movement ledger,
+   * refreshes each product's reference buying price, settles payment (CASH or
+   * CREDIT — credit grows the supplier's payable), and writes an audit row —
+   * all inside one Serializable transaction. Stock can never drift from batches.
+   */
+  async create(dto: CreatePurchaseDto, userId: string, idempotencyKey?: string) {
+    if (dto.items.length === 0) {
+      throw new BadRequestException('A purchase must contain at least one item');
+    }
+
+    const paymentMethod = dto.paymentMethod ?? 'CASH';
+    if (paymentMethod === 'CREDIT' && !dto.supplierId) {
+      throw new BadRequestException(
+        'A supplier is required for credit purchases.',
+      );
+    }
+
+    // Idempotency: a repeated request returns the original purchase.
+    if (idempotencyKey) {
+      const existing = await this.prisma.purchase.findUnique({
+        where: { idempotencyKey },
+        include: { items: true, supplier: true },
+      });
+      if (existing) return existing;
+    }
+
+    return this.prisma.runSerializable(async (tx) => {
+      if (idempotencyKey) {
+        const dup = await tx.purchase.findUnique({
+          where: { idempotencyKey },
+          include: { items: true, supplier: true },
+        });
+        if (dup) return dup;
+      }
+
+      // Link the cash portion to the recorder's open till (if any), so a cash
+      // purchase reduces that session's expected cash at close.
+      const session = await tx.cashSession.findFirst({
+        where: { userId, status: 'OPEN' },
+        orderBy: { openedAt: 'desc' },
+        select: { id: true },
+      });
+      // Validate products up-front (with their dual-unit config).
+      const productIds = [...new Set(dto.items.map((i) => i.productId))];
+      const products = await tx.product.findMany({
+        where: { id: { in: productIds } },
+        select: { id: true, name: true, baseUnit: true, bulkUnit: true, unitSize: true },
+      });
+      const byId = new Map(products.map((p) => [p.id, p]));
+      for (const id of productIds) {
+        if (!byId.has(id)) {
+          throw new NotFoundException(`Product ${id} not found`);
+        }
+      }
+
+      if (dto.supplierId) {
+        const supplier = await tx.supplier.findUnique({
+          where: { id: dto.supplierId },
+        });
+        if (!supplier) throw new NotFoundException('Supplier not found');
+      }
+
+      const purchaseNumber = await this.sequences.next(
+        tx,
+        'PURCHASE',
+        dto.purchaseDate,
+      );
+
+      // Resolve per-line units and totals first.
+      const resolved = dto.items.map((item) => {
+        const product = byId.get(item.productId)!;
+        const sellUnit = item.sellUnit ?? 'BASE';
+        let unitSize = 1;
+        let unitLabel = product.baseUnit;
+        if (sellUnit === 'BULK') {
+          if (!product.bulkUnit || product.unitSize <= 1) {
+            throw new BadRequestException(
+              `Product ${product.name} is not bought by the unit; only individual pieces.`,
+            );
+          }
+          unitSize = product.unitSize;
+          unitLabel = product.bulkUnit;
+        }
+        const lineTotal = mul(item.unitCost, item.quantity);
+        const basePieces = item.quantity * unitSize;
+        // Per-base-unit cost drives FIFO COGS (round to 2dp for storage).
+        const pieceCost = round(money(item.unitCost).dividedBy(unitSize));
+        return { item, product, unitSize, unitLabel, lineTotal, basePieces, pieceCost };
+      });
+
+      const totalCost = resolved.reduce((a, r) => add(a, r.lineTotal), money(0));
+
+      // Settle payment.
+      let amountPaid: Decimal;
+      if (paymentMethod === 'CASH') {
+        amountPaid = totalCost;
+      } else {
+        amountPaid = money(dto.amountPaid ?? 0);
+        if (amountPaid.greaterThan(totalCost)) {
+          throw new BadRequestException(
+            `Amount paid (${amountPaid.toFixed(2)}) cannot exceed total cost (${totalCost.toFixed(2)})`,
+          );
+        }
+      }
+      const amountDue = sub(totalCost, amountPaid);
+
+      const purchase = await tx.purchase.create({
+        data: {
+          purchaseNumber,
+          supplierId: dto.supplierId,
+          userId,
+          cashSessionId: session?.id,
+          purchaseDate: dto.purchaseDate,
+          totalCost: toPrisma(totalCost),
+          paymentMethod,
+          amountPaid: toPrisma(amountPaid),
+          amountDue: toPrisma(amountDue),
+          notes: dto.notes,
+          idempotencyKey,
+        },
+      });
+
+      for (const r of resolved) {
+        const purchaseItem = await tx.purchaseItem.create({
+          data: {
+            purchaseId: purchase.id,
+            productId: r.item.productId,
+            productNameSnapshot: r.product.name,
+            quantity: r.item.quantity,
+            unitLabel: r.unitLabel,
+            unitSize: r.unitSize,
+            unitCost: toPrisma(r.item.unitCost),
+            lineTotal: toPrisma(r.lineTotal),
+          },
+        });
+
+        await this.inventory.addBatchTx(tx, {
+          productId: r.item.productId,
+          quantity: r.basePieces,
+          unitCost: r.pieceCost,
+          purchaseDate: dto.purchaseDate,
+          purchaseId: purchase.id,
+          purchaseItemId: purchaseItem.id,
+        });
+
+        await this.inventory.applyMovementTx(tx, {
+          productId: r.item.productId,
+          type: 'PURCHASE',
+          quantity: r.basePieces,
+          userId,
+          referenceType: 'PURCHASE',
+          referenceId: purchase.id,
+          unitCost: r.pieceCost,
+        });
+
+        // Refresh reference buying price (per base unit; not historical COGS).
+        await tx.product.update({
+          where: { id: r.item.productId },
+          data: { buyingPrice: toPrisma(r.pieceCost) },
+        });
+      }
+
+      // Credit purchase: grow the supplier's payable balance.
+      if (dto.supplierId && amountDue.greaterThan(0)) {
+        await tx.supplier.update({
+          where: { id: dto.supplierId },
+          data: { balance: { increment: toPrisma(amountDue) } },
+        });
+      }
+
+      await this.audit.recordTx(tx, {
+        userId,
+        action: 'PURCHASE_CREATED',
+        entityType: 'Purchase',
+        entityId: purchase.id,
+        metadata: {
+          purchaseNumber,
+          paymentMethod,
+          totalCost: toPrisma(totalCost).toString(),
+          amountPaid: toPrisma(amountPaid).toString(),
+          amountDue: toPrisma(amountDue).toString(),
+          lineCount: dto.items.length,
+        },
+      });
+
+      return tx.purchase.findUniqueOrThrow({
+        where: { id: purchase.id },
+        include: { items: true, supplier: true },
+      });
+    });
+  }
+
+  async findAll(query: PaginationQueryDto & { supplierId?: string }) {
+    const where: Prisma.PurchaseWhereInput = {
+      ...(query.supplierId ? { supplierId: query.supplierId } : {}),
+      ...(query.search
+        ? { purchaseNumber: { contains: query.search, mode: 'insensitive' } }
+        : {}),
+    };
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.purchase.findMany({
+        where,
+        include: { supplier: true, _count: { select: { items: true } } },
+        orderBy: { purchaseDate: 'desc' },
+        skip: query.skip,
+        take: query.limit,
+      }),
+      this.prisma.purchase.count({ where }),
+    ]);
+    return paginate(data, total, query.page, query.limit);
+  }
+
+  async findOne(id: string) {
+    const purchase = await this.prisma.purchase.findUnique({
+      where: { id },
+      include: { items: true, supplier: true, user: { select: { fullName: true } } },
+    });
+    if (!purchase) throw new NotFoundException('Purchase not found');
+    return purchase;
+  }
+}

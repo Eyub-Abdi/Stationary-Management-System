@@ -1,0 +1,156 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   StatioPro design tokens — Stitch Material-You palette as RGB channels so
+   Tailwind opacity modifiers (bg-secondary/20) work, with a dark override.
+   ========================================================================== */
+:root {
+  --c-on-background: 25 28 30;
+  --c-surface-container: 236 238 240;
+  --c-inverse-on-surface: 239 241 243;
+  --c-surface-bright: 247 249 251;
+  --c-secondary: 0 108 74;
+  --c-secondary-fixed: 133 248 196;
+  --c-on-secondary: 255 255 255;
+  --c-inverse-surface: 45 49 51;
+  --c-tertiary-fixed-dim: 221 195 157;
+  --c-error: 186 26 26;
+  --c-on-error: 255 255 255;
+  --c-tertiary: 30 18 0;
+  --c-tertiary-container: 53 38 12;
+  --c-on-primary: 255 255 255;
+  --c-on-surface: 25 28 30;
+  --c-tertiary-fixed: 250 223 184;
+  --c-surface-container-lowest: 255 255 255;
+  --c-surface: 247 249 251;
+  --c-inverse-primary: 188 199 222;
+  --c-secondary-fixed-dim: 104 219 169;
+  --c-outline-variant: 197 198 205;
+  --c-primary-container: 30 41 59;
+  --c-primary-fixed-dim: 188 199 222;
+  --c-on-primary-container: 133 144 166;
+  --c-on-secondary-container: 0 113 78;
+  --c-on-error-container: 147 0 10;
+  --c-on-primary-fixed-variant: 60 71 90;
+  --c-secondary-container: 130 245 193;
+  --c-on-surface-variant: 69 71 76;
+  --c-on-tertiary: 255 255 255;
+  --c-background: 247 249 251;
+  --c-surface-variant: 224 227 229;
+  --c-surface-container-highest: 224 227 229;
+  --c-primary-fixed: 216 227 251;
+  --c-surface-dim: 216 218 220;
+  --c-error-container: 255 218 214;
+  --c-primary: 9 20 38;
+  --c-on-secondary-fixed: 0 33 20;
+  --c-on-tertiary-fixed-variant: 86 68 39;
+  --c-on-primary-fixed: 17 28 45;
+  --c-surface-container-low: 242 244 246;
+  --c-surface-tint: 84 95 115;
+  --c-outline: 117 119 125;
+  --c-on-tertiary-container: 163 140 106;
+  --c-surface-container-high: 230 232 234;
+  --c-on-secondary-fixed-variant: 0 81 55;
+  --c-on-tertiary-fixed: 39 25 2;
+}
+
+.dark {
+  --c-on-background: 226 226 230;
+  --c-surface-container: 29 32 36;
+  --c-inverse-on-surface: 45 49 51;
+  --c-surface-bright: 26 29 33;
+  --c-secondary: 104 219 169;
+  --c-secondary-fixed: 133 248 196;
+  --c-on-secondary: 0 56 36;
+  --c-inverse-surface: 226 226 230;
+  --c-tertiary-fixed-dim: 221 195 157;
+  --c-error: 255 180 171;
+  --c-on-error: 105 0 5;
+  --c-tertiary: 250 223 184;
+  --c-tertiary-container: 86 68 39;
+  --c-on-primary: 9 20 38;
+  --c-on-surface: 226 226 230;
+  --c-tertiary-fixed: 250 223 184;
+  --c-surface-container-lowest: 12 14 17;
+  --c-surface: 17 20 24;
+  --c-inverse-primary: 84 95 115;
+  --c-secondary-fixed-dim: 104 219 169;
+  --c-outline-variant: 68 71 76;
+  --c-primary-container: 60 71 90;
+  --c-primary-fixed-dim: 188 199 222;
+  --c-on-primary-container: 216 227 251;
+  --c-on-secondary-container: 130 245 193;
+  --c-on-error-container: 255 218 214;
+  --c-on-primary-fixed-variant: 188 199 222;
+  --c-secondary-container: 0 81 55;
+  --c-on-surface-variant: 197 198 205;
+  --c-on-tertiary: 39 25 2;
+  --c-background: 17 20 24;
+  --c-surface-variant: 68 71 76;
+  --c-surface-container-highest: 50 53 58;
+  --c-primary-fixed: 216 227 251;
+  --c-surface-dim: 17 20 24;
+  --c-error-container: 147 0 10;
+  --c-primary: 188 199 222;
+  --c-on-secondary-fixed: 0 33 20;
+  --c-on-tertiary-fixed-variant: 221 195 157;
+  --c-on-primary-fixed: 17 28 45;
+  --c-surface-container-low: 25 28 32;
+  --c-surface-tint: 188 199 222;
+  --c-outline: 142 144 153;
+  --c-on-tertiary-container: 250 223 184;
+  --c-surface-container-high: 39 42 46;
+  --c-on-secondary-fixed-variant: 0 81 55;
+  --c-on-tertiary-fixed: 39 25 2;
+}
+
+@layer base {
+  * {
+    @apply border-outline-variant;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-on-surface antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  /* Material Symbols defaults */
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    display: inline-block;
+    line-height: 1;
+    vertical-align: middle;
+    user-select: none;
+  }
+}
+
+@layer utilities {
+  .font-mono-data {
+    font-family: 'JetBrains Mono', monospace;
+  }
+  /* ERP-density scrollbars */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--c-outline-variant));
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--c-outline));
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

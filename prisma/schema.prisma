@@ -1,0 +1,756 @@
+// ============================================================================
+// KJ Stationery Management System — Prisma Schema
+// PostgreSQL · Production grade
+//
+// Design principles:
+//  - Money is stored as Decimal(14,2) — never floats. (decimal.js in app layer)
+//  - All historical financial rows store immutable SNAPSHOTS (name + unit price).
+//  - Inventory is valued with FIFO via InventoryBatch.remainingQuantity.
+//  - Every stock change writes an InventoryMovement (full audit trail).
+//  - Critical actions write an immutable AuditLog row.
+//  - Soft-delete is avoided for transactional data (sales/purchases are immutable);
+//    catalog entities use a status flag instead of hard delete.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// Enums
+// ----------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  STAFF
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ServiceStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ServiceType {
+  PRINTING_BW
+  PRINTING_COLOR
+  PHOTOCOPY_BW
+  PHOTOCOPY_COLOR
+  SCANNING
+  LAMINATION
+}
+
+enum PricingType {
+  PER_PAGE
+  FIXED
+}
+
+enum SaleItemType {
+  PRODUCT
+  SERVICE
+}
+
+enum SaleStatus {
+  COMPLETED
+  VOIDED
+}
+
+enum InventoryMovementType {
+  PURCHASE
+  SALE
+  ADJUSTMENT
+  RETURN
+}
+
+enum ExpenseCategory {
+  RENT
+  SALARY
+  ELECTRICITY
+  INTERNET
+  TONER
+  PAPER
+  TRANSPORT
+  MISCELLANEOUS
+}
+
+enum CashSessionStatus {
+  OPEN
+  CLOSED
+}
+
+enum CashMovementType {
+  DEPOSIT
+  WITHDRAWAL
+}
+
+// How a sale or purchase is settled. CREDIT leaves an outstanding balance on
+// the customer (receivable) or supplier (payable) that is paid down over time.
+enum PaymentMethod {
+  CASH
+  CREDIT
+}
+
+// Which packaging unit a line was transacted in (dual-unit products).
+// BASE = the smallest sellable unit (piece); BULK = the larger packaging unit.
+enum SellUnit {
+  BASE
+  BULK
+}
+
+// Generic counter scope for human-readable sequential document numbers.
+enum SequenceType {
+  INVOICE
+  TRANSACTION
+  PURCHASE
+  RETURN
+}
+
+// ----------------------------------------------------------------------------
+// Identity & Access
+// ----------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String
+  fullName     String
+  role         Role     @default(STAFF)
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // relations
+  refreshTokens        RefreshToken[]
+  sales                Sale[]
+  saleReturns          SaleReturn[]
+  purchases            Purchase[]
+  expenses             Expense[]
+  cashSessions         CashSession[]
+  cashMovements        CashMovement[]
+  inventoryMovements   InventoryMovement[]
+  inventoryAdjustments InventoryAdjustment[]
+  customerPayments     CustomerPayment[]
+  supplierPayments     SupplierPayment[]
+  auditLogs            AuditLog[]
+
+  @@index([role])
+  @@index([isActive])
+  @@map("users")
+}
+
+// Refresh-token rotation: store only a hash, support revocation & reuse-detection.
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  // points to the token that replaced this one (rotation chain / reuse detection)
+  replacedById String? @db.Uuid
+  createdByIp  String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ----------------------------------------------------------------------------
+// Catalog: Products & Categories
+// ----------------------------------------------------------------------------
+
+model Category {
+  id          String        @id @default(uuid()) @db.Uuid
+  name        String        @unique
+  description String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  products    Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id            String        @id @default(uuid()) @db.Uuid
+  sku           String        @unique
+  name          String
+  description   String?
+  imageUrl      String?
+  categoryId    String?       @db.Uuid
+  // Reference selling price PER BASE UNIT (piece). Snapshotted at sale time.
+  sellingPrice  Decimal       @db.Decimal(14, 2)
+  // Reference/last buying price PER BASE UNIT — true COGS comes from batches.
+  buyingPrice   Decimal       @db.Decimal(14, 2) @default(0)
+
+  // --- Dual unit of measure -------------------------------------------------
+  // Stock & COGS are ALWAYS tracked internally in base units (pieces). A product
+  // may optionally be sold/bought in a larger "bulk" unit (box, carton, ream).
+  baseUnit         String   @default("pcs") // name of the smallest sellable unit
+  bulkUnit         String?  // larger packaging unit name; null = single-unit product
+  unitSize         Int      @default(1) // base units contained in one bulk unit
+  // Selling price for one whole bulk unit. Null falls back to sellingPrice * unitSize.
+  bulkSellingPrice Decimal? @db.Decimal(14, 2)
+
+  // Denormalized live stock IN BASE UNITS; kept consistent with batches.
+  currentStock  Int           @default(0)
+  minStockLevel Int           @default(0)
+  status        ProductStatus @default(ACTIVE)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  category           Category?           @relation(fields: [categoryId], references: [id])
+  saleItems          SaleItem[]
+  purchaseItems      PurchaseItem[]
+  inventoryBatches   InventoryBatch[]
+  inventoryMovements InventoryMovement[]
+  adjustments        InventoryAdjustment[]
+
+  @@index([categoryId])
+  @@index([status])
+  @@index([name])
+  @@map("products")
+}
+
+// ----------------------------------------------------------------------------
+// Catalog: Services
+// ----------------------------------------------------------------------------
+
+model Service {
+  id          String        @id @default(uuid()) @db.Uuid
+  name        String        @unique
+  type        ServiceType
+  pricingType PricingType
+  // Price per page (PER_PAGE) or flat price (FIXED). Snapshotted at sale time.
+  unitPrice   Decimal       @db.Decimal(14, 2)
+  status      ServiceStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  saleItems SaleItem[]
+
+  @@index([status])
+  @@map("services")
+}
+
+// ----------------------------------------------------------------------------
+// Suppliers & Purchases (stock IN)
+// ----------------------------------------------------------------------------
+
+model Supplier {
+  id        String     @id @default(uuid()) @db.Uuid
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+  isActive  Boolean    @default(true)
+  // Outstanding amount we OWE this supplier (accounts payable). Updated atomically
+  // when recording credit purchases and supplier payments.
+  balance   Decimal    @db.Decimal(14, 2) @default(0)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  purchases Purchase[]
+  payments  SupplierPayment[]
+
+  @@index([name])
+  @@map("suppliers")
+}
+
+// ----------------------------------------------------------------------------
+// Customers / debtors (accounts receivable)
+// ----------------------------------------------------------------------------
+
+model Customer {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+  isActive  Boolean  @default(true)
+  // Outstanding amount this customer OWES us (accounts receivable). Invariant:
+  // balance == SUM(amountDue) over the customer's COMPLETED credit sales.
+  balance   Decimal  @db.Decimal(14, 2) @default(0)
+  // Maximum receivable allowed. NULL = unlimited credit.
+  creditLimit Decimal? @db.Decimal(14, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sales    Sale[]
+  payments CustomerPayment[]
+
+  @@index([name])
+  @@map("customers")
+}
+
+// A repayment received from a customer against their outstanding balance.
+model CustomerPayment {
+  id            String   @id @default(uuid()) @db.Uuid
+  customerId    String   @db.Uuid
+  userId        String   @db.Uuid
+  cashSessionId String?  @db.Uuid
+  saleId        String?  @db.Uuid // optional: payment earmarked to a specific sale
+  amount        Decimal  @db.Decimal(14, 2)
+  notes         String?
+  idempotencyKey String? @unique
+  createdAt     DateTime @default(now())
+
+  customer    Customer     @relation(fields: [customerId], references: [id])
+  user        User         @relation(fields: [userId], references: [id])
+  cashSession CashSession? @relation(fields: [cashSessionId], references: [id])
+  sale        Sale?        @relation(fields: [saleId], references: [id])
+  allocations CustomerPaymentAllocation[]
+
+  @@index([customerId])
+  @@index([cashSessionId])
+  @@index([createdAt])
+  @@map("customer_payments")
+}
+
+// How a repayment was applied across specific invoices (accounts-receivable
+// allocation). One payment can settle several invoices oldest-first.
+model CustomerPaymentAllocation {
+  id        String   @id @default(uuid()) @db.Uuid
+  paymentId String   @db.Uuid
+  saleId    String   @db.Uuid
+  amount    Decimal  @db.Decimal(14, 2)
+  createdAt DateTime @default(now())
+
+  payment CustomerPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  sale    Sale            @relation(fields: [saleId], references: [id])
+
+  @@index([paymentId])
+  @@index([saleId])
+  @@map("customer_payment_allocations")
+}
+
+// A payment made TO a supplier against what we owe them.
+model SupplierPayment {
+  id            String   @id @default(uuid()) @db.Uuid
+  supplierId    String   @db.Uuid
+  userId        String   @db.Uuid
+  cashSessionId String?  @db.Uuid
+  purchaseId    String?  @db.Uuid
+  amount        Decimal  @db.Decimal(14, 2)
+  notes         String?
+  idempotencyKey String? @unique
+  createdAt     DateTime @default(now())
+
+  supplier    Supplier     @relation(fields: [supplierId], references: [id])
+  user        User         @relation(fields: [userId], references: [id])
+  cashSession CashSession? @relation(fields: [cashSessionId], references: [id])
+  purchase    Purchase?    @relation(fields: [purchaseId], references: [id])
+
+  @@index([supplierId])
+  @@index([cashSessionId])
+  @@index([createdAt])
+  @@map("supplier_payments")
+}
+
+model Purchase {
+  id             String   @id @default(uuid()) @db.Uuid
+  purchaseNumber String   @unique
+  supplierId     String?  @db.Uuid
+  userId         String   @db.Uuid
+  cashSessionId  String?  @db.Uuid // session the cash portion was paid from
+  purchaseDate   DateTime
+  totalCost      Decimal  @db.Decimal(14, 2)
+  // Payment settlement. CREDIT requires a supplier and leaves amountDue payable.
+  paymentMethod  PaymentMethod @default(CASH)
+  amountPaid     Decimal  @db.Decimal(14, 2) @default(0)
+  amountDue      Decimal  @db.Decimal(14, 2) @default(0)
+  notes          String?
+  // Idempotency: a repeated request with the same key returns the original row.
+  idempotencyKey String?  @unique
+  createdAt      DateTime @default(now())
+
+  supplier    Supplier?        @relation(fields: [supplierId], references: [id])
+  user        User             @relation(fields: [userId], references: [id])
+  cashSession CashSession?     @relation(fields: [cashSessionId], references: [id])
+  items       PurchaseItem[]
+  batches     InventoryBatch[]
+  payments    SupplierPayment[]
+
+  @@index([supplierId])
+  @@index([userId])
+  @@index([cashSessionId])
+  @@index([purchaseDate])
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id                  String   @id @default(uuid()) @db.Uuid
+  purchaseId          String   @db.Uuid
+  productId           String   @db.Uuid
+  productNameSnapshot String
+  // quantity is expressed in the transacted unit (unitLabel); unitSize converts
+  // to base units for inventory. quantity * unitSize = base units (pieces) received.
+  quantity            Int
+  unitLabel           String   @default("pcs")
+  unitSize            Int      @default(1)
+  unitCost            Decimal  @db.Decimal(14, 2) // cost per transacted unit
+  lineTotal           Decimal  @db.Decimal(14, 2)
+
+  purchase Purchase        @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product  Product         @relation(fields: [productId], references: [id])
+  batch    InventoryBatch?
+
+  @@index([purchaseId])
+  @@index([productId])
+  @@map("purchase_items")
+}
+
+// ----------------------------------------------------------------------------
+// FIFO inventory batches (the source of truth for COGS)
+// remainingQuantity is decremented FIFO (oldest purchaseDate first) on sale.
+// ----------------------------------------------------------------------------
+
+model InventoryBatch {
+  id                String   @id @default(uuid()) @db.Uuid
+  productId         String   @db.Uuid
+  purchaseId        String?  @db.Uuid
+  purchaseItemId    String?  @unique @db.Uuid
+  quantity          Int // original quantity received
+  remainingQuantity Int // remaining for FIFO consumption
+  unitCost          Decimal  @db.Decimal(14, 2)
+  purchaseDate      DateTime
+  createdAt         DateTime @default(now())
+
+  product      Product          @relation(fields: [productId], references: [id])
+  purchase     Purchase?        @relation(fields: [purchaseId], references: [id])
+  purchaseItem PurchaseItem?    @relation(fields: [purchaseItemId], references: [id])
+  allocations  CogsAllocation[]
+
+  // FIFO scan: cheapest path is "this product, oldest first, still has stock".
+  @@index([productId, purchaseDate, createdAt])
+  @@index([productId, remainingQuantity])
+  @@map("inventory_batches")
+}
+
+// ----------------------------------------------------------------------------
+// Sales (stock OUT) — immutable after completion
+// ----------------------------------------------------------------------------
+
+model Sale {
+  id                String     @id @default(uuid()) @db.Uuid
+  invoiceNumber     String     @unique
+  transactionNumber String     @unique
+  userId            String     @db.Uuid
+  cashSessionId     String?    @db.Uuid
+  customerId        String?    @db.Uuid
+  subtotal          Decimal    @db.Decimal(14, 2) // sum of line totals before discount
+  discountTotal     Decimal    @db.Decimal(14, 2) @default(0)
+  total             Decimal    @db.Decimal(14, 2) // payable
+  // Payment settlement. CREDIT requires a customer; amountDue becomes receivable.
+  paymentMethod     PaymentMethod @default(CASH)
+  // Portion of `total` settled in cash at sale time (the till intake).
+  amountPaid        Decimal    @db.Decimal(14, 2) @default(0)
+  // Outstanding receivable for this sale (total - amountPaid). 0 for cash sales.
+  amountDue         Decimal    @db.Decimal(14, 2) @default(0)
+  cashReceived      Decimal    @db.Decimal(14, 2) // physical cash tendered
+  changeGiven       Decimal    @db.Decimal(14, 2) @default(0)
+  // Snapshot of total COGS at sale time (sum of product line COGS).
+  totalCogs         Decimal    @db.Decimal(14, 2) @default(0)
+  status            SaleStatus @default(COMPLETED)
+  notes             String?
+  // Idempotency: optional client-supplied key prevents duplicate processing.
+  idempotencyKey    String?    @unique
+  createdAt         DateTime   @default(now())
+
+  // Void linkage (corrections never mutate the original sale).
+  voidedAt       DateTime?
+  voidReason     String?
+  reversalOfId   String?   @unique @db.Uuid
+  reversalOf     Sale?     @relation("SaleReversal", fields: [reversalOfId], references: [id])
+  reversedBy     Sale?     @relation("SaleReversal")
+
+  user        User        @relation(fields: [userId], references: [id])
+  cashSession CashSession? @relation(fields: [cashSessionId], references: [id])
+  customer    Customer?    @relation(fields: [customerId], references: [id])
+  items       SaleItem[]
+  returns     SaleReturn[]
+  payments    CustomerPayment[]
+  paymentAllocations CustomerPaymentAllocation[]
+
+  @@index([userId])
+  @@index([cashSessionId])
+  @@index([customerId])
+  @@index([createdAt])
+  @@index([status])
+  @@map("sales")
+}
+
+model SaleItem {
+  id        String       @id @default(uuid()) @db.Uuid
+  saleId    String       @db.Uuid
+  itemType  SaleItemType
+  productId String?      @db.Uuid
+  serviceId String?      @db.Uuid
+
+  // --- immutable historical snapshots ---
+  nameSnapshot      String
+  unitPriceSnapshot Decimal  @db.Decimal(14, 2) // price per transacted unit
+  // quantity is in the transacted unit (unitLabel). Base units (pieces) consumed
+  // from inventory = quantity * unitSize.
+  quantity          Int
+  unitLabel         String   @default("pcs")
+  unitSize          Int      @default(1)
+  pages             Int? // for PER_PAGE services
+  discount          Decimal  @db.Decimal(14, 2) @default(0)
+  lineTotal         Decimal  @db.Decimal(14, 2)
+  // COGS for product lines (FIFO). 0 for services.
+  lineCogs          Decimal  @db.Decimal(14, 2) @default(0)
+  // Units already returned across all partial returns of this line.
+  returnedQuantity  Int      @default(0)
+
+  sale        Sale             @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product     Product?         @relation(fields: [productId], references: [id])
+  service     Service?         @relation(fields: [serviceId], references: [id])
+  allocations CogsAllocation[]
+  returnItems SaleReturnItem[]
+
+  @@index([saleId])
+  @@index([productId])
+  @@index([serviceId])
+  @@map("sale_items")
+}
+
+// FIFO consumption detail: how each sold unit drew from which batch & at what cost.
+model CogsAllocation {
+  id               String  @id @default(uuid()) @db.Uuid
+  saleItemId       String  @db.Uuid
+  batchId          String  @db.Uuid
+  quantity         Int
+  unitCost         Decimal @db.Decimal(14, 2)
+  cost             Decimal @db.Decimal(14, 2) // quantity * unitCost
+  // Units of this allocation reversed back to the batch via returns.
+  returnedQuantity Int     @default(0)
+
+  saleItem SaleItem       @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
+  batch    InventoryBatch @relation(fields: [batchId], references: [id])
+
+  @@index([saleItemId])
+  @@index([batchId])
+  @@map("cogs_allocations")
+}
+
+// ----------------------------------------------------------------------------
+// Partial returns / refunds (immutable corrections, never mutate the sale)
+// A sale stays COMPLETED; one or more SaleReturns record what came back.
+// ----------------------------------------------------------------------------
+
+model SaleReturn {
+  id                String   @id @default(uuid()) @db.Uuid
+  returnNumber      String   @unique
+  saleId            String   @db.Uuid
+  userId            String   @db.Uuid
+  cashSessionId     String?  @db.Uuid
+  reason            String
+  totalRefund       Decimal  @db.Decimal(14, 2)
+  // Portion of the refund applied to the customer's credit balance (store
+  // credit) rather than paid out in cash. cashRefunded = totalRefund - creditApplied.
+  creditApplied     Decimal  @db.Decimal(14, 2) @default(0)
+  totalCogsReversed Decimal  @db.Decimal(14, 2) @default(0)
+  createdAt         DateTime @default(now())
+
+  sale        Sale             @relation(fields: [saleId], references: [id])
+  user        User             @relation(fields: [userId], references: [id])
+  cashSession CashSession?     @relation(fields: [cashSessionId], references: [id])
+  items       SaleReturnItem[]
+
+  @@index([saleId])
+  @@index([userId])
+  @@index([cashSessionId])
+  @@index([createdAt])
+  @@map("sale_returns")
+}
+
+model SaleReturnItem {
+  id           String  @id @default(uuid()) @db.Uuid
+  returnId     String  @db.Uuid
+  saleItemId   String  @db.Uuid
+  quantity     Int
+  refundAmount Decimal @db.Decimal(14, 2)
+  cogsReversed Decimal @db.Decimal(14, 2) @default(0)
+
+  saleReturn SaleReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  saleItem   SaleItem   @relation(fields: [saleItemId], references: [id])
+
+  @@index([returnId])
+  @@index([saleItemId])
+  @@map("sale_return_items")
+}
+
+// ----------------------------------------------------------------------------
+// Inventory movement ledger (every change, immutable)
+// ----------------------------------------------------------------------------
+
+model InventoryMovement {
+  id            String                @id @default(uuid()) @db.Uuid
+  productId     String                @db.Uuid
+  type          InventoryMovementType
+  // Signed quantity: +in / -out. before + quantity = after.
+  quantity      Int
+  beforeQty     Int
+  afterQty      Int
+  unitCost      Decimal?              @db.Decimal(14, 2)
+  userId        String?               @db.Uuid
+  // Polymorphic reference to the originating document.
+  referenceType String? // 'SALE' | 'PURCHASE' | 'ADJUSTMENT' | 'RETURN'
+  referenceId   String?               @db.Uuid
+  notes         String?
+  createdAt     DateTime              @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+  user    User?   @relation(fields: [userId], references: [id])
+
+  @@index([productId, createdAt])
+  @@index([type])
+  @@index([referenceType, referenceId])
+  @@map("inventory_movements")
+}
+
+model InventoryAdjustment {
+  id             String   @id @default(uuid()) @db.Uuid
+  productId      String   @db.Uuid
+  userId         String   @db.Uuid
+  quantityChange Int // signed
+  beforeQty      Int
+  afterQty       Int
+  reason         String
+  // For positive adjustments we create a batch; track its cost for valuation.
+  unitCost       Decimal? @db.Decimal(14, 2)
+  createdAt      DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@index([productId])
+  @@index([userId])
+  @@map("inventory_adjustments")
+}
+
+// ----------------------------------------------------------------------------
+// Expenses
+// ----------------------------------------------------------------------------
+
+model Expense {
+  id            String          @id @default(uuid()) @db.Uuid
+  category      ExpenseCategory
+  amount        Decimal         @db.Decimal(14, 2)
+  expenseDate   DateTime
+  description   String?
+  userId        String          @db.Uuid
+  // Linked to the cash session if paid from the till.
+  cashSessionId String?         @db.Uuid
+  createdAt     DateTime        @default(now())
+
+  user        User         @relation(fields: [userId], references: [id])
+  cashSession CashSession? @relation(fields: [cashSessionId], references: [id])
+
+  @@index([category])
+  @@index([expenseDate])
+  @@index([userId])
+  @@index([cashSessionId])
+  @@map("expenses")
+}
+
+// ----------------------------------------------------------------------------
+// Cash management
+// ----------------------------------------------------------------------------
+
+model CashSession {
+  id             String            @id @default(uuid()) @db.Uuid
+  userId         String            @db.Uuid
+  openingBalance Decimal           @db.Decimal(14, 2)
+  status         CashSessionStatus @default(OPEN)
+  openedAt       DateTime          @default(now())
+  closedAt       DateTime?
+
+  // Filled at close time (snapshot of computed values).
+  expectedAmount Decimal? @db.Decimal(14, 2)
+  actualAmount   Decimal? @db.Decimal(14, 2)
+  variance       Decimal? @db.Decimal(14, 2)
+  notes          String?
+
+  user             User              @relation(fields: [userId], references: [id])
+  sales            Sale[]
+  expenses         Expense[]
+  movements        CashMovement[]
+  returns          SaleReturn[]
+  purchases        Purchase[]
+  customerPayments CustomerPayment[]
+  supplierPayments SupplierPayment[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([openedAt])
+  @@map("cash_sessions")
+}
+
+model CashMovement {
+  id            String           @id @default(uuid()) @db.Uuid
+  cashSessionId String           @db.Uuid
+  type          CashMovementType
+  amount        Decimal          @db.Decimal(14, 2)
+  userId        String           @db.Uuid
+  notes         String?
+  createdAt     DateTime         @default(now())
+
+  cashSession CashSession @relation(fields: [cashSessionId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id])
+
+  @@index([cashSessionId])
+  @@map("cash_movements")
+}
+
+// ----------------------------------------------------------------------------
+// Document number sequences (gapless, concurrency-safe via row lock)
+// One row per (type, period) e.g. INVOICE / 2026-06.
+// ----------------------------------------------------------------------------
+
+model DocumentSequence {
+  id      String       @id @default(uuid()) @db.Uuid
+  type    SequenceType
+  period  String // e.g. "2026-06" or "ALL"
+  current Int          @default(0)
+
+  @@unique([type, period])
+  @@map("document_sequences")
+}
+
+// ----------------------------------------------------------------------------
+// Immutable audit log (append-only; never updated or deleted by the app)
+// ----------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @db.Uuid
+  action     String // e.g. 'SALE_CREATED', 'PRODUCT_UPDATED'
+  entityType String // e.g. 'Sale', 'Product'
+  entityId   String?
+  // Structured before/after / context payload.
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
