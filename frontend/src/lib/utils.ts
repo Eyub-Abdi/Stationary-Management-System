@@ -123,10 +123,22 @@ export function initials(name: string): string {
 }
 
 /** Resolve an uploaded image path (e.g. /uploads/products/x.png) to a URL. */
+// Origin that serves uploaded files. Uploads are exposed at the API host root
+// (e.g. https://api.example.com/uploads/...), NOT under the /api/v1 path. When
+// the API base is absolute we reuse its origin; when it's relative (dev proxy or
+// same-origin reverse proxy) we keep paths relative. An explicit
+// VITE_UPLOADS_BASE_URL overrides both.
+const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) ?? '/api/v1';
+const UPLOADS_BASE = (
+  import.meta.env.VITE_UPLOADS_BASE_URL ??
+  (/^https?:\/\//.test(API_BASE) ? new URL(API_BASE).origin : '')
+).replace(/\/+$/, '');
+
 export function imageSrc(path: string | null | undefined): string | null {
   if (!path) return null;
   if (path.startsWith('http') || path.startsWith('data:')) return path;
-  return path; // dev proxy + prod same-origin both serve /uploads/*
+  const rel = path.startsWith('/') ? path : `/${path}`;
+  return `${UPLOADS_BASE}${rel}`;
 }
 
 /** Human label for a SCREAMING_SNAKE enum value. */
