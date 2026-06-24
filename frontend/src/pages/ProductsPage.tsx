@@ -21,6 +21,7 @@ import {
   Table,
 } from '@/components/ui';
 import { ProductFormModal } from '@/features/products/ProductFormModal';
+import { CategoryManagerModal } from '@/features/products/CategoryManagerModal';
 import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/providers/ToastProvider';
 import {
@@ -46,6 +47,7 @@ export default function ProductsPage() {
   const [editing, setEditing] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState<Product | null>(null);
   const [removing, setRemoving] = useState<Product | null>(null);
+  const [catManagerOpen, setCatManagerOpen] = useState(false);
 
   const filters = {
     page,
@@ -108,9 +110,14 @@ export default function ProductsPage() {
         description="Manage your stationery catalog, pricing, and stock thresholds."
         actions={
           isAdmin && (
-            <Button icon="add" onClick={openCreate}>
-              Add Product
-            </Button>
+            <>
+              <Button variant="outline" icon="category" onClick={() => setCatManagerOpen(true)}>
+                Categories
+              </Button>
+              <Button icon="add" onClick={openCreate}>
+                Add Product
+              </Button>
+            </>
           )
         }
       />
@@ -273,6 +280,8 @@ export default function ProductsPage() {
         product={editing}
         categories={categories ?? []}
       />
+
+      <CategoryManagerModal open={catManagerOpen} onClose={() => setCatManagerOpen(false)} />
 
       <ConfirmDialog
         open={!!deleting}

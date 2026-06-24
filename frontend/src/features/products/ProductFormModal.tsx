@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Field, Icon, Input, Modal, Select, Textarea } from '@/components/ui';
 import { useToast } from '@/providers/ToastProvider';
 import {
@@ -6,6 +6,7 @@ import {
   useUpdateProduct,
   useUploadProductImage,
 } from '@/hooks/useProducts';
+import { useCreateCategory } from '@/hooks/useCatalog';
 import { useUploadImage } from '@/hooks/useUploads';
 import { extractMessage } from '@/lib/api';
 import { imageSrc, num } from '@/lib/utils';
@@ -55,6 +56,7 @@ export function ProductFormModal({
   const toast = useToast();
   const create = useCreateProduct();
   const update = useUpdateProduct();
+  const createCategory = useCreateCategory();
   const uploadNew = useUploadImage();
   const uploadExisting = useUploadProductImage();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -63,6 +65,17 @@ export function ProductFormModal({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  // Categories created inline, merged into the list so they're instantly
+  // selectable before the parent's query refetches.
+  const [createdCategories, setCreatedCategories] = useState<Category[]>([]);
+
+  const categoryOptions = useMemo(() => {
+    const byId = new Map<string, Category>();
+    [...categories, ...createdCategories].forEach((c) => byId.set(c.id, c));
+    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [categories, createdCategories]);
 
   const isEdit = !!product;
   const saving = create.isPending || update.isPending || uploadNew.isPending || uploadExisting.isPending;
@@ -71,6 +84,8 @@ export function ProductFormModal({
     if (!open) return;
     setErrors({});
     setFile(null);
+    setAddingCategory(false);
+    setNewCategoryName('');
     if (product) {
       setForm({
         sku: product.sku,
@@ -94,6 +109,24 @@ export function ProductFormModal({
   }, [open, product]);
 
   const set = (k: keyof FormState, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  const addCategory = async () => {
+    const name = newCategoryName.trim();
+    if (!name) {
+      toast.error('Name required', 'Enter a category name.');
+      return;
+    }
+    try {
+      const created = await createCategory.mutateAsync({ name });
+      setCreatedCategories((prev) => [...prev, created]);
+      set('categoryId', created.id);
+      setNewCategoryName('');
+      setAddingCategory(false);
+      toast.success('Category created', name);
+    } catch (e) {
+      toast.error('Failed to create category', extractMessage(e));
+    }
+  };
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -202,14 +235,54 @@ export function ProductFormModal({
               </Field>
             )}
             <Field label="Category" className={isEdit ? undefined : 'col-span-2'}>
-              <Select value={form.categoryId} onChange={(e) => set('categoryId', e.target.value)}>
-                <option value="">Uncategorized</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
+              {addingCategory ? (
+                <div className="flex gap-2">
+                  <Input
+                    autoFocus
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addCategory();
+                      }
+                    }}
+                    placeholder="New category name"
+                  />
+                  <Button type="button" icon="check" loading={createCategory.isPending} onClick={addCategory}>
+                    Add
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setAddingCategory(false);
+                      setNewCategoryName('');
+                    }}
+                    disabled={createCategory.isPending}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Select
+                    className="flex-1"
+                    value={form.categoryId}
+                    onChange={(e) => set('categoryId', e.target.value)}
+                  >
+                    <option value="">Uncategorized</option>
+                    {categoryOptions.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button type="button" variant="outline" icon="add" onClick={() => setAddingCategory(true)}>
+                    New
+                  </Button>
+                </div>
+              )}
             </Field>
           </div>
         </div>

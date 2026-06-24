@@ -38,7 +38,11 @@ export function useUpdateCategory() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: { name?: string; description?: string } }) =>
       unwrap<Category>(api.patch(`/categories/${id}`, input)),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.categories() }),
+    // Products embed the category name / link, so refresh them too.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.categories() });
+      qc.invalidateQueries({ queryKey: ['products'] });
+    },
   });
 }
 
@@ -46,7 +50,11 @@ export function useDeleteCategory() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.delete(`/categories/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.categories() }),
+    // Deleting un-categorizes referencing products (FK SET NULL).
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.categories() });
+      qc.invalidateQueries({ queryKey: ['products'] });
+    },
   });
 }
 
