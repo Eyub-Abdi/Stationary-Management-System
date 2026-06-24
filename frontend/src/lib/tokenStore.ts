@@ -19,14 +19,19 @@ export const tokenStore = {
   },
   get user(): AuthUser | null {
     const raw = localStorage.getItem(USER) ?? sessionStorage.getItem(USER);
-    return raw ? (JSON.parse(raw) as AuthUser) : null;
+    if (!raw || raw === 'undefined' || raw === 'null') return null;
+    try {
+      return JSON.parse(raw) as AuthUser;
+    } catch {
+      return null;
+    }
   },
   set(tokens: { accessToken: string; refreshToken: string }, user: AuthUser, remember: boolean) {
     localStorage.setItem(PERSIST, remember ? '1' : '0');
     const s = store();
     s.setItem(ACCESS, tokens.accessToken);
     s.setItem(REFRESH, tokens.refreshToken);
-    s.setItem(USER, JSON.stringify(user));
+    if (user) s.setItem(USER, JSON.stringify(user));
   },
   updateTokens(tokens: { accessToken: string; refreshToken: string }) {
     const s = store();
@@ -34,6 +39,7 @@ export const tokenStore = {
     s.setItem(REFRESH, tokens.refreshToken);
   },
   updateUser(user: AuthUser) {
+    if (!user) return;
     const s = store();
     s.setItem(USER, JSON.stringify(user));
   },
