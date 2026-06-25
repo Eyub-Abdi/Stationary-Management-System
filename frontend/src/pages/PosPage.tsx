@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Badge,
@@ -76,6 +76,12 @@ export default function PosPage() {
   const [receipt, setReceipt] = useState<Sale | null>(null);
   const [unitPick, setUnitPick] = useState<Product | null>(null);
   const [custModalOpen, setCustModalOpen] = useState(false);
+  const [view, setView] = useState<'grid' | 'list'>(
+    () => (localStorage.getItem('pos-view') === 'list' ? 'list' : 'grid'),
+  );
+  useEffect(() => {
+    localStorage.setItem('pos-view', view);
+  }, [view]);
 
   const products = useProducts({ status: 'ACTIVE', limit: 50, search: tab === 'products' ? search || undefined : undefined });
   const services = useServices({ status: 'ACTIVE', limit: 50, search: tab === 'services' ? search || undefined : undefined });
@@ -297,6 +303,24 @@ export default function PosPage() {
                 ]}
               />
               <SearchInput value={search} onChange={setSearch} placeholder={`Search ${tab}…`} className="flex-1" />
+              <div className="inline-flex shrink-0 rounded-lg border border-outline-variant bg-surface-container-low p-0.5">
+                {(['grid', 'list'] as const).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setView(v)}
+                    aria-label={`${v} view`}
+                    title={`${v === 'grid' ? 'Grid' : 'List'} view`}
+                    className={cn(
+                      'rounded-md p-1.5 transition-all',
+                      view === v
+                        ? 'bg-surface-container-lowest text-on-surface shadow-sm'
+                        : 'text-on-surface-variant hover:text-on-surface',
+                    )}
+                  >
+                    <Icon name={v === 'grid' ? 'grid_view' : 'view_list'} size={18} />
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="min-h-[420px] p-4">
@@ -305,21 +329,33 @@ export default function PosPage() {
               ) : tab === 'products' ? (
                 products.data!.data.length === 0 ? (
                   <EmptyState icon="inventory_2" title="No products" description="No active products match your search." />
-                ) : (
+                ) : view === 'grid' ? (
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
                     {products.data!.data.map((p) => (
                       <ProductTile key={p.id} product={p} onAdd={() => addProduct(p)} />
                     ))}
                   </div>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {products.data!.data.map((p) => (
+                      <ProductRow key={p.id} product={p} onAdd={() => addProduct(p)} />
+                    ))}
+                  </ul>
                 )
               ) : services.data!.data.length === 0 ? (
                 <EmptyState icon="print" title="No services" description="No active services match your search." />
-              ) : (
+              ) : view === 'grid' ? (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
                   {services.data!.data.map((s) => (
                     <ServiceTile key={s.id} service={s} onAdd={() => addService(s)} />
                   ))}
                 </div>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {services.data!.data.map((s) => (
+                    <ServiceRow key={s.id} service={s} onAdd={() => addService(s)} />
+                  ))}
+                </ul>
               )}
             </div>
           </Card>
@@ -652,6 +688,62 @@ function ProductTile({ product, onAdd }: { product: Product; onAdd: () => void }
         </div>
       </div>
     </button>
+  );
+}
+
+function ProductRow({ product, onAdd }: { product: Product; onAdd: () => void }) {
+  const low = product.currentStock <= product.minStockLevel;
+  const out = product.currentStock <= 0;
+  const src = imageSrc(product.imageUrl);
+  const hasBulk = !!product.bulkUnit && product.unitSize > 1;
+  return (
+    <li>
+      <button
+        onClick={onAdd}
+        disabled={out}
+        className="flex w-full items-center gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-2.5 text-left transition-all hover:border-secondary hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-container-low">
+          {src ? (
+            <img src={src} alt={product.name} className="h-full w-full object-cover" />
+          ) : (
+            <Icon name="inventory_2" size={22} className="text-on-surface-variant" />
+          )}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] font-semibold text-on-surface">{product.name}</p>
+          <p className="truncate text-[11px] text-on-surface-variant">
+            {hasBulk ? `${product.baseUnit} · ${product.bulkUnit} ×${product.unitSize}` : product.baseUnit}
+          </p>
+        </div>
+        <span className="shrink-0 font-mono-data text-[13px] font-bold text-primary">
+          {currency(product.sellingPrice)}
+        </span>
+        <Badge tone={out ? 'error' : low ? 'warning' : 'neutral'}>{product.currentStock}</Badge>
+      </button>
+    </li>
+  );
+}
+
+function ServiceRow({ service, onAdd }: { service: Service; onAdd: () => void }) {
+  return (
+    <li>
+      <button
+        onClick={onAdd}
+        className="flex w-full items-center gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-2.5 text-left transition-all hover:border-secondary hover:shadow-sm"
+      >
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary-fixed text-on-primary-fixed">
+          <Icon name={SERVICE_TYPE_ICON[service.type]} size={20} />
+        </span>
+        <p className="min-w-0 flex-1 truncate text-[13px] font-semibold text-on-surface">{service.name}</p>
+        <span className="shrink-0 text-[11px] text-on-surface-variant">
+          {service.pricingType === 'PER_PAGE' ? '/page' : 'fixed'}
+        </span>
+        <span className="shrink-0 font-mono-data text-[13px] font-bold text-primary">
+          {currency(service.unitPrice)}
+        </span>
+      </button>
+    </li>
   );
 }
 

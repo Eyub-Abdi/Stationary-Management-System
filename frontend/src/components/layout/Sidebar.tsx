@@ -28,8 +28,8 @@ export function Sidebar({
       >
         {/* Brand */}
         <div className="flex items-center gap-3 px-5 py-5">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-on-primary shadow-sm">
-            <Icon name="inventory_2" size={24} filled />
+          <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-white shadow-sm">
+            <img src="/st-logo.png" alt="Stationery Management System" className="h-full w-full object-contain p-0.5" />
           </div>
           <div>
             <h1 className="text-h3 font-bold leading-tight text-on-surface">StatioPro</h1>

@@ -33,11 +33,13 @@ export class ServicesController {
   @Get()
   @ApiOperation({ summary: 'List services' })
   @ApiQuery({ name: 'includeInactive', required: false, type: Boolean })
+  @ApiQuery({ name: 'search', required: false, type: String })
   findAll(
     @Query('includeInactive', new ParseBoolPipe({ optional: true }))
     includeInactive?: boolean,
+    @Query('search') search?: string,
   ) {
-    return this.services.findAll(includeInactive);
+    return this.services.findAll(includeInactive, search?.trim() || undefined);
   }
 
   @Get(':id')

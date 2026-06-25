@@ -23,6 +23,7 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useActiveCashSession } from '@/providers/CashSessionProvider';
 import { useSales } from '@/hooks/useSales';
 import { useExpenses } from '@/hooks/useExpenses';
+import { useCustomerAging } from '@/hooks/useCustomers';
 import { useLowStockProducts } from '@/hooks/useProducts';
 import { useExpensesByCategory, useFinancialSummary, useSalesSeries } from '@/hooks/useReports';
 import {
@@ -56,6 +57,12 @@ export default function DashboardPage() {
   const recentSales = useSales({ limit: 6 });
   const recentExpenses = useExpenses({ limit: 5 }, isAdmin);
   const lowStock = useLowStockProducts();
+  // Receivables (what customers owe us) — surfaced for staff handling credit.
+  const aging = useCustomerAging(!isAdmin);
+  const receivablesTotal = useMemo(
+    () => (aging.data ?? []).reduce((acc, r) => acc + num(r.balance), 0),
+    [aging.data],
+  );
 
   const summary = useFinancialSummary(todayRange, isAdmin);
   const series = useSalesSeries({ from: daysAgo(6), to: endOfToday(), granularity: 'DAILY' }, isAdmin);
@@ -143,6 +150,16 @@ export default function DashboardPage() {
             icon="account_balance"
             value={session ? currency(session.breakdown?.expectedAmount ?? 0) : 'Closed'}
             hint={session ? 'Expected cash · session open' : 'No open session'}
+          />
+        )}
+        {!isAdmin && (
+          <StatCard
+            label="Receivables"
+            accent="error"
+            icon="request_quote"
+            loading={aging.isLoading}
+            value={currency(receivablesTotal)}
+            hint="Owed to us by customers"
           />
         )}
         <StatCard

@@ -40,9 +40,10 @@ export function useCustomer(id: string | undefined) {
   });
 }
 
-export function useCustomerAging() {
+export function useCustomerAging(enabled = true) {
   return useQuery({
     queryKey: qk.customerAging(),
+    enabled,
     queryFn: () => unwrap<AgingRow[]>(api.get('/customers/aging')),
   });
 }

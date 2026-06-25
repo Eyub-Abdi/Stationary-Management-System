@@ -24,10 +24,13 @@ export class ServicesService {
     });
   }
 
-  findAll(includeInactive = false) {
-    const where: Prisma.ServiceWhereInput = includeInactive
-      ? {}
-      : { status: 'ACTIVE' };
+  findAll(includeInactive = false, search?: string) {
+    const where: Prisma.ServiceWhereInput = {
+      ...(includeInactive ? {} : { status: 'ACTIVE' }),
+      ...(search
+        ? { name: { contains: search, mode: 'insensitive' } }
+        : {}),
+    };
     return this.prisma.service.findMany({ where, orderBy: { name: 'asc' } });
   }
 

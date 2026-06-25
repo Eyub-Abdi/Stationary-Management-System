@@ -54,8 +54,8 @@ export default function LoginPage() {
           </div>
           <div className="relative z-10 flex flex-col justify-between p-12 text-on-primary">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-on-primary/10 backdrop-blur">
-                <Icon name="inventory_2" size={26} filled />
+              <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-white">
+                <img src="/st-logo.png" alt="Stationery Management System" className="h-full w-full object-contain p-0.5" />
               </div>
               <span className="text-h2 font-bold">StatioPro ERP</span>
             </div>
@@ -80,8 +80,8 @@ export default function LoginPage() {
         <div className="flex flex-1 items-center justify-center p-6">
           <div className="w-full max-w-[420px]">
             <div className="mb-8 text-center lg:hidden">
-              <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-on-primary">
-                <Icon name="inventory_2" size={28} filled />
+              <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl bg-white shadow-sm">
+                <img src="/st-logo.png" alt="Stationery Management System" className="h-full w-full object-contain p-0.5" />
               </div>
               <h1 className="text-h1 font-bold text-primary">StatioPro</h1>
             </div>
