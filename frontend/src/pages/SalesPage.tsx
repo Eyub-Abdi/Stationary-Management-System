@@ -126,7 +126,7 @@ export default function SalesPage() {
               setSearch(v);
               setPage(1);
             }}
-            placeholder="Search by invoice or transaction #…"
+            placeholder="Search by invoice, transaction # or cashier…"
             className="flex-1"
           />
           <div className="flex flex-wrap items-center gap-3">

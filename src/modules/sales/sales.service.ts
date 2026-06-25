@@ -549,6 +549,7 @@ export class SalesService {
             OR: [
               { invoiceNumber: { contains: query.search, mode: 'insensitive' } },
               { transactionNumber: { contains: query.search, mode: 'insensitive' } },
+              { user: { fullName: { contains: query.search, mode: 'insensitive' } } },
             ],
           }
         : {}),
