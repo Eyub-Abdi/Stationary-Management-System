@@ -271,6 +271,46 @@ export class ReportsService {
     });
   }
 
+  /**
+   * Product movement (sales velocity) for a range. For every ACTIVE product:
+   *  - unitsSold  = base units sold in the range, net of returns,
+   *  - currentStock = live stock on hand (base units),
+   *  - lastSoldAt = most recent COMPLETED sale ALL-TIME (drives dead-stock /
+   *    "days since last sale"), independent of the selected range.
+   * Velocity, days-of-cover and the fast/slow/dead classification are derived
+   * client-side so they adapt to the shop's own volume.
+   */
+  async productMovement(query: ReportRangeDto) {
+    const range = this.dateFilter('s."createdAt"', query);
+    return this.prisma.$queryRaw(Prisma.sql`
+      SELECT p.id            AS "productId",
+             p.sku           AS sku,
+             p.name          AS name,
+             p."baseUnit"    AS "baseUnit",
+             p."currentStock" AS "currentStock",
+             COALESCE(m.units_sold, 0)::int AS "unitsSold",
+             ls.last_sold    AS "lastSoldAt"
+      FROM products p
+      LEFT JOIN (
+        SELECT si."productId",
+               SUM((si.quantity - si."returnedQuantity") * si."unitSize") AS units_sold
+        FROM sale_items si
+        JOIN sales s ON s.id = si."saleId"
+        WHERE s.status = 'COMPLETED' AND si."itemType" = 'PRODUCT' ${range}
+        GROUP BY si."productId"
+      ) m ON m."productId" = p.id
+      LEFT JOIN (
+        SELECT si."productId", MAX(s."createdAt") AS last_sold
+        FROM sale_items si
+        JOIN sales s ON s.id = si."saleId"
+        WHERE s.status = 'COMPLETED' AND si."itemType" = 'PRODUCT'
+        GROUP BY si."productId"
+      ) ls ON ls."productId" = p.id
+      WHERE p.status = 'ACTIVE'
+      ORDER BY "unitsSold" DESC, p.name ASC;
+    `);
+  }
+
   // ---- Cash ----------------------------------------------------------------
 
   cashSessions(status?: 'OPEN' | 'CLOSED') {

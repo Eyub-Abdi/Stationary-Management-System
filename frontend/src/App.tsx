@@ -17,6 +17,7 @@ import ExpensesPage from '@/pages/ExpensesPage';
 import CashPage from '@/pages/CashPage';
 import ReportsPage from '@/pages/ReportsPage';
 import ProfitPage from '@/pages/ProfitPage';
+import MovementPage from '@/pages/MovementPage';
 import UsersPage from '@/pages/UsersPage';
 import ActivityLogsPage from '@/pages/ActivityLogsPage';
 import SettingsPage from '@/pages/SettingsPage';
@@ -77,6 +78,14 @@ export default function App() {
           element={
             <AdminRoute>
               <ProfitPage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/movement"
+          element={
+            <AdminRoute>
+              <MovementPage />
             </AdminRoute>
           }
         />

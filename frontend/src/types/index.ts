@@ -402,6 +402,18 @@ export interface UserActivityRow {
   revenue: string;
 }
 
+export interface ProductMovementRow {
+  productId: string;
+  sku: string;
+  name: string;
+  baseUnit: string;
+  currentStock: number;
+  // Base units sold in the selected range, net of returns.
+  unitsSold: number;
+  // Most recent completed sale, all-time. Null = never sold.
+  lastSoldAt: string | null;
+}
+
 export interface ProductProfitRow {
   productId: string;
   sku: string;

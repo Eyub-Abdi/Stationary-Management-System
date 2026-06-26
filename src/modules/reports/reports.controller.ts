@@ -57,6 +57,12 @@ export class ReportsController {
     return this.reports.productProfitability(query);
   }
 
+  @Get('product-movement')
+  @ApiOperation({ summary: 'Sales velocity per product (fast/slow/dead movers)' })
+  productMovement(@Query() query: ReportRangeDto) {
+    return this.reports.productMovement(query);
+  }
+
   @Get('cash-sessions')
   @ApiOperation({ summary: 'Cash sessions report (optionally by status)' })
   @ApiQuery({ name: 'status', required: false, enum: ['OPEN', 'CLOSED'] })

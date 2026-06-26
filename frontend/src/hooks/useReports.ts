@@ -6,6 +6,7 @@ import type {
   ExpenseByCategory,
   FinancialSummary,
   LowStockRow,
+  ProductMovementRow,
   ProductProfitRow,
   SalesSeriesPoint,
   StockLevelRow,
@@ -83,6 +84,15 @@ export function useProductProfitability(range: DateRange, enabled = true) {
     enabled,
     queryFn: () =>
       unwrap<ProductProfitRow[]>(api.get('/reports/profitability', { params: clean({ ...range }) })),
+  });
+}
+
+export function useProductMovement(range: DateRange, enabled = true) {
+  return useQuery({
+    queryKey: qk.report('product-movement', range),
+    enabled,
+    queryFn: () =>
+      unwrap<ProductMovementRow[]>(api.get('/reports/product-movement', { params: clean({ ...range }) })),
   });
 }
 

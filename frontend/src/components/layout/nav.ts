@@ -23,6 +23,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/cash', label: 'Cash Management', icon: 'account_balance' },
   { to: '/reports', label: 'Reports', icon: 'assessment', adminOnly: true },
   { to: '/profit', label: 'Profit Analysis', icon: 'trending_up', adminOnly: true },
+  { to: '/movement', label: 'Product Movement', icon: 'insights', adminOnly: true },
   { to: '/users', label: 'Users', icon: 'group', adminOnly: true },
   { to: '/activity', label: 'Activity Logs', icon: 'history', adminOnly: true },
   { to: '/settings', label: 'Settings', icon: 'settings' },
