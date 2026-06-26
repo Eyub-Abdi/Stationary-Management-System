@@ -401,3 +401,24 @@ export interface UserActivityRow {
   sale_count: string | number;
   revenue: string;
 }
+
+export interface ProductProfitRow {
+  productId: string;
+  sku: string;
+  name: string;
+  baseUnit: string;
+  bulkUnit: string | null;
+  unitSize: number;
+  buyingPrice: string;
+  sellingPrice: string;
+  bulkSellingPrice: string | null;
+  // Net of returns. qtyBase is in base units (pieces); wholesale/retail are the
+  // count of transacted units sold in a bulk pack vs as single pieces.
+  qtyBase: number;
+  wholesaleUnits: number;
+  retailUnits: number;
+  revenue: string;
+  cogs: string;
+  grossProfit: string;
+  margin: string;
+}

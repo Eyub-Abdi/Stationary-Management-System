@@ -51,6 +51,12 @@ export class ReportsController {
     return this.reports.topProducts(query);
   }
 
+  @Get('profitability')
+  @ApiOperation({ summary: 'Per-product realized profit (revenue, COGS, margin)' })
+  productProfitability(@Query() query: ReportRangeDto) {
+    return this.reports.productProfitability(query);
+  }
+
   @Get('cash-sessions')
   @ApiOperation({ summary: 'Cash sessions report (optionally by status)' })
   @ApiQuery({ name: 'status', required: false, enum: ['OPEN', 'CLOSED'] })

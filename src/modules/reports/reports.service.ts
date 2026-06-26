@@ -184,6 +184,93 @@ export class ReportsService {
     `);
   }
 
+  /**
+   * Per-product realized profitability for a range. Uses the immutable sale-line
+   * snapshots: revenue = SUM(lineTotal), COGS = SUM(lineCogs) (FIFO actual cost),
+   * both NET of returns. A line sold in a bulk (wholesale) unit has unitSize > 1;
+   * a line sold per piece has unitSize = 1 — so we split the quantity into
+   * wholesale vs retail. Quantities are normalised to base units (pieces) for the
+   * total. Only COMPLETED sales (voids excluded) count.
+   */
+  async productProfitability(query: ReportRangeDto) {
+    const range = this.dateFilter('s."createdAt"', query);
+    const rows = await this.prisma.$queryRaw<
+      {
+        productId: string;
+        sku: string;
+        name: string;
+        baseUnit: string;
+        bulkUnit: string | null;
+        unitSize: number;
+        buyingPrice: string;
+        sellingPrice: string;
+        bulkSellingPrice: string | null;
+        qtyBase: bigint;
+        wholesaleUnits: bigint;
+        retailUnits: bigint;
+        revenue: string;
+        cogs: string;
+      }[]
+    >(Prisma.sql`
+      SELECT p.id                       AS "productId",
+             p.sku                      AS sku,
+             p.name                     AS name,
+             p."baseUnit"               AS "baseUnit",
+             p."bulkUnit"               AS "bulkUnit",
+             p."unitSize"               AS "unitSize",
+             p."buyingPrice"::text      AS "buyingPrice",
+             p."sellingPrice"::text     AS "sellingPrice",
+             p."bulkSellingPrice"::text AS "bulkSellingPrice",
+             COALESCE(SUM((si.quantity - si."returnedQuantity") * si."unitSize"), 0) AS "qtyBase",
+             COALESCE(SUM(CASE WHEN si."unitSize" > 1 THEN si.quantity - si."returnedQuantity" ELSE 0 END), 0) AS "wholesaleUnits",
+             COALESCE(SUM(CASE WHEN si."unitSize" = 1 THEN si.quantity - si."returnedQuantity" ELSE 0 END), 0) AS "retailUnits",
+             COALESCE(SUM(si."lineTotal" - COALESCE(r.refund, 0)), 0)::text  AS revenue,
+             COALESCE(SUM(si."lineCogs"  - COALESCE(r.cogs_rev, 0)), 0)::text AS cogs
+      FROM sale_items si
+      JOIN sales s    ON s.id = si."saleId"
+      JOIN products p ON p.id = si."productId"
+      LEFT JOIN (
+        SELECT sri."saleItemId",
+               SUM(sri."refundAmount") AS refund,
+               SUM(sri."cogsReversed") AS cogs_rev
+        FROM sale_return_items sri
+        GROUP BY sri."saleItemId"
+      ) r ON r."saleItemId" = si.id
+      WHERE s.status = 'COMPLETED' AND si."itemType" = 'PRODUCT' ${range}
+      GROUP BY p.id
+      HAVING SUM(si.quantity - si."returnedQuantity") > 0
+      ORDER BY (COALESCE(SUM(si."lineTotal" - COALESCE(r.refund, 0)), 0)
+                - COALESCE(SUM(si."lineCogs" - COALESCE(r.cogs_rev, 0)), 0)) DESC;
+    `);
+
+    return rows.map((row) => {
+      const revenue = money(row.revenue);
+      const cogs = money(row.cogs);
+      const grossProfit = sub(revenue, cogs);
+      const margin = revenue.greaterThan(0)
+        ? grossProfit.dividedBy(revenue).times(100)
+        : money(0);
+      return {
+        productId: row.productId,
+        sku: row.sku,
+        name: row.name,
+        baseUnit: row.baseUnit,
+        bulkUnit: row.bulkUnit,
+        unitSize: row.unitSize,
+        buyingPrice: row.buyingPrice,
+        sellingPrice: row.sellingPrice,
+        bulkSellingPrice: row.bulkSellingPrice,
+        qtyBase: Number(row.qtyBase),
+        wholesaleUnits: Number(row.wholesaleUnits),
+        retailUnits: Number(row.retailUnits),
+        revenue: revenue.toFixed(2),
+        cogs: cogs.toFixed(2),
+        grossProfit: grossProfit.toFixed(2),
+        margin: margin.toFixed(1),
+      };
+    });
+  }
+
   // ---- Cash ----------------------------------------------------------------
 
   cashSessions(status?: 'OPEN' | 'CLOSED') {

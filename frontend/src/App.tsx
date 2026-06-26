@@ -16,6 +16,7 @@ import SuppliersPage from '@/pages/SuppliersPage';
 import ExpensesPage from '@/pages/ExpensesPage';
 import CashPage from '@/pages/CashPage';
 import ReportsPage from '@/pages/ReportsPage';
+import ProfitPage from '@/pages/ProfitPage';
 import UsersPage from '@/pages/UsersPage';
 import ActivityLogsPage from '@/pages/ActivityLogsPage';
 import SettingsPage from '@/pages/SettingsPage';
@@ -68,6 +69,14 @@ export default function App() {
           element={
             <AdminRoute>
               <ReportsPage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/profit"
+          element={
+            <AdminRoute>
+              <ProfitPage />
             </AdminRoute>
           }
         />

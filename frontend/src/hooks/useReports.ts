@@ -6,6 +6,7 @@ import type {
   ExpenseByCategory,
   FinancialSummary,
   LowStockRow,
+  ProductProfitRow,
   SalesSeriesPoint,
   StockLevelRow,
   TopProductRow,
@@ -73,6 +74,15 @@ export function useTopProducts(range: DateRange, enabled = true) {
     queryKey: qk.report('top-products', range),
     enabled,
     queryFn: () => unwrap<TopProductRow[]>(api.get('/reports/top-products', { params: clean({ ...range }) })),
+  });
+}
+
+export function useProductProfitability(range: DateRange, enabled = true) {
+  return useQuery({
+    queryKey: qk.report('profitability', range),
+    enabled,
+    queryFn: () =>
+      unwrap<ProductProfitRow[]>(api.get('/reports/profitability', { params: clean({ ...range }) })),
   });
 }
 
