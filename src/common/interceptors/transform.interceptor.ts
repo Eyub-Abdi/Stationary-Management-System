@@ -38,6 +38,9 @@ export class TransformInterceptor<T>
 
   private serialize(value: unknown): unknown {
     if (value === null || value === undefined) return value;
+    // Raw-SQL aggregates (COUNT/SUM of integers) come back as BigInt, which
+    // JSON.stringify cannot serialize. Counts are well within Number range.
+    if (typeof value === 'bigint') return Number(value);
     if (value instanceof Prisma.Decimal) return value.toString();
     if (value instanceof Date) return value.toISOString();
     if (Array.isArray(value)) return value.map((v) => this.serialize(v));
