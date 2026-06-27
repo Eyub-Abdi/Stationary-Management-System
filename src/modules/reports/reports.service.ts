@@ -324,6 +324,41 @@ export class ReportsService {
     `);
   }
 
+  /**
+   * Best-selling service options (e.g. "Printing B&W — A3") by revenue for a
+   * range, net of returns. Services carry no COGS, so this is revenue + count.
+   */
+  async topServices(query: ReportRangeDto, limit = 10) {
+    const range = this.dateFilter('s."createdAt"', query);
+    const rows = await this.prisma.$queryRaw<
+      { serviceVariantId: string; name: string; jobs: bigint; revenue: string }[]
+    >(Prisma.sql`
+      SELECT sv.id AS "serviceVariantId",
+             svc.name || CASE WHEN sv.label <> 'Standard' THEN ' — ' || sv.label ELSE '' END AS name,
+             COALESCE(SUM(si.quantity - si."returnedQuantity"), 0)            AS jobs,
+             COALESCE(SUM(si."lineTotal" - COALESCE(r.refund, 0)), 0)::text   AS revenue
+      FROM sale_items si
+      JOIN sales s             ON s.id = si."saleId"
+      JOIN service_variants sv ON sv.id = si."serviceVariantId"
+      JOIN services svc        ON svc.id = sv."serviceId"
+      LEFT JOIN (
+        SELECT sri."saleItemId", SUM(sri."refundAmount") AS refund
+        FROM sale_return_items sri GROUP BY sri."saleItemId"
+      ) r ON r."saleItemId" = si.id
+      WHERE s.status = 'COMPLETED' AND si."itemType" = 'SERVICE' ${range}
+      GROUP BY sv.id, svc.id
+      HAVING SUM(si.quantity - si."returnedQuantity") > 0
+      ORDER BY COALESCE(SUM(si."lineTotal" - COALESCE(r.refund, 0)), 0) DESC
+      LIMIT ${limit};
+    `);
+    return rows.map((r) => ({
+      serviceVariantId: r.serviceVariantId,
+      name: r.name,
+      jobs: Number(r.jobs),
+      revenue: money(r.revenue).toFixed(2),
+    }));
+  }
+
   // ---- Cash ----------------------------------------------------------------
 
   cashSessions(status?: 'OPEN' | 'CLOSED') {

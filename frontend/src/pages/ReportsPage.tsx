@@ -28,6 +28,7 @@ import {
   useSalesSeries,
   useStockLevels,
   useTopProducts,
+  useTopServices,
   useUserActivityReport,
 } from '@/hooks/useReports';
 import { useSupplierSummary } from '@/hooks/useCatalog';
@@ -88,6 +89,7 @@ export default function ReportsPage() {
   const series = useSalesSeries({ ...r, granularity: rangeKey === 'today' ? 'DAILY' : 'DAILY' });
   const expenseMix = useExpensesByCategory(r);
   const topProducts = useTopProducts(r, tab === 'sales' || tab === 'inventory');
+  const topServices = useTopServices(r, tab === 'sales');
   const stockLevels = useStockLevels(tab === 'inventory');
   const lowStock = useReportLowStock(tab === 'inventory');
   const cash = useCashReport(tab === 'cash');
@@ -263,6 +265,25 @@ export default function ReportsPage() {
                       <TD className="font-medium">{p.name}</TD>
                       <TD align="center" className="font-mono-data">{num(p.units_sold)}</TD>
                       <TD align="right" className="font-mono-data font-semibold">{currency(p.revenue)}</TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            )}
+          </Card>
+          <Card className="lg:col-span-12 overflow-hidden">
+            <CardHeader title="Top Services" subtitle="By revenue · per option (e.g. A4 / A3)" />
+            {topServices.isLoading ? <LoadingState /> : (topServices.data?.length ?? 0) === 0 ? (
+              <EmptyState icon="print" title="No service sales" />
+            ) : (
+              <Table>
+                <THead><TH>Service / option</TH><TH align="center">Jobs</TH><TH align="right">Revenue</TH></THead>
+                <TBody>
+                  {topServices.data!.map((s) => (
+                    <TR key={s.serviceVariantId}>
+                      <TD className="font-medium">{s.name}</TD>
+                      <TD align="center" className="font-mono-data">{s.jobs}</TD>
+                      <TD align="right" className="font-mono-data font-semibold">{currency(s.revenue)}</TD>
                     </TR>
                   ))}
                 </TBody>

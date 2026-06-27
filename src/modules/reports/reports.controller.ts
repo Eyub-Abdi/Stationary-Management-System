@@ -51,6 +51,12 @@ export class ReportsController {
     return this.reports.topProducts(query);
   }
 
+  @Get('top-services')
+  @ApiOperation({ summary: 'Best-selling service options for a range' })
+  topServices(@Query() query: ReportRangeDto) {
+    return this.reports.topServices(query);
+  }
+
   @Get('profitability')
   @ApiOperation({ summary: 'Per-product realized profit (revenue, COGS, margin)' })
   productProfitability(@Query() query: ReportRangeDto) {

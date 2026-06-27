@@ -421,6 +421,13 @@ export interface TopProductRow {
   cogs: string;
 }
 
+export interface TopServiceRow {
+  serviceVariantId: string;
+  name: string;
+  jobs: number;
+  revenue: string;
+}
+
 export interface UserActivityRow {
   userId: string;
   name: string;

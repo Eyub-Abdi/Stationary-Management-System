@@ -11,6 +11,7 @@ import type {
   SalesSeriesPoint,
   StockLevelRow,
   TopProductRow,
+  TopServiceRow,
   UserActivityRow,
 } from '@/types';
 
@@ -93,6 +94,14 @@ export function useProductMovement(range: DateRange, enabled = true) {
     enabled,
     queryFn: () =>
       unwrap<ProductMovementRow[]>(api.get('/reports/product-movement', { params: clean({ ...range }) })),
+  });
+}
+
+export function useTopServices(range: DateRange, enabled = true) {
+  return useQuery({
+    queryKey: qk.report('top-services', range),
+    enabled,
+    queryFn: () => unwrap<TopServiceRow[]>(api.get('/reports/top-services', { params: clean({ ...range }) })),
   });
 }
 
