@@ -33,7 +33,7 @@ export function useValuation() {
 }
 
 export interface AdjustStockInput {
-  productId: string;
+  variantId: string;
   quantityChange: number;
   reason: string;
   unitCost?: number;

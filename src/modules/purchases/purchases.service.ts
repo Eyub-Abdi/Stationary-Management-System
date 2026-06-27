@@ -66,16 +66,21 @@ export class PurchasesService {
         orderBy: { openedAt: 'desc' },
         select: { id: true },
       });
-      // Validate products up-front (with their dual-unit config).
-      const productIds = [...new Set(dto.items.map((i) => i.productId))];
-      const products = await tx.product.findMany({
-        where: { id: { in: productIds } },
-        select: { id: true, name: true, baseUnit: true, bulkUnit: true, unitSize: true },
+      // Validate variants up-front (with their product's dual-unit config).
+      const variantIds = [...new Set(dto.items.map((i) => i.variantId))];
+      const variants = await tx.productVariant.findMany({
+        where: { id: { in: variantIds } },
+        select: {
+          id: true,
+          label: true,
+          productId: true,
+          product: { select: { name: true, baseUnit: true, bulkUnit: true, unitSize: true } },
+        },
       });
-      const byId = new Map(products.map((p) => [p.id, p]));
-      for (const id of productIds) {
+      const byId = new Map(variants.map((v) => [v.id, v]));
+      for (const id of variantIds) {
         if (!byId.has(id)) {
-          throw new NotFoundException(`Product ${id} not found`);
+          throw new NotFoundException(`Variant ${id} not found`);
         }
       }
 
@@ -94,14 +99,15 @@ export class PurchasesService {
 
       // Resolve per-line units and totals first.
       const resolved = dto.items.map((item) => {
-        const product = byId.get(item.productId)!;
+        const variant = byId.get(item.variantId)!;
+        const product = variant.product;
         const sellUnit = item.sellUnit ?? 'BASE';
         let unitSize = 1;
         let unitLabel = product.baseUnit;
         if (sellUnit === 'BULK') {
           if (!product.bulkUnit || product.unitSize <= 1) {
             throw new BadRequestException(
-              `Product ${product.name} is not bought by the unit; only individual pieces.`,
+              `${product.name} is not bought by the unit; only individual pieces.`,
             );
           }
           unitSize = product.unitSize;
@@ -111,7 +117,11 @@ export class PurchasesService {
         const basePieces = item.quantity * unitSize;
         // Per-base-unit cost drives FIFO COGS (round to 2dp for storage).
         const pieceCost = round(money(item.unitCost).dividedBy(unitSize));
-        return { item, product, unitSize, unitLabel, lineTotal, basePieces, pieceCost };
+        const nameSnapshot =
+          variant.label && variant.label !== 'Default'
+            ? `${product.name} — ${variant.label}`
+            : product.name;
+        return { item, variant, unitSize, unitLabel, lineTotal, basePieces, pieceCost, nameSnapshot };
       });
 
       const totalCost = resolved.reduce((a, r) => add(a, r.lineTotal), money(0));
@@ -150,8 +160,9 @@ export class PurchasesService {
         const purchaseItem = await tx.purchaseItem.create({
           data: {
             purchaseId: purchase.id,
-            productId: r.item.productId,
-            productNameSnapshot: r.product.name,
+            productId: r.variant.productId,
+            variantId: r.variant.id,
+            productNameSnapshot: r.nameSnapshot,
             quantity: r.item.quantity,
             unitLabel: r.unitLabel,
             unitSize: r.unitSize,
@@ -161,7 +172,8 @@ export class PurchasesService {
         });
 
         await this.inventory.addBatchTx(tx, {
-          productId: r.item.productId,
+          variantId: r.variant.id,
+          productId: r.variant.productId,
           quantity: r.basePieces,
           unitCost: r.pieceCost,
           purchaseDate: dto.purchaseDate,
@@ -170,7 +182,8 @@ export class PurchasesService {
         });
 
         await this.inventory.applyMovementTx(tx, {
-          productId: r.item.productId,
+          variantId: r.variant.id,
+          productId: r.variant.productId,
           type: 'PURCHASE',
           quantity: r.basePieces,
           userId,
@@ -179,9 +192,9 @@ export class PurchasesService {
           unitCost: r.pieceCost,
         });
 
-        // Refresh reference buying price (per base unit; not historical COGS).
-        await tx.product.update({
-          where: { id: r.item.productId },
+        // Refresh the variant's reference buying price (per base unit).
+        await tx.productVariant.update({
+          where: { id: r.variant.id },
           data: { buyingPrice: toPrisma(r.pieceCost) },
         });
       }

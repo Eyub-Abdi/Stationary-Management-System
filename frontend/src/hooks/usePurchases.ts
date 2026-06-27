@@ -7,7 +7,7 @@ const clean = (p: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined && v !== '' && v !== null));
 
 export interface PurchaseItemInput {
-  productId: string;
+  variantId: string;
   sellUnit?: SellUnit;
   quantity: number;
   unitCost: number;

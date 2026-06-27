@@ -7,5 +7,5 @@ import { CreateProductDto } from './create-product.dto';
  * it changes only through purchases, sales, adjustments and returns.
  */
 export class UpdateProductDto extends PartialType(
-  OmitType(CreateProductDto, ['sku'] as const),
+  OmitType(CreateProductDto, ['sku', 'variants'] as const),
 ) {}

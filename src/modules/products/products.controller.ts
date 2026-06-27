@@ -32,8 +32,10 @@ import {
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AuditService } from '../audit/audit.service';
 import { CreateProductDto } from './dto/create-product.dto';
+import { CreateVariantDto } from './dto/create-variant.dto';
 import { ProductQueryDto } from './dto/product-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { UpdateVariantDto } from './dto/update-variant.dto';
 import { ProductsService } from './products.service';
 
 @ApiTags('Products')
@@ -46,13 +48,13 @@ export class ProductsController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'List products (filter, search, paginate)' })
+  @ApiOperation({ summary: 'List products with their variants (filter, search, paginate)' })
   findAll(@Query() query: ProductQueryDto) {
     return this.products.findAll(query);
   }
 
   @Get('low-stock')
-  @ApiOperation({ summary: 'Products at or below minimum stock level' })
+  @ApiOperation({ summary: 'Variants at or below minimum stock level' })
   lowStock() {
     return this.products.lowStock();
   }
@@ -64,7 +66,7 @@ export class ProductsController {
 
   @Roles(Role.ADMIN)
   @Post()
-  @ApiOperation({ summary: 'Create a product (admin)' })
+  @ApiOperation({ summary: 'Create a product with one or more variants (admin)' })
   async create(
     @Body() dto: CreateProductDto,
     @CurrentUser() actor: AuthenticatedUser,
@@ -75,7 +77,7 @@ export class ProductsController {
       action: 'PRODUCT_CREATED',
       entityType: 'Product',
       entityId: product.id,
-      metadata: { sku: product.sku, sellingPrice: product.sellingPrice.toString() },
+      metadata: { sku: product.sku, variantCount: product.variants.length },
     });
     return product;
   }
@@ -88,19 +90,89 @@ export class ProductsController {
     @Body() dto: UpdateProductDto,
     @CurrentUser() actor: AuthenticatedUser,
   ) {
-    const before = await this.products.findOne(id);
     const product = await this.products.update(id, dto);
     await this.audit.record({
       userId: actor.id,
       action: 'PRODUCT_UPDATED',
       entityType: 'Product',
       entityId: id,
-      metadata: {
-        before: { sellingPrice: before.sellingPrice.toString() },
-        changes: dto,
-      },
+      metadata: { changes: dto },
     });
     return product;
+  }
+
+  // ---- Variants -----------------------------------------------------------
+
+  @Roles(Role.ADMIN)
+  @Post(':id/variants')
+  @ApiOperation({ summary: 'Add a variant to a product (admin)' })
+  async addVariant(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateVariantDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    const variant = await this.products.addVariant(id, dto);
+    await this.audit.record({
+      userId: actor.id,
+      action: 'VARIANT_CREATED',
+      entityType: 'ProductVariant',
+      entityId: variant.id,
+      metadata: { productId: id, sku: variant.sku, label: variant.label },
+    });
+    return variant;
+  }
+
+  @Roles(Role.ADMIN)
+  @Patch('variants/:variantId')
+  @ApiOperation({ summary: 'Update a variant (admin). Does not affect history.' })
+  async updateVariant(
+    @Param('variantId', ParseUUIDPipe) variantId: string,
+    @Body() dto: UpdateVariantDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    const variant = await this.products.updateVariant(variantId, dto);
+    await this.audit.record({
+      userId: actor.id,
+      action: 'VARIANT_UPDATED',
+      entityType: 'ProductVariant',
+      entityId: variantId,
+      metadata: { changes: dto },
+    });
+    return variant;
+  }
+
+  @Roles(Role.ADMIN)
+  @Delete('variants/:variantId')
+  @ApiOperation({ summary: 'Deactivate a variant (soft, preserves history)' })
+  async deactivateVariant(
+    @Param('variantId', ParseUUIDPipe) variantId: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    const variant = await this.products.deactivateVariant(variantId);
+    await this.audit.record({
+      userId: actor.id,
+      action: 'VARIANT_DEACTIVATED',
+      entityType: 'ProductVariant',
+      entityId: variantId,
+    });
+    return variant;
+  }
+
+  @Roles(Role.ADMIN)
+  @Delete('variants/:variantId/permanent')
+  @ApiOperation({ summary: 'Permanently delete a variant (admin, only if never transacted)' })
+  async removeVariant(
+    @Param('variantId', ParseUUIDPipe) variantId: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    const result = await this.products.removeVariant(variantId);
+    await this.audit.record({
+      userId: actor.id,
+      action: 'VARIANT_DELETED',
+      entityType: 'ProductVariant',
+      entityId: variantId,
+    });
+    return result;
   }
 
   @Roles(Role.ADMIN)

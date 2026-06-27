@@ -2,22 +2,25 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ProductStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
+  IsArray,
   IsEnum,
   IsInt,
   IsNotEmpty,
-  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { CreateVariantDto } from './create-variant.dto';
 
 export class CreateProductDto {
   @ApiPropertyOptional({
     example: 'A4-RM-001',
-    description: 'Optional. Auto-generated from the product name when omitted.',
+    description: 'Optional product group code. Auto-generated from the name when omitted.',
   })
   @IsOptional()
   @IsString()
@@ -49,20 +52,7 @@ export class CreateProductDto {
   @IsUUID()
   categoryId?: string;
 
-  @ApiProperty({ example: 12000, description: 'Selling price per base unit / piece (2 dp).' })
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  sellingPrice!: number;
-
-  @ApiPropertyOptional({ example: 9000, description: 'Reference buying price per base unit (true COGS comes from purchase batches).' })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  buyingPrice?: number;
-
-  // --- Dual unit of measure -------------------------------------------------
+  // --- Dual unit of measure (shared by all variants) ------------------------
 
   @ApiPropertyOptional({ example: 'pcs', default: 'pcs', description: 'Name of the smallest sellable unit (piece).' })
   @IsOptional()
@@ -83,22 +73,19 @@ export class CreateProductDto {
   @Min(1)
   unitSize?: number;
 
-  @ApiPropertyOptional({ example: 130000, description: 'Selling price for one whole bulk unit. Defaults to sellingPrice × unitSize.' })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  bulkSellingPrice?: number;
-
-  @ApiPropertyOptional({ example: 10 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  minStockLevel?: number;
-
   @ApiPropertyOptional({ enum: ProductStatus, default: ProductStatus.ACTIVE })
   @IsOptional()
   @IsEnum(ProductStatus)
   status?: ProductStatus;
+
+  @ApiProperty({
+    type: [CreateVariantDto],
+    description: 'At least one variant. A single-variant product behaves like a plain product.',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => CreateVariantDto)
+  @IsNotEmpty()
+  variants!: CreateVariantDto[];
 }

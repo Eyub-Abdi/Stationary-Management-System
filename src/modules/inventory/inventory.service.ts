@@ -16,6 +16,9 @@ export interface FifoResult {
 }
 
 interface MovementInput {
+  // Stock lives on the variant; productId is kept on the ledger row (denormalized)
+  // for product-level reporting.
+  variantId: string;
   productId: string;
   type: InventoryMovementType;
   /** Signed: +in / -out. */
@@ -45,10 +48,10 @@ export class InventoryService {
     input: MovementInput,
   ): Promise<{ beforeQty: number; afterQty: number }> {
     const locked = await tx.$queryRaw<{ currentStock: number }[]>(Prisma.sql`
-      SELECT "currentStock" FROM products WHERE id = ${input.productId}::uuid FOR UPDATE
+      SELECT "currentStock" FROM product_variants WHERE id = ${input.variantId}::uuid FOR UPDATE
     `);
     if (locked.length === 0) {
-      throw new ConflictException('Product not found while moving stock');
+      throw new ConflictException('Variant not found while moving stock');
     }
     const beforeQty = locked[0].currentStock;
     const afterQty = beforeQty + input.quantity;
@@ -58,13 +61,14 @@ export class InventoryService {
       );
     }
 
-    await tx.product.update({
-      where: { id: input.productId },
+    await tx.productVariant.update({
+      where: { id: input.variantId },
       data: { currentStock: afterQty },
     });
 
     await tx.inventoryMovement.create({
       data: {
+        variantId: input.variantId,
         productId: input.productId,
         type: input.type,
         quantity: input.quantity,
@@ -88,6 +92,7 @@ export class InventoryService {
   async addBatchTx(
     tx: Prisma.TransactionClient,
     params: {
+      variantId: string;
       productId: string;
       quantity: number;
       unitCost: Decimal;
@@ -98,6 +103,7 @@ export class InventoryService {
   ): Promise<string> {
     const batch = await tx.inventoryBatch.create({
       data: {
+        variantId: params.variantId,
         productId: params.productId,
         quantity: params.quantity,
         remainingQuantity: params.quantity,
@@ -118,7 +124,7 @@ export class InventoryService {
    */
   async consumeFifoTx(
     tx: Prisma.TransactionClient,
-    productId: string,
+    variantId: string,
     quantity: number,
   ): Promise<FifoResult> {
     if (quantity <= 0) {
@@ -130,7 +136,7 @@ export class InventoryService {
     >(Prisma.sql`
       SELECT id, "remainingQuantity", "unitCost"
       FROM inventory_batches
-      WHERE "productId" = ${productId}::uuid AND "remainingQuantity" > 0
+      WHERE "variantId" = ${variantId}::uuid AND "remainingQuantity" > 0
       ORDER BY "purchaseDate" ASC, "createdAt" ASC
       FOR UPDATE
     `);

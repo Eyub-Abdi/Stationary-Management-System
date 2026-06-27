@@ -147,10 +147,17 @@ export class ReportsService {
         valuation: string;
       }[]
     >(Prisma.sql`
-      SELECT p.sku, p.name, p."currentStock", p."minStockLevel",
-             COALESCE(SUM(b."remainingQuantity" * b."unitCost"), 0)::text AS valuation
+      SELECT p.sku,
+             p.name,
+             COALESCE(SUM(v."currentStock"), 0)::int  AS "currentStock",
+             COALESCE(SUM(v."minStockLevel"), 0)::int AS "minStockLevel",
+             COALESCE(SUM(b.value), 0)::text          AS valuation
       FROM products p
-      LEFT JOIN inventory_batches b ON b."productId" = p.id
+      LEFT JOIN product_variants v ON v."productId" = p.id
+      LEFT JOIN (
+        SELECT "variantId", SUM("remainingQuantity" * "unitCost") AS value
+        FROM inventory_batches GROUP BY "variantId"
+      ) b ON b."variantId" = v.id
       GROUP BY p.id
       ORDER BY p.name ASC;
     `);
@@ -159,10 +166,14 @@ export class ReportsService {
 
   lowStock() {
     return this.prisma.$queryRaw(Prisma.sql`
-      SELECT sku, name, "currentStock", "minStockLevel"
-      FROM products
-      WHERE status = 'ACTIVE' AND "currentStock" <= "minStockLevel"
-      ORDER BY ("currentStock" - "minStockLevel") ASC;
+      SELECT v.sku AS sku,
+             p.name || CASE WHEN v.label <> 'Default' THEN ' — ' || v.label ELSE '' END AS name,
+             v."currentStock",
+             v."minStockLevel"
+      FROM product_variants v
+      JOIN products p ON p.id = v."productId"
+      WHERE v.status = 'ACTIVE' AND v."currentStock" <= v."minStockLevel"
+      ORDER BY (v."currentStock" - v."minStockLevel") ASC;
     `);
   }
 
@@ -212,23 +223,24 @@ export class ReportsService {
         cogs: string;
       }[]
     >(Prisma.sql`
-      SELECT p.id                       AS "productId",
-             p.sku                      AS sku,
-             p.name                     AS name,
+      SELECT v.id                       AS "productId",
+             v.sku                      AS sku,
+             p.name || CASE WHEN v.label <> 'Default' THEN ' — ' || v.label ELSE '' END AS name,
              p."baseUnit"               AS "baseUnit",
              p."bulkUnit"               AS "bulkUnit",
              p."unitSize"               AS "unitSize",
-             p."buyingPrice"::text      AS "buyingPrice",
-             p."sellingPrice"::text     AS "sellingPrice",
-             p."bulkSellingPrice"::text AS "bulkSellingPrice",
+             v."buyingPrice"::text      AS "buyingPrice",
+             v."sellingPrice"::text     AS "sellingPrice",
+             v."bulkSellingPrice"::text AS "bulkSellingPrice",
              COALESCE(SUM((si.quantity - si."returnedQuantity") * si."unitSize"), 0) AS "qtyBase",
              COALESCE(SUM(CASE WHEN si."unitSize" > 1 THEN si.quantity - si."returnedQuantity" ELSE 0 END), 0) AS "wholesaleUnits",
              COALESCE(SUM(CASE WHEN si."unitSize" = 1 THEN si.quantity - si."returnedQuantity" ELSE 0 END), 0) AS "retailUnits",
              COALESCE(SUM(si."lineTotal" - COALESCE(r.refund, 0)), 0)::text  AS revenue,
              COALESCE(SUM(si."lineCogs"  - COALESCE(r.cogs_rev, 0)), 0)::text AS cogs
       FROM sale_items si
-      JOIN sales s    ON s.id = si."saleId"
-      JOIN products p ON p.id = si."productId"
+      JOIN sales s            ON s.id = si."saleId"
+      JOIN product_variants v ON v.id = si."variantId"
+      JOIN products p         ON p.id = v."productId"
       LEFT JOIN (
         SELECT sri."saleItemId",
                SUM(sri."refundAmount") AS refund,
@@ -237,7 +249,7 @@ export class ReportsService {
         GROUP BY sri."saleItemId"
       ) r ON r."saleItemId" = si.id
       WHERE s.status = 'COMPLETED' AND si."itemType" = 'PRODUCT' ${range}
-      GROUP BY p.id
+      GROUP BY v.id, p.id
       HAVING SUM(si.quantity - si."returnedQuantity") > 0
       ORDER BY (COALESCE(SUM(si."lineTotal" - COALESCE(r.refund, 0)), 0)
                 - COALESCE(SUM(si."lineCogs" - COALESCE(r.cogs_rev, 0)), 0)) DESC;
@@ -283,31 +295,32 @@ export class ReportsService {
   async productMovement(query: ReportRangeDto) {
     const range = this.dateFilter('s."createdAt"', query);
     return this.prisma.$queryRaw(Prisma.sql`
-      SELECT p.id            AS "productId",
-             p.sku           AS sku,
-             p.name          AS name,
+      SELECT v.id            AS "productId",
+             v.sku           AS sku,
+             p.name || CASE WHEN v.label <> 'Default' THEN ' — ' || v.label ELSE '' END AS name,
              p."baseUnit"    AS "baseUnit",
-             p."currentStock" AS "currentStock",
+             v."currentStock" AS "currentStock",
              COALESCE(m.units_sold, 0)::int AS "unitsSold",
              ls.last_sold    AS "lastSoldAt"
-      FROM products p
+      FROM product_variants v
+      JOIN products p ON p.id = v."productId"
       LEFT JOIN (
-        SELECT si."productId",
+        SELECT si."variantId",
                SUM((si.quantity - si."returnedQuantity") * si."unitSize") AS units_sold
         FROM sale_items si
         JOIN sales s ON s.id = si."saleId"
         WHERE s.status = 'COMPLETED' AND si."itemType" = 'PRODUCT' ${range}
-        GROUP BY si."productId"
-      ) m ON m."productId" = p.id
+        GROUP BY si."variantId"
+      ) m ON m."variantId" = v.id
       LEFT JOIN (
-        SELECT si."productId", MAX(s."createdAt") AS last_sold
+        SELECT si."variantId", MAX(s."createdAt") AS last_sold
         FROM sale_items si
         JOIN sales s ON s.id = si."saleId"
         WHERE s.status = 'COMPLETED' AND si."itemType" = 'PRODUCT'
-        GROUP BY si."productId"
-      ) ls ON ls."productId" = p.id
-      WHERE p.status = 'ACTIVE'
-      ORDER BY "unitsSold" DESC, p.name ASC;
+        GROUP BY si."variantId"
+      ) ls ON ls."variantId" = v.id
+      WHERE p.status = 'ACTIVE' AND v.status = 'ACTIVE'
+      ORDER BY "unitsSold" DESC, name ASC;
     `);
   }
 

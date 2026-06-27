@@ -162,7 +162,12 @@ function MovementsTab() {
               {data!.data.map((m) => (
                 <TR key={m.id}>
                   <TD className="whitespace-nowrap text-on-surface-variant">{formatDateTime(m.createdAt)}</TD>
-                  <TD className="font-medium">{m.product?.name ?? '—'}</TD>
+                  <TD className="font-medium">
+                    {m.product?.name ?? '—'}
+                    {m.variant && m.variant.label !== 'Default' && (
+                      <span className="text-on-surface-variant"> — {m.variant.label}</span>
+                    )}
+                  </TD>
                   <TD align="center"><Badge tone={MOVE_TONE[m.type]}>{humanize(m.type)}</Badge></TD>
                   <TD align="right">
                     <span className={cn('font-mono-data font-bold', m.quantity >= 0 ? 'text-secondary' : 'text-error')}>
@@ -263,7 +268,19 @@ function AdjustStockModal({ open, onClose }: { open: boolean; onClose: () => voi
   const adjust = useAdjustStock();
   const { data: products } = useProducts({ status: 'ACTIVE', limit: 100 });
 
-  const [productId, setProductId] = useState('');
+  // One option per active variant.
+  const variantOptions = (products?.data ?? []).flatMap((p) =>
+    p.variants
+      .filter((v) => v.status === 'ACTIVE')
+      .map((v) => ({
+        variantId: v.id,
+        currentStock: v.currentStock,
+        label:
+          v.label && v.label !== 'Default' ? `${p.name} — ${v.label}` : p.name,
+      })),
+  );
+
+  const [variantId, setVariantId] = useState('');
   const [direction, setDirection] = useState<'in' | 'out'>('in');
   const [quantity, setQuantity] = useState('');
   const [reason, setReason] = useState('');
@@ -271,7 +288,7 @@ function AdjustStockModal({ open, onClose }: { open: boolean; onClose: () => voi
 
   useEffect(() => {
     if (open) {
-      setProductId('');
+      setVariantId('');
       setDirection('in');
       setQuantity('');
       setReason('');
@@ -280,14 +297,14 @@ function AdjustStockModal({ open, onClose }: { open: boolean; onClose: () => voi
   }, [open]);
 
   const submit = async () => {
-    if (!productId) return toast.error('Select a product');
+    if (!variantId) return toast.error('Select a product variant');
     const qty = parseInt(quantity, 10);
     if (!qty || qty <= 0) return toast.error('Enter a quantity greater than zero');
     if (!reason.trim()) return toast.error('A reason is required');
     const quantityChange = direction === 'in' ? qty : -qty;
     try {
       await adjust.mutateAsync({
-        productId,
+        variantId,
         quantityChange,
         reason: reason.trim(),
         unitCost: direction === 'in' && unitCost ? num(unitCost) : undefined,
@@ -313,11 +330,11 @@ function AdjustStockModal({ open, onClose }: { open: boolean; onClose: () => voi
       }
     >
       <div className="space-y-4">
-        <Field label="Product" required>
-          <Select value={productId} onChange={(e) => setProductId(e.target.value)}>
-            <option value="">Select product…</option>
-            {products?.data.map((p) => (
-              <option key={p.id} value={p.id}>{p.name} — {p.currentStock} in stock</option>
+        <Field label="Product / variant" required>
+          <Select value={variantId} onChange={(e) => setVariantId(e.target.value)}>
+            <option value="">Select variant…</option>
+            {variantOptions.map((o) => (
+              <option key={o.variantId} value={o.variantId}>{o.label} — {o.currentStock} in stock</option>
             ))}
           </Select>
         </Field>

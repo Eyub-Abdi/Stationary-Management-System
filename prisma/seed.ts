@@ -59,7 +59,23 @@ async function main() {
     await prisma.product.upsert({
       where: { sku: p.sku },
       update: {},
-      create: { ...p, status: ProductStatus.ACTIVE },
+      create: {
+        sku: p.sku,
+        name: p.name,
+        categoryId: p.categoryId,
+        status: ProductStatus.ACTIVE,
+        variants: {
+          create: [
+            {
+              sku: p.sku,
+              label: 'Default',
+              sellingPrice: p.sellingPrice,
+              minStockLevel: p.minStockLevel,
+              isDefault: true,
+            },
+          ],
+        },
+      },
     });
   }
   console.log(`✓ ${products.length} products ready`);

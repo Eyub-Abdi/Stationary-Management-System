@@ -21,6 +21,7 @@ import { SaleQueryDto } from './dto/sale-query.dto';
 interface ComputedLine {
   itemType: SaleItemType;
   productId?: string;
+  variantId?: string;
   serviceId?: string;
   nameSnapshot: string;
   unitPriceSnapshot: Decimal;
@@ -204,13 +205,14 @@ export class SalesService {
         if (line.itemType === 'PRODUCT') {
           const fifo = await this.inventory.consumeFifoTx(
             tx,
-            line.productId!,
+            line.variantId!,
             line.basePieces,
           );
           lineCogs = fifo.totalCost;
           allocations = fifo.allocations;
 
           await this.inventory.applyMovementTx(tx, {
+            variantId: line.variantId!,
             productId: line.productId!,
             type: 'SALE',
             quantity: -line.basePieces,
@@ -225,6 +227,7 @@ export class SalesService {
             saleId: sale.id,
             itemType: line.itemType,
             productId: line.productId,
+            variantId: line.variantId,
             serviceId: line.serviceId,
             nameSnapshot: line.nameSnapshot,
             unitPriceSnapshot: toPrisma(line.unitPriceSnapshot),
@@ -310,7 +313,7 @@ export class SalesService {
       }
 
       for (const item of sale.items) {
-        if (item.itemType !== 'PRODUCT' || !item.productId) continue;
+        if (item.itemType !== 'PRODUCT' || !item.productId || !item.variantId) continue;
 
         await this.inventory.restoreFifoTx(
           tx,
@@ -318,6 +321,7 @@ export class SalesService {
         );
 
         await this.inventory.applyMovementTx(tx, {
+          variantId: item.variantId,
           productId: item.productId,
           type: 'RETURN',
           quantity: item.quantity * item.unitSize,
@@ -434,7 +438,7 @@ export class SalesService {
         const refund = round(mul(unitNet, line.quantity));
 
         let cogsReversed = money(0);
-        if (item.itemType === 'PRODUCT' && item.productId) {
+        if (item.itemType === 'PRODUCT' && item.productId && item.variantId) {
           // Inventory is tracked in base units; convert returned units to pieces.
           let toRestore = line.quantity * item.unitSize;
           for (const alloc of item.allocations) {
@@ -456,6 +460,7 @@ export class SalesService {
           }
 
           await this.inventory.applyMovementTx(tx, {
+            variantId: item.variantId,
             productId: item.productId,
             type: 'RETURN',
             quantity: line.quantity * item.unitSize,
@@ -593,14 +598,23 @@ export class SalesService {
       const discount = money(item.discount ?? 0);
 
       if (item.itemType === 'PRODUCT') {
-        if (!item.productId) {
-          throw new BadRequestException('productId is required for PRODUCT lines');
+        if (!item.variantId) {
+          throw new BadRequestException('variantId is required for PRODUCT lines');
         }
-        const product = await tx.product.findUnique({ where: { id: item.productId } });
-        if (!product) throw new NotFoundException(`Product ${item.productId} not found`);
-        if (product.status !== 'ACTIVE') {
-          throw new ForbiddenException(`Product ${product.name} is inactive`);
+        const variant = await tx.productVariant.findUnique({
+          where: { id: item.variantId },
+          include: { product: true },
+        });
+        if (!variant) throw new NotFoundException(`Variant ${item.variantId} not found`);
+        const product = variant.product;
+        if (product.status !== 'ACTIVE' || variant.status !== 'ACTIVE') {
+          throw new ForbiddenException(`${product.name} is inactive`);
         }
+
+        const displayName =
+          variant.label && variant.label !== 'Default'
+            ? `${product.name} — ${variant.label}`
+            : product.name;
 
         const sellUnit = item.sellUnit ?? 'BASE';
         let unitPrice: Decimal;
@@ -610,28 +624,29 @@ export class SalesService {
         if (sellUnit === 'BULK') {
           if (!product.bulkUnit || product.unitSize <= 1) {
             throw new BadRequestException(
-              `Product ${product.name} is not sold by the unit; only individual pieces.`,
+              `${displayName} is not sold by the unit; only individual pieces.`,
             );
           }
           unitSize = product.unitSize;
           unitLabel = product.bulkUnit;
           // Bulk price falls back to per-piece price * pack size when unset.
-          unitPrice = product.bulkSellingPrice
-            ? money(product.bulkSellingPrice)
-            : mul(product.sellingPrice, unitSize);
+          unitPrice = variant.bulkSellingPrice
+            ? money(variant.bulkSellingPrice)
+            : mul(variant.sellingPrice, unitSize);
         } else {
           unitSize = 1;
           unitLabel = product.baseUnit;
-          unitPrice = money(product.sellingPrice);
+          unitPrice = money(variant.sellingPrice);
         }
 
         const lineGross = mul(unitPrice, item.quantity);
-        this.assertDiscount(discount, lineGross, product.name);
+        this.assertDiscount(discount, lineGross, displayName);
 
         lines.push({
           itemType: 'PRODUCT',
           productId: product.id,
-          nameSnapshot: product.name,
+          variantId: variant.id,
+          nameSnapshot: displayName,
           unitPriceSnapshot: unitPrice,
           quantity: item.quantity,
           unitLabel,

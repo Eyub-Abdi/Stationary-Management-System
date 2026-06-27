@@ -24,27 +24,30 @@ export class InventoryAdminService {
 
   async adjust(dto: AdjustStockDto, userId: string) {
     return this.prisma.runSerializable(async (tx) => {
-      const product = await tx.product.findUnique({
-        where: { id: dto.productId },
+      const variant = await tx.productVariant.findUnique({
+        where: { id: dto.variantId },
       });
-      if (!product) throw new NotFoundException('Product not found');
+      if (!variant) throw new NotFoundException('Variant not found');
+      const productId = variant.productId;
 
       // For positive adjustments we add a costed FIFO batch.
       // For negative adjustments we consume FIFO to keep valuation correct.
       if (dto.quantityChange > 0) {
-        const unitCost = money(dto.unitCost ?? product.buyingPrice);
+        const unitCost = money(dto.unitCost ?? variant.buyingPrice);
         await this.inventory.addBatchTx(tx, {
-          productId: dto.productId,
+          variantId: dto.variantId,
+          productId,
           quantity: dto.quantityChange,
           unitCost,
           purchaseDate: new Date(),
         });
       } else {
-        await this.inventory.consumeFifoTx(tx, dto.productId, -dto.quantityChange);
+        await this.inventory.consumeFifoTx(tx, dto.variantId, -dto.quantityChange);
       }
 
       const { beforeQty, afterQty } = await this.inventory.applyMovementTx(tx, {
-        productId: dto.productId,
+        variantId: dto.variantId,
+        productId,
         type: 'ADJUSTMENT',
         quantity: dto.quantityChange,
         userId,
@@ -55,7 +58,8 @@ export class InventoryAdminService {
 
       const adjustment = await tx.inventoryAdjustment.create({
         data: {
-          productId: dto.productId,
+          variantId: dto.variantId,
+          productId,
           userId,
           quantityChange: dto.quantityChange,
           beforeQty,
@@ -68,8 +72,8 @@ export class InventoryAdminService {
       await this.audit.recordTx(tx, {
         userId,
         action: 'INVENTORY_ADJUSTED',
-        entityType: 'Product',
-        entityId: dto.productId,
+        entityType: 'ProductVariant',
+        entityId: dto.variantId,
         metadata: {
           adjustmentId: adjustment.id,
           quantityChange: dto.quantityChange,
@@ -91,7 +95,10 @@ export class InventoryAdminService {
     const [data, total] = await this.prisma.$transaction([
       this.prisma.inventoryMovement.findMany({
         where,
-        include: { product: { select: { sku: true, name: true } } },
+        include: {
+          product: { select: { sku: true, name: true } },
+          variant: { select: { sku: true, label: true } },
+        },
         orderBy: { createdAt: 'desc' },
         skip: query.skip,
         take: query.limit,

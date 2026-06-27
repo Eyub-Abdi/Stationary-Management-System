@@ -18,9 +18,9 @@ import {
 } from 'class-validator';
 
 export class PurchaseItemDto {
-  @ApiProperty()
+  @ApiProperty({ description: 'The product variant being purchased.' })
   @IsUUID()
-  productId!: string;
+  variantId!: string;
 
   @ApiPropertyOptional({
     enum: SellUnit,

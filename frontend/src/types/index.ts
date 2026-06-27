@@ -88,6 +88,23 @@ export interface Category {
   _count?: { products: number };
 }
 
+// A sellable variant of a product — its own SKU, price, stock and cost.
+export interface ProductVariant {
+  id: string;
+  productId: string;
+  sku: string;
+  label: string;
+  sellingPrice: string;
+  buyingPrice: string;
+  bulkSellingPrice: string | null;
+  currentStock: number;
+  minStockLevel: number;
+  isDefault: boolean;
+  status: ProductStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Product {
   id: string;
   sku: string;
@@ -96,16 +113,12 @@ export interface Product {
   imageUrl: string | null;
   categoryId: string | null;
   category?: Category | null;
-  sellingPrice: string;
-  buyingPrice: string;
-  // Dual unit of measure. Stock is always in base units (pieces).
+  // Dual unit of measure (shared by all variants). Stock is in base units.
   baseUnit: string;
   bulkUnit: string | null;
   unitSize: number;
-  bulkSellingPrice: string | null;
-  currentStock: number;
-  minStockLevel: number;
   status: ProductStatus;
+  variants: ProductVariant[];
   createdAt: string;
   updatedAt: string;
 }
@@ -265,7 +278,9 @@ export interface Purchase {
 export interface InventoryMovement {
   id: string;
   productId: string;
+  variantId: string;
   product?: { name: string; sku: string };
+  variant?: { sku: string; label: string };
   type: InventoryMovementType;
   quantity: number;
   beforeQty: number;

@@ -135,7 +135,7 @@ export default function PurchasesPage() {
 
 interface DraftItem {
   key: string;
-  productId: string;
+  variantId: string;
   sellUnit: SellUnit;
   quantity: string;
   unitCost: string;
@@ -147,9 +147,26 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
   const { data: products } = useProducts({ status: 'ACTIVE', limit: 100 });
   const { data: suppliers } = useSuppliers({ limit: 100 });
 
-  const productById = useMemo(
-    () => new Map((products?.data ?? []).map((p) => [p.id, p] as const)),
+  // Flatten products → one option per active variant.
+  const variantOptions = useMemo(
+    () =>
+      (products?.data ?? []).flatMap((p) =>
+        p.variants
+          .filter((v) => v.status === 'ACTIVE')
+          .map((v) => ({
+            variantId: v.id,
+            product: p,
+            label:
+              v.label && v.label !== 'Default'
+                ? `${p.name} — ${v.label} (${v.sku})`
+                : `${p.name} (${v.sku})`,
+          })),
+      ),
     [products],
+  );
+  const variantById = useMemo(
+    () => new Map(variantOptions.map((o) => [o.variantId, o] as const)),
+    [variantOptions],
   );
 
   const [supplierId, setSupplierId] = useState('');
@@ -166,14 +183,14 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
       setPayment('CASH');
       setAmountPaid('');
       setNotes('');
-      setItems([{ key: crypto.randomUUID(), productId: '', sellUnit: 'BASE', quantity: '1', unitCost: '' }]);
+      setItems([{ key: crypto.randomUUID(), variantId: '', sellUnit: 'BASE', quantity: '1', unitCost: '' }]);
     }
   }, [open]);
 
   const addRow = () =>
     setItems((p) => [
       ...p,
-      { key: crypto.randomUUID(), productId: '', sellUnit: 'BASE', quantity: '1', unitCost: '' },
+      { key: crypto.randomUUID(), variantId: '', sellUnit: 'BASE', quantity: '1', unitCost: '' },
     ]);
   const updateRow = (key: string, patch: Partial<DraftItem>) =>
     setItems((p) => p.map((i) => (i.key === key ? { ...i, ...patch } : i)));
@@ -184,7 +201,7 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
   const owing = Math.max(0, total - paid);
 
   const submit = async () => {
-    const valid = items.filter((i) => i.productId && num(i.quantity) > 0 && num(i.unitCost) >= 0);
+    const valid = items.filter((i) => i.variantId && num(i.quantity) > 0 && num(i.unitCost) >= 0);
     if (valid.length === 0) {
       toast.error('Add at least one item', 'Select a product, quantity and unit cost.');
       return;
@@ -198,7 +215,7 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
       return;
     }
     const payloadItems: PurchaseItemInput[] = valid.map((i) => ({
-      productId: i.productId,
+      variantId: i.variantId,
       sellUnit: i.sellUnit,
       quantity: parseInt(i.quantity, 10),
       unitCost: num(i.unitCost),
@@ -296,20 +313,20 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
           </div>
           <div className="space-y-2">
             {items.map((row) => {
-              const product = row.productId ? productById.get(row.productId) : undefined;
+              const product = row.variantId ? variantById.get(row.variantId)?.product : undefined;
               const hasBulk = !!product?.bulkUnit && product.unitSize > 1;
               const lineTotal = num(row.quantity) * num(row.unitCost);
               return (
                 <div key={row.key} className="flex flex-wrap items-end gap-2 rounded-xl border border-outline-variant p-2.5">
-                  <Field label="Product" className="min-w-[180px] flex-1">
+                  <Field label="Product / variant" className="min-w-[180px] flex-1">
                     <Select
-                      value={row.productId}
-                      onChange={(e) => updateRow(row.key, { productId: e.target.value, sellUnit: 'BASE' })}
+                      value={row.variantId}
+                      onChange={(e) => updateRow(row.key, { variantId: e.target.value, sellUnit: 'BASE' })}
                     >
-                      <option value="">Select product…</option>
-                      {products?.data.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} ({p.sku})
+                      <option value="">Select variant…</option>
+                      {variantOptions.map((o) => (
+                        <option key={o.variantId} value={o.variantId}>
+                          {o.label}
                         </option>
                       ))}
                     </Select>

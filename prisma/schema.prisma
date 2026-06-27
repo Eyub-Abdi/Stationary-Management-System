@@ -183,35 +183,31 @@ model Category {
   @@map("categories")
 }
 
+// A Product is the grouping/template (name, category, packaging). Its sellable
+// SKUs — with their own price, stock and FIFO cost — live in ProductVariant.
+// Every product has at least one variant (a single-variant product behaves like
+// a plain product).
 model Product {
   id            String        @id @default(uuid()) @db.Uuid
-  sku           String        @unique
+  sku           String        @unique // product group code; each variant has its own sku
   name          String
   description   String?
   imageUrl      String?
   categoryId    String?       @db.Uuid
-  // Reference selling price PER BASE UNIT (piece). Snapshotted at sale time.
-  sellingPrice  Decimal       @db.Decimal(14, 2)
-  // Reference/last buying price PER BASE UNIT — true COGS comes from batches.
-  buyingPrice   Decimal       @db.Decimal(14, 2) @default(0)
 
-  // --- Dual unit of measure -------------------------------------------------
+  // --- Dual unit of measure (shared by all variants) ------------------------
   // Stock & COGS are ALWAYS tracked internally in base units (pieces). A product
   // may optionally be sold/bought in a larger "bulk" unit (box, carton, ream).
   baseUnit         String   @default("pcs") // name of the smallest sellable unit
   bulkUnit         String?  // larger packaging unit name; null = single-unit product
   unitSize         Int      @default(1) // base units contained in one bulk unit
-  // Selling price for one whole bulk unit. Null falls back to sellingPrice * unitSize.
-  bulkSellingPrice Decimal? @db.Decimal(14, 2)
 
-  // Denormalized live stock IN BASE UNITS; kept consistent with batches.
-  currentStock  Int           @default(0)
-  minStockLevel Int           @default(0)
   status        ProductStatus @default(ACTIVE)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
   category           Category?           @relation(fields: [categoryId], references: [id])
+  variants           ProductVariant[]
   saleItems          SaleItem[]
   purchaseItems      PurchaseItem[]
   inventoryBatches   InventoryBatch[]
@@ -222,6 +218,42 @@ model Product {
   @@index([status])
   @@index([name])
   @@map("products")
+}
+
+// A sellable variant of a product (e.g. "Blue", "Red", "A4 80gsm"). Holds the
+// price, live stock (base units) and reference cost. Inventory batches, sales,
+// purchases, movements and adjustments all key on the variant.
+model ProductVariant {
+  id            String        @id @default(uuid()) @db.Uuid
+  productId     String        @db.Uuid
+  sku           String        @unique
+  label         String // human label shown at the counter, e.g. "Blue"
+  // Reference selling price PER BASE UNIT (piece). Snapshotted at sale time.
+  sellingPrice  Decimal       @db.Decimal(14, 2)
+  // Reference/last buying price PER BASE UNIT — true COGS comes from batches.
+  buyingPrice   Decimal       @db.Decimal(14, 2) @default(0)
+  // Selling price for one whole bulk unit. Null falls back to sellingPrice * unitSize.
+  bulkSellingPrice Decimal?   @db.Decimal(14, 2)
+  // Denormalized live stock IN BASE UNITS; kept consistent with batches.
+  currentStock  Int           @default(0)
+  minStockLevel Int           @default(0)
+  // The variant created from the original product on migration / the implicit
+  // variant of a single-variant product.
+  isDefault     Boolean       @default(false)
+  status        ProductStatus @default(ACTIVE)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  product            Product             @relation(fields: [productId], references: [id])
+  saleItems          SaleItem[]
+  purchaseItems      PurchaseItem[]
+  inventoryBatches   InventoryBatch[]
+  inventoryMovements InventoryMovement[]
+  adjustments        InventoryAdjustment[]
+
+  @@index([productId])
+  @@index([status])
+  @@map("product_variants")
 }
 
 // ----------------------------------------------------------------------------
@@ -393,6 +425,7 @@ model PurchaseItem {
   id                  String   @id @default(uuid()) @db.Uuid
   purchaseId          String   @db.Uuid
   productId           String   @db.Uuid
+  variantId           String   @db.Uuid
   productNameSnapshot String
   // quantity is expressed in the transacted unit (unitLabel); unitSize converts
   // to base units for inventory. quantity * unitSize = base units (pieces) received.
@@ -404,10 +437,12 @@ model PurchaseItem {
 
   purchase Purchase        @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
   product  Product         @relation(fields: [productId], references: [id])
+  variant  ProductVariant  @relation(fields: [variantId], references: [id])
   batch    InventoryBatch?
 
   @@index([purchaseId])
   @@index([productId])
+  @@index([variantId])
   @@map("purchase_items")
 }
 
@@ -419,6 +454,7 @@ model PurchaseItem {
 model InventoryBatch {
   id                String   @id @default(uuid()) @db.Uuid
   productId         String   @db.Uuid
+  variantId         String   @db.Uuid
   purchaseId        String?  @db.Uuid
   purchaseItemId    String?  @unique @db.Uuid
   quantity          Int // original quantity received
@@ -428,13 +464,15 @@ model InventoryBatch {
   createdAt         DateTime @default(now())
 
   product      Product          @relation(fields: [productId], references: [id])
+  variant      ProductVariant   @relation(fields: [variantId], references: [id])
   purchase     Purchase?        @relation(fields: [purchaseId], references: [id])
   purchaseItem PurchaseItem?    @relation(fields: [purchaseItemId], references: [id])
   allocations  CogsAllocation[]
 
-  // FIFO scan: cheapest path is "this product, oldest first, still has stock".
-  @@index([productId, purchaseDate, createdAt])
-  @@index([productId, remainingQuantity])
+  // FIFO scan: cheapest path is "this variant, oldest first, still has stock".
+  @@index([variantId, purchaseDate, createdAt])
+  @@index([variantId, remainingQuantity])
+  @@index([productId])
   @@map("inventory_batches")
 }
 
@@ -496,6 +534,7 @@ model SaleItem {
   saleId    String       @db.Uuid
   itemType  SaleItemType
   productId String?      @db.Uuid
+  variantId String?      @db.Uuid
   serviceId String?      @db.Uuid
 
   // --- immutable historical snapshots ---
@@ -516,12 +555,14 @@ model SaleItem {
 
   sale        Sale             @relation(fields: [saleId], references: [id], onDelete: Cascade)
   product     Product?         @relation(fields: [productId], references: [id])
+  variant     ProductVariant?  @relation(fields: [variantId], references: [id])
   service     Service?         @relation(fields: [serviceId], references: [id])
   allocations CogsAllocation[]
   returnItems SaleReturnItem[]
 
   @@index([saleId])
   @@index([productId])
+  @@index([variantId])
   @@index([serviceId])
   @@map("sale_items")
 }
@@ -599,6 +640,7 @@ model SaleReturnItem {
 model InventoryMovement {
   id            String                @id @default(uuid()) @db.Uuid
   productId     String                @db.Uuid
+  variantId     String                @db.Uuid
   type          InventoryMovementType
   // Signed quantity: +in / -out. before + quantity = after.
   quantity      Int
@@ -612,10 +654,12 @@ model InventoryMovement {
   notes         String?
   createdAt     DateTime              @default(now())
 
-  product Product @relation(fields: [productId], references: [id])
-  user    User?   @relation(fields: [userId], references: [id])
+  product Product        @relation(fields: [productId], references: [id])
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+  user    User?          @relation(fields: [userId], references: [id])
 
   @@index([productId, createdAt])
+  @@index([variantId, createdAt])
   @@index([type])
   @@index([referenceType, referenceId])
   @@map("inventory_movements")
@@ -624,6 +668,7 @@ model InventoryMovement {
 model InventoryAdjustment {
   id             String   @id @default(uuid()) @db.Uuid
   productId      String   @db.Uuid
+  variantId      String   @db.Uuid
   userId         String   @db.Uuid
   quantityChange Int // signed
   beforeQty      Int
@@ -633,10 +678,12 @@ model InventoryAdjustment {
   unitCost       Decimal? @db.Decimal(14, 2)
   createdAt      DateTime @default(now())
 
-  product Product @relation(fields: [productId], references: [id])
-  user    User    @relation(fields: [userId], references: [id])
+  product Product        @relation(fields: [productId], references: [id])
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+  user    User           @relation(fields: [userId], references: [id])
 
   @@index([productId])
+  @@index([variantId])
   @@index([userId])
   @@map("inventory_adjustments")
 }

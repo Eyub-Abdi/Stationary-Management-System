@@ -22,7 +22,22 @@ import { CustomerFormModal } from '@/features/customers/CustomerFormModal';
 import { SERVICE_TYPE_ICON } from '@/lib/constants';
 import { extractMessage } from '@/lib/api';
 import { cn, currency, imageSrc, num } from '@/lib/utils';
-import type { PaymentMethod, Product, Sale, SellUnit, Service } from '@/types';
+import type { PaymentMethod, Product, ProductVariant, Sale, SellUnit, Service } from '@/types';
+
+/** Active, sellable variants of a product. */
+function activeVariants(p: Product): ProductVariant[] {
+  return p.variants.filter((v) => v.status === 'ACTIVE');
+}
+function variantName(p: Product, v: ProductVariant): string {
+  return v.label && v.label !== 'Default' ? `${p.name} — ${v.label}` : p.name;
+}
+function minSellingPrice(p: Product): number {
+  const vs = activeVariants(p);
+  return vs.length ? Math.min(...vs.map((v) => num(v.sellingPrice))) : 0;
+}
+function totalStock(p: Product): number {
+  return activeVariants(p).reduce((a, v) => a + v.currentStock, 0);
+}
 
 interface CartLine {
   key: string;
@@ -74,7 +89,8 @@ export default function PosPage() {
   const [cashReceived, setCashReceived] = useState('');
   const [notes, setNotes] = useState('');
   const [receipt, setReceipt] = useState<Sale | null>(null);
-  const [unitPick, setUnitPick] = useState<Product | null>(null);
+  const [unitPick, setUnitPick] = useState<{ product: Product; variant: ProductVariant } | null>(null);
+  const [variantPick, setVariantPick] = useState<Product | null>(null);
   const [custModalOpen, setCustModalOpen] = useState(false);
   const [view, setView] = useState<'grid' | 'list'>(
     () => (localStorage.getItem('pos-view') === 'list' ? 'list' : 'grid'),
@@ -94,26 +110,40 @@ export default function PosPage() {
   const change = received - total;
   const creditBalance = Math.max(0, total - received);
 
-  // Tapping a product: dual-unit items ask "pieces or pack?" first; single-unit
-  // items add straight away.
+  // Tapping a product: pick a variant when there's more than one; then dual-unit
+  // items ask "pieces or pack?"; single-unit items add straight away.
   const addProduct = (p: Product) => {
-    const hasBulk = !!p.bulkUnit && p.unitSize > 1;
-    if (hasBulk) {
-      setUnitPick(p);
+    const vs = activeVariants(p);
+    if (vs.length === 0) {
+      toast.warning('No variants', 'This product has no active variants to sell.');
       return;
     }
-    addProductUnit(p, 'BASE');
+    if (vs.length > 1) {
+      setVariantPick(p);
+      return;
+    }
+    pickVariant(p, vs[0]);
   };
 
-  /** Adds (or increments) a product line for the chosen unit of sale. */
-  const addProductUnit = (p: Product, sellUnit: SellUnit) => {
-    const basePrice = num(p.sellingPrice);
-    const bulkPrice = p.bulkSellingPrice ? num(p.bulkSellingPrice) : basePrice * p.unitSize;
+  /** A variant chosen — dual-unit products ask piece-or-pack, else add directly. */
+  const pickVariant = (p: Product, v: ProductVariant) => {
+    const hasBulk = !!p.bulkUnit && p.unitSize > 1;
+    if (hasBulk) {
+      setUnitPick({ product: p, variant: v });
+      return;
+    }
+    addVariantUnit(p, v, 'BASE');
+  };
+
+  /** Adds (or increments) a variant line for the chosen unit of sale. */
+  const addVariantUnit = (p: Product, v: ProductVariant, sellUnit: SellUnit) => {
+    const basePrice = num(v.sellingPrice);
+    const bulkPrice = v.bulkSellingPrice ? num(v.bulkSellingPrice) : basePrice * p.unitSize;
     const unitPrice = sellUnit === 'BULK' ? bulkPrice : basePrice;
-    const maxStock = sellUnit === 'BULK' ? Math.floor(p.currentStock / p.unitSize) : p.currentStock;
+    const maxStock = sellUnit === 'BULK' ? Math.floor(v.currentStock / p.unitSize) : v.currentStock;
     const unitName = sellUnit === 'BULK' && p.bulkUnit ? p.bulkUnit : p.baseUnit;
-    // Same product sold in a different unit is a separate line.
-    const key = `P-${p.id}-${sellUnit}`;
+    // A variant sold in a different unit is a separate line.
+    const key = `P-${v.id}-${sellUnit}`;
 
     setCart((prev) => {
       const existing = prev.find((l) => l.key === key);
@@ -133,8 +163,8 @@ export default function PosPage() {
         {
           key,
           itemType: 'PRODUCT',
-          refId: p.id,
-          name: p.name,
+          refId: v.id,
+          name: variantName(p, v),
           unitPrice,
           quantity: 1,
           perPage: false,
@@ -145,7 +175,7 @@ export default function PosPage() {
           unitSize: p.unitSize,
           basePrice,
           bulkPrice,
-          stockBase: p.currentStock,
+          stockBase: v.currentStock,
         },
       ];
     });
@@ -234,7 +264,7 @@ export default function PosPage() {
     }
     const items: SaleItemInput[] = cart.map((l) => ({
       itemType: l.itemType,
-      productId: l.itemType === 'PRODUCT' ? l.refId : undefined,
+      variantId: l.itemType === 'PRODUCT' ? l.refId : undefined,
       serviceId: l.itemType === 'SERVICE' ? l.refId : undefined,
       sellUnit: l.itemType === 'PRODUCT' ? l.sellUnit : undefined,
       quantity: l.quantity,
@@ -548,10 +578,20 @@ export default function PosPage() {
       </div>
 
       <ReceiptModal sale={receipt} onClose={() => setReceipt(null)} />
+      <VariantPickModal
+        product={variantPick}
+        onPick={(v) => {
+          const p = variantPick;
+          setVariantPick(null);
+          if (p) pickVariant(p, v);
+        }}
+        onClose={() => setVariantPick(null)}
+      />
       <UnitPickModal
-        product={unitPick}
+        product={unitPick?.product ?? null}
+        variant={unitPick?.variant ?? null}
         onPick={(unit) => {
-          if (unitPick) addProductUnit(unitPick, unit);
+          if (unitPick) addVariantUnit(unitPick.product, unitPick.variant, unit);
           setUnitPick(null);
         }}
         onClose={() => setUnitPick(null)}
@@ -566,32 +606,71 @@ export default function PosPage() {
   );
 }
 
-/** Asks how a dual-unit product is being sold: by piece or by whole pack. */
-function UnitPickModal({
+/** Asks which variant of a multi-variant product is being sold. */
+function VariantPickModal({
   product,
   onPick,
   onClose,
 }: {
   product: Product | null;
-  onPick: (unit: SellUnit) => void;
+  onPick: (variant: ProductVariant) => void;
   onClose: () => void;
 }) {
   if (!product) return null;
-  const basePrice = num(product.sellingPrice);
-  const bulkPrice = product.bulkSellingPrice ? num(product.bulkSellingPrice) : basePrice * product.unitSize;
-  const wholePacks = Math.floor(product.currentStock / product.unitSize);
+  const vs = activeVariants(product);
   return (
-    <Modal open={!!product} onClose={onClose} size="sm" title={product.name} subtitle="How is this being sold?">
+    <Modal open={!!product} onClose={onClose} size="sm" title={product.name} subtitle="Pick a variant">
+      <div className="grid grid-cols-2 gap-3">
+        {vs.map((v) => {
+          const out = v.currentStock <= 0;
+          return (
+            <button
+              key={v.id}
+              onClick={() => onPick(v)}
+              disabled={out}
+              className="flex flex-col items-center gap-1 rounded-xl border border-outline-variant bg-surface-container-lowest p-4 transition-all hover:-translate-y-0.5 hover:border-secondary hover:shadow-md disabled:opacity-50"
+            >
+              <span className="text-body-sm font-semibold text-on-surface">{v.label}</span>
+              <span className="font-mono-data text-[13px] font-bold text-primary">{currency(v.sellingPrice)}</span>
+              <span className={cn('text-[11px]', out ? 'text-error' : 'text-on-surface-variant')}>
+                {v.currentStock} in stock
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </Modal>
+  );
+}
+
+/** Asks how a dual-unit variant is being sold: by piece or by whole pack. */
+function UnitPickModal({
+  product,
+  variant,
+  onPick,
+  onClose,
+}: {
+  product: Product | null;
+  variant: ProductVariant | null;
+  onPick: (unit: SellUnit) => void;
+  onClose: () => void;
+}) {
+  if (!product || !variant) return null;
+  const basePrice = num(variant.sellingPrice);
+  const bulkPrice = variant.bulkSellingPrice ? num(variant.bulkSellingPrice) : basePrice * product.unitSize;
+  const wholePacks = Math.floor(variant.currentStock / product.unitSize);
+  return (
+    <Modal open={!!product} onClose={onClose} size="sm" title={variantName(product, variant)} subtitle="How is this being sold?">
       <div className="grid grid-cols-2 gap-3">
         <button
           onClick={() => onPick('BASE')}
-          disabled={product.currentStock <= 0}
+          disabled={variant.currentStock <= 0}
           className="flex flex-col items-center gap-1 rounded-xl border border-outline-variant bg-surface-container-lowest p-4 transition-all hover:-translate-y-0.5 hover:border-secondary hover:shadow-md disabled:opacity-50"
         >
           <Icon name="looks_one" size={26} className="text-secondary" />
           <span className="text-body-sm font-semibold text-on-surface">By {product.baseUnit}</span>
           <span className="font-mono-data text-[13px] font-bold text-primary">{currency(basePrice)}</span>
-          <span className="text-[11px] text-on-surface-variant">{product.currentStock} in stock</span>
+          <span className="text-[11px] text-on-surface-variant">{variant.currentStock} in stock</span>
         </button>
         <button
           onClick={() => onPick('BULK')}
@@ -656,10 +735,11 @@ function QtyStepper({
 }
 
 function ProductTile({ product, onAdd }: { product: Product; onAdd: () => void }) {
-  const low = product.currentStock <= product.minStockLevel;
-  const out = product.currentStock <= 0;
+  const stock = totalStock(product);
+  const out = stock <= 0;
   const src = imageSrc(product.imageUrl);
-  const hasBulk = !!product.bulkUnit && product.unitSize > 1;
+  const multi = activeVariants(product).length > 1;
+  const price = minSellingPrice(product);
   return (
     <button
       onClick={onAdd}
@@ -668,23 +748,25 @@ function ProductTile({ product, onAdd }: { product: Product; onAdd: () => void }
         'group flex flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest text-left transition-all hover:-translate-y-0.5 hover:border-secondary hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50',
       )}
     >
-      <div className="flex h-20 items-center justify-center bg-surface-container-low">
+      <div className="relative flex h-20 items-center justify-center bg-surface-container-low">
         {src ? (
           <img src={src} alt={product.name} className="h-full w-full object-cover" />
         ) : (
           <Icon name="inventory_2" size={28} className="text-on-surface-variant" />
         )}
+        {multi && (
+          <span className="absolute right-1.5 top-1.5 rounded-full bg-primary-fixed px-1.5 py-0.5 text-[10px] font-bold text-on-primary-fixed">
+            {activeVariants(product).length} variants
+          </span>
+        )}
       </div>
       <div className="flex flex-1 flex-col p-2.5">
         <p className="line-clamp-2 text-[13px] font-semibold leading-tight text-on-surface">{product.name}</p>
-        {hasBulk && (
-          <p className="mt-0.5 text-[10px] text-on-surface-variant">
-            {product.baseUnit} · {product.bulkUnit} ×{product.unitSize}
-          </p>
-        )}
         <div className="mt-auto flex items-center justify-between pt-2">
-          <span className="font-mono-data text-[13px] font-bold text-primary">{currency(product.sellingPrice)}</span>
-          <Badge tone={out ? 'error' : low ? 'warning' : 'neutral'}>{product.currentStock}</Badge>
+          <span className="font-mono-data text-[13px] font-bold text-primary">
+            {multi ? `from ${currency(price)}` : currency(price)}
+          </span>
+          <Badge tone={out ? 'error' : 'neutral'}>{stock}</Badge>
         </div>
       </div>
     </button>
@@ -692,10 +774,11 @@ function ProductTile({ product, onAdd }: { product: Product; onAdd: () => void }
 }
 
 function ProductRow({ product, onAdd }: { product: Product; onAdd: () => void }) {
-  const low = product.currentStock <= product.minStockLevel;
-  const out = product.currentStock <= 0;
+  const stock = totalStock(product);
+  const out = stock <= 0;
   const src = imageSrc(product.imageUrl);
-  const hasBulk = !!product.bulkUnit && product.unitSize > 1;
+  const multi = activeVariants(product).length > 1;
+  const price = minSellingPrice(product);
   return (
     <li>
       <button
@@ -713,13 +796,13 @@ function ProductRow({ product, onAdd }: { product: Product; onAdd: () => void })
         <div className="min-w-0 flex-1">
           <p className="truncate text-[13px] font-semibold text-on-surface">{product.name}</p>
           <p className="truncate text-[11px] text-on-surface-variant">
-            {hasBulk ? `${product.baseUnit} · ${product.bulkUnit} ×${product.unitSize}` : product.baseUnit}
+            {multi ? `${activeVariants(product).length} variants` : product.baseUnit}
           </p>
         </div>
         <span className="shrink-0 font-mono-data text-[13px] font-bold text-primary">
-          {currency(product.sellingPrice)}
+          {multi ? `from ${currency(price)}` : currency(price)}
         </span>
-        <Badge tone={out ? 'error' : low ? 'warning' : 'neutral'}>{product.currentStock}</Badge>
+        <Badge tone={out ? 'error' : 'neutral'}>{stock}</Badge>
       </button>
     </li>
   );

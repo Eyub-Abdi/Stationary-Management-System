@@ -2,9 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Field, Icon, Input, Modal, Select, Textarea } from '@/components/ui';
 import { useToast } from '@/providers/ToastProvider';
 import {
+  useAddVariant,
   useCreateProduct,
+  useDeactivateVariant,
   useUpdateProduct,
+  useUpdateVariant,
   useUploadProductImage,
+  type VariantInput,
 } from '@/hooks/useProducts';
 import { useCreateCategory } from '@/hooks/useCatalog';
 import { useUploadImage } from '@/hooks/useUploads';
@@ -12,18 +16,24 @@ import { extractMessage } from '@/lib/api';
 import { imageSrc, num } from '@/lib/utils';
 import type { Category, Product } from '@/types';
 
+interface VariantRow {
+  key: string;
+  id?: string;
+  label: string;
+  sellingPrice: string;
+  buyingPrice: string;
+  bulkSellingPrice: string;
+  minStockLevel: string;
+}
+
 interface FormState {
   sku: string;
   name: string;
   description: string;
   categoryId: string;
-  sellingPrice: string;
-  buyingPrice: string;
   baseUnit: string;
   bulkUnit: string;
   unitSize: string;
-  bulkSellingPrice: string;
-  minStockLevel: string;
   status: 'ACTIVE' | 'INACTIVE';
 }
 
@@ -32,15 +42,21 @@ const EMPTY: FormState = {
   name: '',
   description: '',
   categoryId: '',
-  sellingPrice: '',
-  buyingPrice: '',
   baseUnit: 'pcs',
   bulkUnit: '',
   unitSize: '',
-  bulkSellingPrice: '',
-  minStockLevel: '0',
   status: 'ACTIVE',
 };
+
+let rowSeq = 0;
+const newRow = (label = ''): VariantRow => ({
+  key: `r${rowSeq++}`,
+  label,
+  sellingPrice: '',
+  buyingPrice: '',
+  bulkSellingPrice: '',
+  minStockLevel: '0',
+});
 
 export function ProductFormModal({
   open,
@@ -56,19 +72,22 @@ export function ProductFormModal({
   const toast = useToast();
   const create = useCreateProduct();
   const update = useUpdateProduct();
+  const addVariant = useAddVariant();
+  const updateVariant = useUpdateVariant();
+  const deactivateVariant = useDeactivateVariant();
   const createCategory = useCreateCategory();
   const uploadNew = useUploadImage();
   const uploadExisting = useUploadProductImage();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState<FormState>(EMPTY);
+  const [variants, setVariants] = useState<VariantRow[]>([newRow('Default')]);
+  const [removedIds, setRemovedIds] = useState<string[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
-  // Categories created inline, merged into the list so they're instantly
-  // selectable before the parent's query refetches.
   const [createdCategories, setCreatedCategories] = useState<Category[]>([]);
 
   const categoryOptions = useMemo(() => {
@@ -78,12 +97,20 @@ export function ProductFormModal({
   }, [categories, createdCategories]);
 
   const isEdit = !!product;
-  const saving = create.isPending || update.isPending || uploadNew.isPending || uploadExisting.isPending;
+  const hasBulk = form.bulkUnit.trim().length > 0;
+  const saving =
+    create.isPending ||
+    update.isPending ||
+    addVariant.isPending ||
+    updateVariant.isPending ||
+    uploadNew.isPending ||
+    uploadExisting.isPending;
 
   useEffect(() => {
     if (!open) return;
     setErrors({});
     setFile(null);
+    setRemovedIds([]);
     setAddingCategory(false);
     setNewCategoryName('');
     if (product) {
@@ -92,23 +119,38 @@ export function ProductFormModal({
         name: product.name,
         description: product.description ?? '',
         categoryId: product.categoryId ?? '',
-        sellingPrice: num(product.sellingPrice).toString(),
-        buyingPrice: num(product.buyingPrice).toString(),
         baseUnit: product.baseUnit || 'pcs',
         bulkUnit: product.bulkUnit ?? '',
         unitSize: product.bulkUnit ? product.unitSize.toString() : '',
-        bulkSellingPrice: product.bulkSellingPrice ? num(product.bulkSellingPrice).toString() : '',
-        minStockLevel: product.minStockLevel.toString(),
         status: product.status,
       });
+      setVariants(
+        product.variants.map((v) => ({
+          key: v.id,
+          id: v.id,
+          label: v.label,
+          sellingPrice: num(v.sellingPrice).toString(),
+          buyingPrice: num(v.buyingPrice).toString(),
+          bulkSellingPrice: v.bulkSellingPrice ? num(v.bulkSellingPrice).toString() : '',
+          minStockLevel: v.minStockLevel.toString(),
+        })),
+      );
       setPreview(imageSrc(product.imageUrl));
     } else {
       setForm(EMPTY);
+      setVariants([newRow('Default')]);
       setPreview(null);
     }
   }, [open, product]);
 
   const set = (k: keyof FormState, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const setVar = (key: string, patch: Partial<VariantRow>) =>
+    setVariants((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  const addRow = () => setVariants((rows) => [...rows, newRow()]);
+  const removeRow = (row: VariantRow) => {
+    setVariants((rows) => rows.filter((r) => r.key !== row.key));
+    if (row.id) setRemovedIds((ids) => [...ids, row.id!]);
+  };
 
   const addCategory = async () => {
     const name = newCategoryName.trim();
@@ -137,45 +179,59 @@ export function ProductFormModal({
 
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
-    // SKU is generated by the backend, so it is no longer collected here.
     if (!form.name.trim()) errs.name = 'Name is required';
-    if (form.sellingPrice === '' || num(form.sellingPrice) < 0) errs.sellingPrice = 'Enter a valid price';
+    if (variants.length === 0) errs.variants = 'Add at least one variant';
+    variants.forEach((v) => {
+      if (!v.label.trim()) errs[`label-${v.key}`] = 'Required';
+      if (v.sellingPrice === '' || num(v.sellingPrice) < 0) errs[`price-${v.key}`] = 'Required';
+    });
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
+
+  const toVariantInput = (v: VariantRow): VariantInput => ({
+    label: v.label.trim(),
+    sellingPrice: num(v.sellingPrice),
+    buyingPrice: v.buyingPrice === '' ? undefined : num(v.buyingPrice),
+    bulkSellingPrice: hasBulk && v.bulkSellingPrice !== '' ? num(v.bulkSellingPrice) : undefined,
+    minStockLevel: v.minStockLevel === '' ? undefined : parseInt(v.minStockLevel, 10),
+  });
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
 
-    try {
-      // Note: SKU is intentionally never sent — the backend generates it on
-      // create and treats it as immutable on update.
-      const bulkUnit = form.bulkUnit.trim();
-      const base = {
-        name: form.name.trim(),
-        description: form.description.trim() || undefined,
-        categoryId: form.categoryId || undefined,
-        sellingPrice: num(form.sellingPrice),
-        buyingPrice: form.buyingPrice === '' ? undefined : num(form.buyingPrice),
-        baseUnit: form.baseUnit.trim() || 'pcs',
-        // Always send the bulk unit (empty string disables/clears pack selling).
-        bulkUnit,
-        unitSize: bulkUnit ? Math.max(1, parseInt(form.unitSize || '1', 10)) : undefined,
-        bulkSellingPrice: bulkUnit && form.bulkSellingPrice !== '' ? num(form.bulkSellingPrice) : undefined,
-        minStockLevel: form.minStockLevel === '' ? undefined : parseInt(form.minStockLevel, 10),
-        status: form.status,
-      };
+    const bulkUnit = form.bulkUnit.trim();
+    const productFields = {
+      name: form.name.trim(),
+      description: form.description.trim() || undefined,
+      categoryId: form.categoryId || undefined,
+      baseUnit: form.baseUnit.trim() || 'pcs',
+      bulkUnit,
+      unitSize: bulkUnit ? Math.max(1, parseInt(form.unitSize || '1', 10)) : undefined,
+      status: form.status,
+    };
 
+    try {
       if (isEdit) {
-        await update.mutateAsync({ id: product!.id, input: base });
+        await update.mutateAsync({ id: product!.id, input: productFields });
+        // Apply variant changes: update existing, add new, deactivate removed.
+        for (const v of variants) {
+          if (v.id) await updateVariant.mutateAsync({ variantId: v.id, input: toVariantInput(v) });
+          else await addVariant.mutateAsync({ productId: product!.id, input: toVariantInput(v) });
+        }
+        for (const id of removedIds) await deactivateVariant.mutateAsync(id);
         if (file) await uploadExisting.mutateAsync({ id: product!.id, file });
-        toast.success('Product updated', `${base.name} saved successfully.`);
+        toast.success('Product updated', `${productFields.name} saved successfully.`);
       } else {
         let imageUrl: string | undefined;
         if (file) imageUrl = await uploadNew.mutateAsync(file);
-        await create.mutateAsync({ ...base, imageUrl });
-        toast.success('Product created', `${base.name} added to the catalog.`);
+        await create.mutateAsync({
+          ...productFields,
+          imageUrl,
+          variants: variants.map(toVariantInput),
+        });
+        toast.success('Product created', `${productFields.name} added to the catalog.`);
       }
       onClose();
     } catch (err) {
@@ -295,34 +351,7 @@ export function ProductFormModal({
           />
         </Field>
 
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Field label="Selling Price" required error={errors.sellingPrice}>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.sellingPrice}
-              onChange={(e) => set('sellingPrice', e.target.value)}
-              invalid={!!errors.sellingPrice}
-            />
-          </Field>
-          <Field label="Buying Price">
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.buyingPrice}
-              onChange={(e) => set('buyingPrice', e.target.value)}
-            />
-          </Field>
-          <Field label="Min Stock">
-            <Input
-              type="number"
-              min="0"
-              value={form.minStockLevel}
-              onChange={(e) => set('minStockLevel', e.target.value)}
-            />
-          </Field>
+        <div className="grid grid-cols-2 gap-4">
           <Field label="Status">
             <Select value={form.status} onChange={(e) => set('status', e.target.value)}>
               <option value="ACTIVE">Active</option>
@@ -337,7 +366,7 @@ export function ProductFormModal({
           <p className="mt-0.5 text-[12px] text-on-surface-variant">
             Stock is always counted in the base unit. Add a pack unit to also sell/buy in bulk (e.g. a Box of 12 pcs).
           </p>
-          <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="mt-3 grid grid-cols-3 gap-4">
             <Field label="Base unit" hint="e.g. pcs">
               <Input value={form.baseUnit} onChange={(e) => set('baseUnit', e.target.value)} placeholder="pcs" />
             </Field>
@@ -351,25 +380,101 @@ export function ProductFormModal({
                 value={form.unitSize}
                 onChange={(e) => set('unitSize', e.target.value)}
                 placeholder="12"
-                disabled={!form.bulkUnit.trim()}
-              />
-            </Field>
-            <Field label="Pack price" hint="blank = pcs×size">
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={form.bulkSellingPrice}
-                onChange={(e) => set('bulkSellingPrice', e.target.value)}
-                disabled={!form.bulkUnit.trim()}
+                disabled={!hasBulk}
               />
             </Field>
           </div>
         </div>
 
+        {/* Variants */}
+        <div className="rounded-xl border border-outline-variant p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-label-caps uppercase tracking-wide text-on-surface-variant">Variants</p>
+              <p className="mt-0.5 text-[12px] text-on-surface-variant">
+                Each variant has its own price and stock (e.g. Blue, Red). Use one variant for a simple product.
+              </p>
+            </div>
+            <Button type="button" size="sm" variant="outline" icon="add" onClick={addRow}>
+              Add variant
+            </Button>
+          </div>
+          {errors.variants && <p className="mt-2 text-[12px] text-error">{errors.variants}</p>}
+
+          <div className="mt-3 space-y-2">
+            {/* Column headers */}
+            <div className="hidden grid-cols-[1.4fr_1fr_1fr_0.9fr_auto] gap-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-on-surface-variant sm:grid">
+              <span>Label</span>
+              <span>Selling</span>
+              <span>Buying</span>
+              <span>Min stock</span>
+              <span />
+            </div>
+            {variants.map((v) => (
+              <div
+                key={v.key}
+                className="grid grid-cols-2 gap-2 rounded-lg border border-outline-variant bg-surface-container-lowest p-2 sm:grid-cols-[1.4fr_1fr_1fr_0.9fr_auto] sm:border-0 sm:bg-transparent sm:p-0"
+              >
+                <Input
+                  value={v.label}
+                  onChange={(e) => setVar(v.key, { label: e.target.value })}
+                  invalid={!!errors[`label-${v.key}`]}
+                  placeholder="Default"
+                />
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={v.sellingPrice}
+                  onChange={(e) => setVar(v.key, { sellingPrice: e.target.value })}
+                  invalid={!!errors[`price-${v.key}`]}
+                  placeholder="Selling"
+                />
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={v.buyingPrice}
+                  onChange={(e) => setVar(v.key, { buyingPrice: e.target.value })}
+                  placeholder="Buying"
+                />
+                <Input
+                  type="number"
+                  min="0"
+                  value={v.minStockLevel}
+                  onChange={(e) => setVar(v.key, { minStockLevel: e.target.value })}
+                  placeholder="Min"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeRow(v)}
+                  disabled={variants.length <= 1}
+                  title="Remove variant"
+                  className="flex items-center justify-center rounded-lg px-2 text-on-surface-variant transition-colors hover:text-error disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  <Icon name="close" size={18} />
+                </button>
+                {hasBulk && (
+                  <div className="col-span-2 sm:col-span-5">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={v.bulkSellingPrice}
+                      onChange={(e) => setVar(v.key, { bulkSellingPrice: e.target.value })}
+                      placeholder={`Pack price for ${v.label || 'variant'} (blank = pcs × ${form.unitSize || 'size'})`}
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
         {isEdit && (
           <p className="flex items-center gap-1.5 text-[12px] text-on-surface-variant">
-            <Icon name="info" size={16} /> Stock is adjusted via Purchases and Inventory, not edited here.
+            <Icon name="info" size={16} /> Stock is adjusted via Purchases and Inventory, not edited here. Removing a variant
+            with history deactivates it.
           </p>
         )}
       </form>

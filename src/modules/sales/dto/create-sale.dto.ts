@@ -20,10 +20,10 @@ export class SaleItemInputDto {
   @IsEnum(SaleItemType)
   itemType!: SaleItemType;
 
-  @ApiPropertyOptional({ description: 'Required when itemType = PRODUCT' })
+  @ApiPropertyOptional({ description: 'Required when itemType = PRODUCT — the product variant being sold.' })
   @IsOptional()
   @IsUUID()
-  productId?: string;
+  variantId?: string;
 
   @ApiPropertyOptional({ description: 'Required when itemType = SERVICE' })
   @IsOptional()

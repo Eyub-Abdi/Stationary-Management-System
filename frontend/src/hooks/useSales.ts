@@ -20,7 +20,7 @@ export interface SaleFilters {
 
 export interface SaleItemInput {
   itemType: SaleItemType;
-  productId?: string;
+  variantId?: string;
   serviceId?: string;
   sellUnit?: SellUnit;
   quantity: number;

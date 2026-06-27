@@ -1,9 +1,9 @@
 /* eslint-disable no-console */
-// One-off reconciliation: some products have a denormalized `currentStock` that
+// One-off reconciliation: some variants have a denormalized `currentStock` that
 // isn't backed by costed FIFO `InventoryBatch` rows, so sales fail with
-// "Insufficient inventory batches…" and valuation reads 0. For every product
+// "Insufficient inventory batches…" and valuation reads 0. For every variant
 // where currentStock exceeds the sum of remaining batch quantity, this backfills
-// a single opening batch (priced at the product's reference buyingPrice) to
+// a single opening batch (priced at the variant's reference buyingPrice) to
 // cover the gap. It does NOT change currentStock, so nothing is double-counted,
 // and it is idempotent — re-running it finds no gap and does nothing.
 import { PrismaClient } from '@prisma/client';
@@ -11,36 +11,40 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-  const products = await prisma.product.findMany();
+  const variants = await prisma.productVariant.findMany({
+    include: { product: { select: { name: true } } },
+  });
   let fixed = 0;
 
-  for (const p of products) {
-    if (p.currentStock <= 0) continue;
+  for (const v of variants) {
+    if (v.currentStock <= 0) continue;
 
     const agg = await prisma.inventoryBatch.aggregate({
-      where: { productId: p.id },
+      where: { variantId: v.id },
       _sum: { remainingQuantity: true },
     });
     const batched = agg._sum.remainingQuantity ?? 0;
-    const gap = p.currentStock - batched;
+    const gap = v.currentStock - batched;
     if (gap <= 0) continue;
 
     await prisma.inventoryBatch.create({
       data: {
-        productId: p.id,
+        variantId: v.id,
+        productId: v.productId,
         quantity: gap,
         remainingQuantity: gap,
-        unitCost: p.buyingPrice, // Decimal; 0 if no reference cost was set
-        purchaseDate: p.createdAt,
+        unitCost: v.buyingPrice, // Decimal; 0 if no reference cost was set
+        purchaseDate: v.createdAt,
       },
     });
     fixed++;
+    const label = v.label !== 'Default' ? `${v.product.name} — ${v.label}` : v.product.name;
     console.log(
-      `+ ${p.name.padEnd(28)} backfilled ${String(gap).padStart(4)} units @ ${p.buyingPrice.toString()}`,
+      `+ ${label.padEnd(28)} backfilled ${String(gap).padStart(4)} units @ ${v.buyingPrice.toString()}`,
     );
   }
 
-  console.log(fixed === 0 ? '✓ Inventory already consistent.' : `✓ Reconciled ${fixed} product(s).`);
+  console.log(fixed === 0 ? '✓ Inventory already consistent.' : `✓ Reconciled ${fixed} variant(s).`);
 }
 
 main()

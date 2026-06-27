@@ -12,9 +12,9 @@ import {
 } from 'class-validator';
 
 export class AdjustStockDto {
-  @ApiProperty()
+  @ApiProperty({ description: 'The product variant to adjust.' })
   @IsUUID()
-  productId!: string;
+  variantId!: string;
 
   @ApiProperty({
     example: -3,

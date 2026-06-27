@@ -201,8 +201,11 @@ export default function ProductsPage() {
               </THead>
               <TBody>
                 {data!.data.map((p) => {
-                  const low = p.currentStock <= p.minStockLevel;
-                  const margin = num(p.sellingPrice) - num(p.buyingPrice);
+                  const totalStock = p.variants.reduce((a, v) => a + v.currentStock, 0);
+                  const low = p.variants.some(
+                    (v) => v.status === 'ACTIVE' && v.currentStock <= v.minStockLevel,
+                  );
+                  const multi = p.variants.length > 1;
                   return (
                     <TR key={p.id}>
                       <TD>
@@ -211,15 +214,15 @@ export default function ProductsPage() {
                           <div className="min-w-0">
                             <p className="truncate font-semibold text-on-surface">{p.name}</p>
                             <p className="truncate text-[12px] text-on-surface-variant">
-                              Margin {currency(margin)}
+                              {multi ? `${p.variants.length} variants` : 'Single variant'}
                             </p>
                           </div>
                         </div>
                       </TD>
                       <TD className="font-mono-data text-on-surface-variant">{p.sku}</TD>
                       <TD>{p.category?.name ?? '—'}</TD>
-                      <TD align="right" className="font-mono-data">{currency(p.buyingPrice)}</TD>
-                      <TD align="right" className="font-mono-data font-semibold">{currency(p.sellingPrice)}</TD>
+                      <TD align="right" className="font-mono-data">{priceRange(p, 'buyingPrice')}</TD>
+                      <TD align="right" className="font-mono-data font-semibold">{priceRange(p, 'sellingPrice')}</TD>
                       <TD align="center">
                         <span
                           className={cn(
@@ -228,9 +231,11 @@ export default function ProductsPage() {
                           )}
                         >
                           {low && <Icon name="warning" size={16} />}
-                          {p.currentStock}
+                          {totalStock}
                         </span>
-                        <p className="text-[10px] text-on-surface-variant">min {p.minStockLevel}</p>
+                        <p className="text-[10px] text-on-surface-variant">
+                          {multi ? `across ${p.variants.length}` : 'in stock'}
+                        </p>
                       </TD>
                       <TD align="center">
                         <Badge tone={p.status === 'ACTIVE' ? 'success' : 'neutral'}>
@@ -306,6 +311,15 @@ export default function ProductsPage() {
       />
     </div>
   );
+}
+
+/** Single price, or a min–max range when variants differ. */
+function priceRange(product: Product, field: 'sellingPrice' | 'buyingPrice'): string {
+  const vals = product.variants.map((v) => num(v[field]));
+  if (vals.length === 0) return '—';
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  return min === max ? currency(min) : `${currency(min)} – ${currency(max)}`;
 }
 
 function ProductThumb({ product }: { product: Product }) {
