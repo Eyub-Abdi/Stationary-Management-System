@@ -23,6 +23,7 @@ interface ComputedLine {
   productId?: string;
   variantId?: string;
   serviceId?: string;
+  serviceVariantId?: string;
   nameSnapshot: string;
   unitPriceSnapshot: Decimal;
   quantity: number;
@@ -229,6 +230,7 @@ export class SalesService {
             productId: line.productId,
             variantId: line.variantId,
             serviceId: line.serviceId,
+            serviceVariantId: line.serviceVariantId,
             nameSnapshot: line.nameSnapshot,
             unitPriceSnapshot: toPrisma(line.unitPriceSnapshot),
             quantity: line.quantity,
@@ -657,22 +659,30 @@ export class SalesService {
           lineTotal: sub(lineGross, discount),
         });
       } else {
-        if (!item.serviceId) {
-          throw new BadRequestException('serviceId is required for SERVICE lines');
+        if (!item.serviceVariantId) {
+          throw new BadRequestException('serviceVariantId is required for SERVICE lines');
         }
-        const service = await tx.service.findUnique({ where: { id: item.serviceId } });
-        if (!service) throw new NotFoundException(`Service ${item.serviceId} not found`);
-        if (service.status !== 'ACTIVE') {
-          throw new ForbiddenException(`Service ${service.name} is inactive`);
+        const serviceVariant = await tx.serviceVariant.findUnique({
+          where: { id: item.serviceVariantId },
+          include: { service: true },
+        });
+        if (!serviceVariant) throw new NotFoundException(`Service option ${item.serviceVariantId} not found`);
+        const service = serviceVariant.service;
+        if (service.status !== 'ACTIVE' || serviceVariant.status !== 'ACTIVE') {
+          throw new ForbiddenException(`${service.name} is inactive`);
         }
-        const unitPrice = money(service.unitPrice);
+        const displayName =
+          serviceVariant.label && serviceVariant.label !== 'Standard'
+            ? `${service.name} — ${serviceVariant.label}`
+            : service.name;
+        const unitPrice = money(serviceVariant.unitPrice);
 
         let lineGross: Decimal;
         let pages: number | undefined;
         if (service.pricingType === 'PER_PAGE') {
           if (!item.pages || item.pages < 1) {
             throw new BadRequestException(
-              `Service ${service.name} is priced per page; "pages" is required`,
+              `${displayName} is priced per page; "pages" is required`,
             );
           }
           pages = item.pages;
@@ -680,12 +690,13 @@ export class SalesService {
         } else {
           lineGross = mul(unitPrice, item.quantity);
         }
-        this.assertDiscount(discount, lineGross, service.name);
+        this.assertDiscount(discount, lineGross, displayName);
 
         lines.push({
           itemType: 'SERVICE',
           serviceId: service.id,
-          nameSnapshot: service.name,
+          serviceVariantId: serviceVariant.id,
+          nameSnapshot: displayName,
           unitPriceSnapshot: unitPrice,
           quantity: item.quantity,
           unitLabel: 'job',

@@ -123,13 +123,25 @@ export interface Product {
   updatedAt: string;
 }
 
+// A priced option of a service, e.g. "A4" / "A3".
+export interface ServiceVariant {
+  id: string;
+  serviceId: string;
+  label: string;
+  unitPrice: string;
+  isDefault: boolean;
+  status: ServiceStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Service {
   id: string;
   name: string;
   type: ServiceType;
   pricingType: PricingType;
-  unitPrice: string;
   status: ServiceStatus;
+  variants: ServiceVariant[];
   createdAt: string;
   updatedAt: string;
 }

@@ -19,18 +19,31 @@ import {
 import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/providers/ToastProvider';
 import {
+  useAddServiceVariant,
   useCreateService,
+  useDeactivateServiceVariant,
   useDeleteService,
   useReactivateService,
   useRemoveService,
   useServices,
   useUpdateService,
+  useUpdateServiceVariant,
   type ServiceInput,
+  type ServiceVariantInput,
 } from '@/hooks/useCatalog';
 import { PRICING_TYPE_OPTIONS, SERVICE_TYPE_ICON, SERVICE_TYPE_OPTIONS } from '@/lib/constants';
 import { extractMessage } from '@/lib/api';
 import { currency, humanize, num } from '@/lib/utils';
 import type { PricingType, Service, ServiceType } from '@/types';
+
+/** Single price, or a min–max range when options differ. */
+function servicePriceLabel(s: Service): string {
+  const vals = s.variants.map((v) => num(v.unitPrice));
+  if (vals.length === 0) return '—';
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  return min === max ? currency(min) : `${currency(min)} – ${currency(max)}`;
+}
 
 export default function ServicesPage() {
   const { isAdmin } = useAuth();
@@ -173,8 +186,9 @@ export default function ServicesPage() {
               <p className="mt-0.5 text-[12px] text-on-surface-variant">{humanize(s.type)}</p>
               <div className="mt-4 flex items-end justify-between">
                 <div>
-                  <p className="font-mono-data text-h3 font-bold text-primary">{currency(s.unitPrice)}</p>
+                  <p className="font-mono-data text-h3 font-bold text-primary">{servicePriceLabel(s)}</p>
                   <p className="text-[11px] text-on-surface-variant">
+                    {s.variants.length > 1 ? `${s.variants.length} options · ` : ''}
                     {s.pricingType === 'PER_PAGE' ? 'per page' : 'fixed price'}
                   </p>
                 </div>
@@ -218,9 +232,18 @@ interface ServiceFormState {
   name: string;
   type: ServiceType;
   pricingType: PricingType;
-  unitPrice: string;
   status: 'ACTIVE' | 'INACTIVE';
 }
+
+interface OptionRow {
+  key: string;
+  id?: string;
+  label: string;
+  unitPrice: string;
+}
+
+let optSeq = 0;
+const newOpt = (label = ''): OptionRow => ({ key: `o${optSeq++}`, label, unitPrice: '' });
 
 function ServiceFormModal({
   open,
@@ -234,56 +257,94 @@ function ServiceFormModal({
   const toast = useToast();
   const create = useCreateService();
   const update = useUpdateService();
+  const addVariant = useAddServiceVariant();
+  const updateVariant = useUpdateServiceVariant();
+  const deactivateVariant = useDeactivateServiceVariant();
   const isEdit = !!service;
-  const saving = create.isPending || update.isPending;
+  const saving =
+    create.isPending ||
+    update.isPending ||
+    addVariant.isPending ||
+    updateVariant.isPending ||
+    deactivateVariant.isPending;
 
   const [form, setForm] = useState<ServiceFormState>({
     name: '',
     type: 'PRINTING_BW',
     pricingType: 'PER_PAGE',
-    unitPrice: '',
     status: 'ACTIVE',
   });
+  const [options, setOptions] = useState<OptionRow[]>([newOpt('Standard')]);
+  const [removedIds, setRemovedIds] = useState<string[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!open) return;
     setErrors({});
+    setRemovedIds([]);
     if (service) {
       setForm({
         name: service.name,
         type: service.type,
         pricingType: service.pricingType,
-        unitPrice: num(service.unitPrice).toString(),
         status: service.status,
       });
+      setOptions(
+        service.variants.map((v) => ({
+          key: v.id,
+          id: v.id,
+          label: v.label,
+          unitPrice: num(v.unitPrice).toString(),
+        })),
+      );
     } else {
-      setForm({ name: '', type: 'PRINTING_BW', pricingType: 'PER_PAGE', unitPrice: '', status: 'ACTIVE' });
+      setForm({ name: '', type: 'PRINTING_BW', pricingType: 'PER_PAGE', status: 'ACTIVE' });
+      setOptions([newOpt('Standard')]);
     }
   }, [open, service]);
+
+  const setOpt = (key: string, patch: Partial<OptionRow>) =>
+    setOptions((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  const addRow = () => setOptions((rows) => [...rows, newOpt()]);
+  const removeRow = (row: OptionRow) => {
+    setOptions((rows) => rows.filter((r) => r.key !== row.key));
+    if (row.id) setRemovedIds((ids) => [...ids, row.id!]);
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const errs: Record<string, string> = {};
     if (!form.name.trim()) errs.name = 'Name is required';
-    if (form.unitPrice === '' || num(form.unitPrice) < 0) errs.unitPrice = 'Enter a valid price';
+    if (options.length === 0) errs.options = 'Add at least one option';
+    options.forEach((o) => {
+      if (!o.label.trim()) errs[`label-${o.key}`] = 'Required';
+      if (o.unitPrice === '' || num(o.unitPrice) < 0) errs[`price-${o.key}`] = 'Required';
+    });
     setErrors(errs);
     if (Object.keys(errs).length) return;
 
-    const input: ServiceInput = {
+    const serviceFields: ServiceInput = {
       name: form.name.trim(),
       type: form.type,
       pricingType: form.pricingType,
-      unitPrice: num(form.unitPrice),
       status: form.status,
     };
+    const toInput = (o: OptionRow): ServiceVariantInput => ({
+      label: o.label.trim(),
+      unitPrice: num(o.unitPrice),
+    });
     try {
       if (isEdit) {
-        await update.mutateAsync({ id: service!.id, input });
-        toast.success('Service updated', input.name);
+        await update.mutateAsync({ id: service!.id, input: serviceFields });
+        for (const o of options) {
+          if (o.id) await updateVariant.mutateAsync({ variantId: o.id, input: toInput(o) });
+          else await addVariant.mutateAsync({ serviceId: service!.id, input: toInput(o) });
+        }
+        for (const id of removedIds) await deactivateVariant.mutateAsync(id);
+        toast.success('Service updated', serviceFields.name);
       } else {
-        await create.mutateAsync(input);
-        toast.success('Service created', input.name);
+        await create.mutateAsync({ ...serviceFields, variants: options.map(toInput) });
+        toast.success('Service created', serviceFields.name);
       }
       onClose();
     } catch (err) {
@@ -311,16 +372,16 @@ function ServiceFormModal({
         <Field label="Service name" required error={errors.name}>
           <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} invalid={!!errors.name} placeholder="Printing — Black & White" />
         </Field>
-        <Field label="Service type" required>
-          <Select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as ServiceType }))}>
-            {SERVICE_TYPE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
         <div className="grid grid-cols-2 gap-4">
+          <Field label="Service type" required>
+            <Select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as ServiceType }))}>
+              {SERVICE_TYPE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
           <Field label="Pricing type" required>
             <Select
               value={form.pricingType}
@@ -333,21 +394,57 @@ function ServiceFormModal({
               ))}
             </Select>
           </Field>
-          <Field
-            label={form.pricingType === 'PER_PAGE' ? 'Price per page' : 'Fixed price'}
-            required
-            error={errors.unitPrice}
-          >
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.unitPrice}
-              onChange={(e) => setForm((f) => ({ ...f, unitPrice: e.target.value }))}
-              invalid={!!errors.unitPrice}
-            />
-          </Field>
         </div>
+
+        {/* Options (e.g. paper sizes) */}
+        <div className="rounded-xl border border-outline-variant p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-label-caps uppercase tracking-wide text-on-surface-variant">Options</p>
+              <p className="mt-0.5 text-[12px] text-on-surface-variant">
+                e.g. A4 and A3, each with its own {form.pricingType === 'PER_PAGE' ? 'per-page' : 'fixed'} price. Use one
+                option for a simple service.
+              </p>
+            </div>
+            <Button type="button" size="sm" variant="outline" icon="add" onClick={addRow}>
+              Add option
+            </Button>
+          </div>
+          {errors.options && <p className="mt-2 text-[12px] text-error">{errors.options}</p>}
+          <div className="mt-3 space-y-2">
+            {options.map((o) => (
+              <div key={o.key} className="flex items-center gap-2">
+                <Input
+                  value={o.label}
+                  onChange={(e) => setOpt(o.key, { label: e.target.value })}
+                  invalid={!!errors[`label-${o.key}`]}
+                  placeholder="A4"
+                  className="flex-1"
+                />
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={o.unitPrice}
+                  onChange={(e) => setOpt(o.key, { unitPrice: e.target.value })}
+                  invalid={!!errors[`price-${o.key}`]}
+                  placeholder="Price"
+                  className="w-32"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeRow(o)}
+                  disabled={options.length <= 1}
+                  title="Remove option"
+                  className="flex items-center justify-center rounded-lg px-2 py-2 text-on-surface-variant transition-colors hover:text-error disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  <Icon name="close" size={18} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <Field label="Status">
           <Select value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as 'ACTIVE' | 'INACTIVE' }))}>
             <option value="ACTIVE">Active</option>

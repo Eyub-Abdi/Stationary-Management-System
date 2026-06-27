@@ -21,7 +21,7 @@ export interface SaleFilters {
 export interface SaleItemInput {
   itemType: SaleItemType;
   variantId?: string;
-  serviceId?: string;
+  serviceVariantId?: string;
   sellUnit?: SellUnit;
   quantity: number;
   pages?: number;

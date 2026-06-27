@@ -25,10 +25,10 @@ export class SaleItemInputDto {
   @IsUUID()
   variantId?: string;
 
-  @ApiPropertyOptional({ description: 'Required when itemType = SERVICE' })
+  @ApiPropertyOptional({ description: 'Required when itemType = SERVICE — the priced option (e.g. A4/A3).' })
   @IsOptional()
   @IsUUID()
-  serviceId?: string;
+  serviceVariantId?: string;
 
   @ApiPropertyOptional({
     enum: SellUnit,

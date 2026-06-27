@@ -93,7 +93,14 @@ async function main() {
     await prisma.service.upsert({
       where: { name: s.name },
       update: {},
-      create: s,
+      create: {
+        name: s.name,
+        type: s.type,
+        pricingType: s.pricingType,
+        variants: {
+          create: [{ label: 'Standard', unitPrice: s.unitPrice, isDefault: true }],
+        },
+      },
     });
   }
   console.log(`✓ ${services.length} services ready`);

@@ -22,7 +22,19 @@ import { CustomerFormModal } from '@/features/customers/CustomerFormModal';
 import { SERVICE_TYPE_ICON } from '@/lib/constants';
 import { extractMessage } from '@/lib/api';
 import { cn, currency, imageSrc, num } from '@/lib/utils';
-import type { PaymentMethod, Product, ProductVariant, Sale, SellUnit, Service } from '@/types';
+import type { PaymentMethod, Product, ProductVariant, Sale, SellUnit, Service, ServiceVariant } from '@/types';
+
+/** Active, sellable options of a service. */
+function activeServiceVariants(s: Service): ServiceVariant[] {
+  return s.variants.filter((v) => v.status === 'ACTIVE');
+}
+function serviceVariantName(s: Service, v: ServiceVariant): string {
+  return v.label && v.label !== 'Standard' ? `${s.name} — ${v.label}` : s.name;
+}
+function minServicePrice(s: Service): number {
+  const vs = activeServiceVariants(s);
+  return vs.length ? Math.min(...vs.map((v) => num(v.unitPrice))) : 0;
+}
 
 /** Active, sellable variants of a product. */
 function activeVariants(p: Product): ProductVariant[] {
@@ -91,6 +103,7 @@ export default function PosPage() {
   const [receipt, setReceipt] = useState<Sale | null>(null);
   const [unitPick, setUnitPick] = useState<{ product: Product; variant: ProductVariant } | null>(null);
   const [variantPick, setVariantPick] = useState<Product | null>(null);
+  const [serviceVariantPick, setServiceVariantPick] = useState<Service | null>(null);
   const [custModalOpen, setCustModalOpen] = useState(false);
   const [view, setView] = useState<'grid' | 'list'>(
     () => (localStorage.getItem('pos-view') === 'list' ? 'list' : 'grid'),
@@ -181,20 +194,36 @@ export default function PosPage() {
     });
   };
 
+  // Tapping a service: pick an option (e.g. A4/A3) when there's more than one.
   const addService = (s: Service) => {
+    const vs = activeServiceVariants(s);
+    if (vs.length === 0) {
+      toast.warning('No options', 'This service has no active options to sell.');
+      return;
+    }
+    if (vs.length > 1) {
+      setServiceVariantPick(s);
+      return;
+    }
+    addServiceVariant(s, vs[0]);
+  };
+
+  const addServiceVariant = (s: Service, v: ServiceVariant) => {
+    const price = num(v.unitPrice);
+    const key = `S-${v.id}`;
     setCart((prev) => {
-      const existing = prev.find((l) => l.itemType === 'SERVICE' && l.refId === s.id);
+      const existing = prev.find((l) => l.key === key);
       if (existing) {
-        return prev.map((l) => (l.key === existing.key ? { ...l, quantity: l.quantity + 1 } : l));
+        return prev.map((l) => (l.key === key ? { ...l, quantity: l.quantity + 1 } : l));
       }
       return [
         ...prev,
         {
-          key: `S-${s.id}`,
+          key,
           itemType: 'SERVICE',
-          refId: s.id,
-          name: s.name,
-          unitPrice: num(s.unitPrice),
+          refId: v.id,
+          name: serviceVariantName(s, v),
+          unitPrice: price,
           quantity: 1,
           perPage: s.pricingType === 'PER_PAGE',
           pages: s.pricingType === 'PER_PAGE' ? 1 : undefined,
@@ -203,8 +232,8 @@ export default function PosPage() {
           baseUnit: 'job',
           bulkUnit: null,
           unitSize: 1,
-          basePrice: num(s.unitPrice),
-          bulkPrice: num(s.unitPrice),
+          basePrice: price,
+          bulkPrice: price,
         },
       ];
     });
@@ -265,7 +294,7 @@ export default function PosPage() {
     const items: SaleItemInput[] = cart.map((l) => ({
       itemType: l.itemType,
       variantId: l.itemType === 'PRODUCT' ? l.refId : undefined,
-      serviceId: l.itemType === 'SERVICE' ? l.refId : undefined,
+      serviceVariantId: l.itemType === 'SERVICE' ? l.refId : undefined,
       sellUnit: l.itemType === 'PRODUCT' ? l.sellUnit : undefined,
       quantity: l.quantity,
       pages: l.perPage ? l.pages || 1 : undefined,
@@ -587,6 +616,15 @@ export default function PosPage() {
         }}
         onClose={() => setVariantPick(null)}
       />
+      <ServiceVariantPickModal
+        service={serviceVariantPick}
+        onPick={(v) => {
+          const s = serviceVariantPick;
+          setServiceVariantPick(null);
+          if (s) addServiceVariant(s, v);
+        }}
+        onClose={() => setServiceVariantPick(null)}
+      />
       <UnitPickModal
         product={unitPick?.product ?? null}
         variant={unitPick?.variant ?? null}
@@ -638,6 +676,39 @@ function VariantPickModal({
             </button>
           );
         })}
+      </div>
+    </Modal>
+  );
+}
+
+/** Asks which option (e.g. A4/A3) of a multi-option service is being sold. */
+function ServiceVariantPickModal({
+  service,
+  onPick,
+  onClose,
+}: {
+  service: Service | null;
+  onPick: (variant: ServiceVariant) => void;
+  onClose: () => void;
+}) {
+  if (!service) return null;
+  const vs = activeServiceVariants(service);
+  const per = service.pricingType === 'PER_PAGE';
+  return (
+    <Modal open={!!service} onClose={onClose} size="sm" title={service.name} subtitle="Pick an option">
+      <div className="grid grid-cols-2 gap-3">
+        {vs.map((v) => (
+          <button
+            key={v.id}
+            onClick={() => onPick(v)}
+            className="flex flex-col items-center gap-1 rounded-xl border border-outline-variant bg-surface-container-lowest p-4 transition-all hover:-translate-y-0.5 hover:border-secondary hover:shadow-md"
+          >
+            <Icon name="description" size={24} className="text-secondary" />
+            <span className="text-body-sm font-semibold text-on-surface">{v.label}</span>
+            <span className="font-mono-data text-[13px] font-bold text-primary">{currency(v.unitPrice)}</span>
+            <span className="text-[11px] text-on-surface-variant">{per ? 'per page' : 'fixed'}</span>
+          </button>
+        ))}
       </div>
     </Modal>
   );
@@ -809,6 +880,8 @@ function ProductRow({ product, onAdd }: { product: Product; onAdd: () => void })
 }
 
 function ServiceRow({ service, onAdd }: { service: Service; onAdd: () => void }) {
+  const multi = activeServiceVariants(service).length > 1;
+  const price = minServicePrice(service);
   return (
     <li>
       <button
@@ -818,12 +891,19 @@ function ServiceRow({ service, onAdd }: { service: Service; onAdd: () => void })
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary-fixed text-on-primary-fixed">
           <Icon name={SERVICE_TYPE_ICON[service.type]} size={20} />
         </span>
-        <p className="min-w-0 flex-1 truncate text-[13px] font-semibold text-on-surface">{service.name}</p>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] font-semibold text-on-surface">{service.name}</p>
+          {multi && (
+            <p className="truncate text-[11px] text-on-surface-variant">
+              {activeServiceVariants(service).length} options
+            </p>
+          )}
+        </div>
         <span className="shrink-0 text-[11px] text-on-surface-variant">
           {service.pricingType === 'PER_PAGE' ? '/page' : 'fixed'}
         </span>
         <span className="shrink-0 font-mono-data text-[13px] font-bold text-primary">
-          {currency(service.unitPrice)}
+          {multi ? `from ${currency(price)}` : currency(price)}
         </span>
       </button>
     </li>
@@ -831,17 +911,28 @@ function ServiceRow({ service, onAdd }: { service: Service; onAdd: () => void })
 }
 
 function ServiceTile({ service, onAdd }: { service: Service; onAdd: () => void }) {
+  const multi = activeServiceVariants(service).length > 1;
+  const price = minServicePrice(service);
   return (
     <button
       onClick={onAdd}
       className="group flex flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest p-3 text-left transition-all hover:-translate-y-0.5 hover:border-secondary hover:shadow-md"
     >
-      <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-fixed text-on-primary-fixed">
-        <Icon name={SERVICE_TYPE_ICON[service.type]} size={20} />
-      </span>
+      <div className="flex items-center justify-between">
+        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-fixed text-on-primary-fixed">
+          <Icon name={SERVICE_TYPE_ICON[service.type]} size={20} />
+        </span>
+        {multi && (
+          <span className="rounded-full bg-primary-fixed px-1.5 py-0.5 text-[10px] font-bold text-on-primary-fixed">
+            {activeServiceVariants(service).length} options
+          </span>
+        )}
+      </div>
       <p className="mt-2 line-clamp-2 text-[13px] font-semibold leading-tight text-on-surface">{service.name}</p>
       <div className="mt-auto flex items-center justify-between pt-2">
-        <span className="font-mono-data text-[13px] font-bold text-primary">{currency(service.unitPrice)}</span>
+        <span className="font-mono-data text-[13px] font-bold text-primary">
+          {multi ? `from ${currency(price)}` : currency(price)}
+        </span>
         <span className="text-[10px] text-on-surface-variant">
           {service.pricingType === 'PER_PAGE' ? '/page' : 'fixed'}
         </span>

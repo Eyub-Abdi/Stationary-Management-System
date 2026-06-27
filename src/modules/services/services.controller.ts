@@ -18,7 +18,12 @@ import {
 } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AuditService } from '../audit/audit.service';
-import { CreateServiceDto, UpdateServiceDto } from './dto/service.dto';
+import {
+  CreateServiceDto,
+  CreateServiceVariantDto,
+  UpdateServiceDto,
+  UpdateServiceVariantDto,
+} from './dto/service.dto';
 import { ServicesService } from './services.service';
 
 @ApiTags('Services')
@@ -81,6 +86,80 @@ export class ServicesController {
       metadata: { changes: dto },
     });
     return service;
+  }
+
+  // ---- Variants (priced options) ------------------------------------------
+
+  @Roles(Role.ADMIN)
+  @Post(':id/variants')
+  @ApiOperation({ summary: 'Add a priced option to a service (admin)' })
+  async addVariant(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateServiceVariantDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    const variant = await this.services.addVariant(id, dto);
+    await this.audit.record({
+      userId: actor.id,
+      action: 'SERVICE_VARIANT_CREATED',
+      entityType: 'ServiceVariant',
+      entityId: variant.id,
+      metadata: { serviceId: id, label: variant.label },
+    });
+    return variant;
+  }
+
+  @Roles(Role.ADMIN)
+  @Patch('variants/:variantId')
+  @ApiOperation({ summary: 'Update a service option (admin)' })
+  async updateVariant(
+    @Param('variantId', ParseUUIDPipe) variantId: string,
+    @Body() dto: UpdateServiceVariantDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    const variant = await this.services.updateVariant(variantId, dto);
+    await this.audit.record({
+      userId: actor.id,
+      action: 'SERVICE_VARIANT_UPDATED',
+      entityType: 'ServiceVariant',
+      entityId: variantId,
+      metadata: { changes: dto },
+    });
+    return variant;
+  }
+
+  @Roles(Role.ADMIN)
+  @Delete('variants/:variantId')
+  @ApiOperation({ summary: 'Deactivate a service option (soft)' })
+  async deactivateVariant(
+    @Param('variantId', ParseUUIDPipe) variantId: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    const variant = await this.services.deactivateVariant(variantId);
+    await this.audit.record({
+      userId: actor.id,
+      action: 'SERVICE_VARIANT_DEACTIVATED',
+      entityType: 'ServiceVariant',
+      entityId: variantId,
+    });
+    return variant;
+  }
+
+  @Roles(Role.ADMIN)
+  @Delete('variants/:variantId/permanent')
+  @ApiOperation({ summary: 'Permanently delete a service option (admin)' })
+  async removeVariant(
+    @Param('variantId', ParseUUIDPipe) variantId: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    const result = await this.services.removeVariant(variantId);
+    await this.audit.record({
+      userId: actor.id,
+      action: 'SERVICE_VARIANT_DELETED',
+      entityType: 'ServiceVariant',
+      entityId: variantId,
+    });
+    return result;
   }
 
   @Roles(Role.ADMIN)

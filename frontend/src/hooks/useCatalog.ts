@@ -8,6 +8,7 @@ import type {
   Service,
   ServiceStatus,
   ServiceType,
+  ServiceVariant,
   Supplier,
 } from '@/types';
 
@@ -68,11 +69,17 @@ export interface ServiceFilters {
   includeInactive?: boolean;
 }
 
+export interface ServiceVariantInput {
+  label: string;
+  unitPrice: number;
+  status?: ServiceStatus;
+}
+
+/** Service-level fields (the priced options live in variants). */
 export interface ServiceInput {
   name: string;
   type: ServiceType;
   pricingType: PricingType;
-  unitPrice: number;
   status?: ServiceStatus;
 }
 
@@ -89,7 +96,8 @@ export function useServices(filters: ServiceFilters = {}) {
 export function useCreateService() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: ServiceInput) => unwrap<Service>(api.post('/services', input)),
+    mutationFn: (input: ServiceInput & { variants: ServiceVariantInput[] }) =>
+      unwrap<Service>(api.post('/services', input)),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['services'] }),
   });
 }
@@ -99,6 +107,33 @@ export function useUpdateService() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: Partial<ServiceInput> }) =>
       unwrap<Service>(api.patch(`/services/${id}`, input)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['services'] }),
+  });
+}
+
+export function useAddServiceVariant() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ serviceId, input }: { serviceId: string; input: ServiceVariantInput }) =>
+      unwrap<ServiceVariant>(api.post(`/services/${serviceId}/variants`, input)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['services'] }),
+  });
+}
+
+export function useUpdateServiceVariant() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ variantId, input }: { variantId: string; input: Partial<ServiceVariantInput> }) =>
+      unwrap<ServiceVariant>(api.patch(`/services/variants/${variantId}`, input)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['services'] }),
+  });
+}
+
+export function useDeactivateServiceVariant() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (variantId: string) =>
+      unwrap<ServiceVariant>(api.delete(`/services/variants/${variantId}`)),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['services'] }),
   });
 }

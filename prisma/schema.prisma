@@ -260,21 +260,42 @@ model ProductVariant {
 // Catalog: Services
 // ----------------------------------------------------------------------------
 
+// A service (e.g. "Printing B&W"). Its priced options — paper sizes like A4/A3 —
+// are ServiceVariants. Every service has at least one variant.
 model Service {
   id          String        @id @default(uuid()) @db.Uuid
   name        String        @unique
   type        ServiceType
   pricingType PricingType
-  // Price per page (PER_PAGE) or flat price (FIXED). Snapshotted at sale time.
-  unitPrice   Decimal       @db.Decimal(14, 2)
   status      ServiceStatus @default(ACTIVE)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
+  variants  ServiceVariant[]
   saleItems SaleItem[]
 
   @@index([status])
   @@map("services")
+}
+
+// A priced option of a service, e.g. "A4" / "A3". Holds the price; the parent
+// service holds the pricing model (per page vs fixed). Snapshotted at sale time.
+model ServiceVariant {
+  id        String        @id @default(uuid()) @db.Uuid
+  serviceId String        @db.Uuid
+  label     String // e.g. "A4", "A3"
+  unitPrice Decimal       @db.Decimal(14, 2)
+  isDefault Boolean       @default(false)
+  status    ServiceStatus @default(ACTIVE)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  service   Service    @relation(fields: [serviceId], references: [id])
+  saleItems SaleItem[]
+
+  @@index([serviceId])
+  @@index([status])
+  @@map("service_variants")
 }
 
 // ----------------------------------------------------------------------------
@@ -536,6 +557,7 @@ model SaleItem {
   productId String?      @db.Uuid
   variantId String?      @db.Uuid
   serviceId String?      @db.Uuid
+  serviceVariantId String? @db.Uuid
 
   // --- immutable historical snapshots ---
   nameSnapshot      String
@@ -554,16 +576,18 @@ model SaleItem {
   returnedQuantity  Int      @default(0)
 
   sale        Sale             @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  product     Product?         @relation(fields: [productId], references: [id])
-  variant     ProductVariant?  @relation(fields: [variantId], references: [id])
-  service     Service?         @relation(fields: [serviceId], references: [id])
-  allocations CogsAllocation[]
-  returnItems SaleReturnItem[]
+  product        Product?        @relation(fields: [productId], references: [id])
+  variant        ProductVariant? @relation(fields: [variantId], references: [id])
+  service        Service?        @relation(fields: [serviceId], references: [id])
+  serviceVariant ServiceVariant? @relation(fields: [serviceVariantId], references: [id])
+  allocations    CogsAllocation[]
+  returnItems    SaleReturnItem[]
 
   @@index([saleId])
   @@index([productId])
   @@index([variantId])
   @@index([serviceId])
+  @@index([serviceVariantId])
   @@map("sale_items")
 }
 
