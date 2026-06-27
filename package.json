@@ -25,6 +25,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "prisma:seed": "ts-node prisma/seed.ts",
+    "prisma:seed:admin": "ts-node prisma/seed-admin.ts",
     "db:reset": "prisma migrate reset --force"
   },
   "prisma": {
