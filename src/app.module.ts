@@ -28,6 +28,7 @@ import { SalesModule } from './modules/sales/sales.module';
 import { ServicesModule } from './modules/services/services.module';
 import { SharedModule } from './modules/shared/shared.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
+import { SystemModule } from './modules/system/system.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { UsersModule } from './modules/users/users.module';
 
@@ -93,6 +94,7 @@ import { UsersModule } from './modules/users/users.module';
     ReportsModule,
     UploadsModule,
     BackupModule,
+    SystemModule,
     HealthModule,
   ],
   providers: [

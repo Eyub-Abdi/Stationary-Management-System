@@ -14,27 +14,40 @@ import { useTheme } from '@/providers/ThemeProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { useDownloadBackup, useRestoreBackup } from '@/hooks/useBackup';
+import { useSetStartup, useStartupStatus } from '@/hooks/useSystem';
 import { extractMessage } from '@/lib/api';
 import { cn, initials } from '@/lib/utils';
 
 type TabKey = 'preferences' | 'backup';
 
+const TAB_STORAGE_KEY = 'settings.activeTab';
+
 export default function SettingsPage() {
   const { isAdmin } = useAuth();
-  const [tab, setTab] = useState<TabKey>('preferences');
+  const [tab, setTab] = useState<TabKey>(() => {
+    const saved = localStorage.getItem(TAB_STORAGE_KEY);
+    // Never restore the admin-only Backup tab for a non-admin.
+    if (saved === 'backup') return isAdmin ? 'backup' : 'preferences';
+    return 'preferences';
+  });
+
+  const selectTab = (v: TabKey) => {
+    setTab(v);
+    localStorage.setItem(TAB_STORAGE_KEY, v);
+  };
 
   const items = [
     { value: 'preferences' as const, label: 'Preferences', icon: 'tune' },
-    ...(isAdmin ? [{ value: 'backup' as const, label: 'Backup & Restore', icon: 'database' }] : []),
+    ...(isAdmin ? [{ value: 'backup' as const, label: 'System', icon: 'dns' }] : []),
   ];
 
   return (
     <div className="flex flex-col gap-gutter">
       <PageHeader title="Settings" description="Configure your interface and manage your data." />
-      <Tabs value={tab} onChange={(v) => setTab(v as TabKey)} items={items} />
+      <Tabs value={tab} onChange={(v) => selectTab(v as TabKey)} items={items} />
 
       {tab === 'preferences' && <PreferencesTab />}
-      {tab === 'backup' && isAdmin && <BackupTab />}
+      {tab === 'backup' && isAdmin && <SystemTab />}
     </div>
   );
 }
@@ -90,7 +103,109 @@ function PreferencesTab() {
 
 const RESTORE_PHRASE = 'RESTORE';
 
-function BackupTab() {
+function SystemTab() {
+  return (
+    <div className="flex flex-col gap-gutter">
+      <StartupSection />
+      <BackupRestoreSection />
+    </div>
+  );
+}
+
+function StartupSection() {
+  const toast = useToast();
+  const { data: status, isLoading } = useStartupStatus();
+  const setStartup = useSetStartup();
+
+  const toggle = async () => {
+    if (!status) return;
+    try {
+      const next = await setStartup.mutateAsync(!status.enabled);
+      toast.success(
+        next.enabled ? 'Startup enabled' : 'Startup disabled',
+        next.enabled
+          ? 'The app will launch automatically when Windows starts.'
+          : 'The app will no longer launch on startup.',
+      );
+    } catch (e) {
+      toast.error('Could not change startup', extractMessage(e));
+    }
+  };
+
+  const enabled = !!status?.enabled;
+  const supported = !!status?.supported;
+
+  return (
+    <Card className="border border-tertiary/40">
+      <CardHeader title="Run on startup" subtitle="Launch the app automatically when this computer turns on" />
+      <CardBody>
+        {/* Technical warning, as requested. */}
+        <div className="mb-4 flex gap-2 rounded-xl border border-outline-variant bg-surface-container-high p-3 text-[13px] text-on-surface-variant">
+          <Icon name="engineering" size={18} className="mt-0.5 shrink-0 text-on-surface-variant" />
+          <span>
+            <strong className="text-on-surface">
+              Technical setting — only change this if you know what you're doing.
+            </strong>{' '}
+            It registers a launcher in Windows so the app and browser open on sign-in. For a shop
+            till this is convenient, but it's meant for whoever set the computer up.
+          </span>
+        </div>
+
+        {isLoading ? (
+          <p className="text-body-sm text-on-surface-variant">Checking status…</p>
+        ) : !supported ? (
+          <p className="text-body-sm text-on-surface-variant">
+            Automatic startup is only available on Windows.
+          </p>
+        ) : (
+          <>
+            <div className="flex items-center justify-between rounded-xl bg-surface-container-low p-3">
+              <div className="flex items-center gap-3">
+                <span
+                  className={cn(
+                    'flex h-9 w-9 items-center justify-center rounded-lg',
+                    enabled ? 'bg-secondary-container text-on-secondary-container' : 'bg-surface-container text-on-surface-variant',
+                  )}
+                >
+                  <Icon name={enabled ? 'power' : 'power_off'} size={20} />
+                </span>
+                <div>
+                  <p className="text-body-sm font-semibold text-on-surface">
+                    {enabled ? 'Enabled' : 'Disabled'}
+                  </p>
+                  <p className="text-[12px] text-on-surface-variant">
+                    Opens <span className="font-mono-data">{status?.url}</span> on sign-in
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant={enabled ? 'outline' : 'primary'}
+                icon={enabled ? 'toggle_off' : 'toggle_on'}
+                loading={setStartup.isPending}
+                onClick={toggle}
+              >
+                {enabled ? 'Disable' : 'Enable'}
+              </Button>
+            </div>
+
+            {!status?.productionReady && (
+              <div className="mt-3 flex gap-2 rounded-xl bg-error-container/40 p-3 text-[13px] text-on-error-container">
+                <Icon name="build" size={16} className="mt-0.5 shrink-0" />
+                <span>
+                  No production build found yet. Startup will only work once the app is built
+                  (<span className="font-mono-data">npm run build:all</span>). Until then it stays in
+                  development mode.
+                </span>
+              </div>
+            )}
+          </>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+function BackupRestoreSection() {
   const toast = useToast();
   const download = useDownloadBackup();
   const restore = useRestoreBackup();

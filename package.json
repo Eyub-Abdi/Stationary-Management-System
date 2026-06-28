@@ -7,6 +7,10 @@
   "private": true,
   "scripts": {
     "build": "nest build",
+    "build:all": "npm run build && npm --prefix frontend run build",
+    "serve": "node dist/src/main.js",
+    "setup": "node scripts/setup.mjs setup",
+    "update": "node scripts/setup.mjs update",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",

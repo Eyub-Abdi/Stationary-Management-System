@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+import { existsSync } from 'fs';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { initErrorReporter } from './common/observability/error-reporter';
@@ -44,6 +45,21 @@ async function bootstrap() {
     defaultVersion: apiVersion.replace(/^v/, ''),
     prefix: 'v',
   });
+
+  // Serve the built frontend (single-process production mode). No-op in dev,
+  // where the SPA is served by Vite and `frontend/dist` does not exist. With a
+  // build present, the whole app runs from this one process at the API port.
+  const frontendDist = join(process.cwd(), 'frontend', 'dist');
+  const indexHtml = join(frontendDist, 'index.html');
+  if (existsSync(indexHtml)) {
+    app.useStaticAssets(frontendDist);
+    // SPA fallback: any non-API, non-uploads GET returns index.html so client
+    // routes (e.g. /pos, /settings) work on refresh/deep-link.
+    app.getHttpAdapter().getInstance().get(/^\/(?!api|uploads).*/, (_req, res) => {
+      res.sendFile(indexHtml);
+    });
+    logger.log(`Serving frontend from ${frontendDist}`);
+  }
 
   // Graceful shutdown (drains connections, runs onModuleDestroy hooks).
   app.enableShutdownHooks();
