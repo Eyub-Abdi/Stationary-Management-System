@@ -1,6 +1,7 @@
 # Deployment Guide
 
-How to bring up KJ Stationery on a shop / server machine and keep it updated.
+How to bring up STMS (Stationery Management System) on a shop / server machine
+and keep it updated.
 The app runs as a single Node process serving both the API and the web UI on
 one port (default **3000**), backed by PostgreSQL.
 

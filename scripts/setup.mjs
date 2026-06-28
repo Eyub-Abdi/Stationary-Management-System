@@ -67,14 +67,32 @@ function requireEnv(keys) {
   }
 }
 
-function run(label, cmd) {
+function run(label, cmd, hint) {
   console.log(`\n→ ${label}\n  $ ${cmd}`);
   try {
     execSync(cmd, { cwd: ROOT, stdio: 'inherit', env: process.env });
   } catch {
     console.error(`\n✗ Failed: ${label}`);
+    if (hint) console.error(`  ${hint}`);
     process.exit(1);
   }
+}
+
+// devDependencies (Prisma CLI, Nest build, ts-node) are required to build/seed,
+// so force them in even when NODE_ENV=production prunes them.
+const NPM_INSTALL = 'npm install --include=dev';
+const NPM_INSTALL_FRONTEND = 'npm --prefix frontend install --include=dev';
+
+// Windows locks the Prisma query engine while the app runs, so `prisma generate`
+// fails with EPERM. This hint is shown if that step fails.
+const PRISMA_HINT =
+  'If this is an EPERM/permission error on query_engine*.dll, the STMS app is still running. ' +
+  'Stop the app/service (or the startup launcher), then run this again.';
+
+function stopAppReminder() {
+  console.log(
+    '\n  Reminder: stop the running STMS app/service first — Windows locks the Prisma engine while it runs.',
+  );
 }
 
 /** Run a command and return its trimmed stdout (no streaming). */
@@ -84,8 +102,8 @@ function capture(cmd) {
 
 /** `pull` mode: git pull, then run only the steps whose inputs changed. */
 function pullAndUpdate() {
-  console.log('\n=== KJ Stationery — pull & update ===');
-  console.log('  Tip: stop the running app/service first — Windows locks the Prisma engine while it runs.');
+  console.log('\n=== STMS — pull & update ===');
+  stopAppReminder();
 
   let before;
   try {
@@ -109,19 +127,19 @@ function pullAndUpdate() {
   const touched = (prefix) => changed.some((f) => f === prefix || f.startsWith(prefix));
 
   if (touched('package.json') || touched('package-lock.json')) {
-    run('Install backend dependencies (changed)', 'npm install');
+    run('Install backend dependencies (changed)', NPM_INSTALL);
   } else {
     console.log('\n· Backend dependencies unchanged — skipping install');
   }
 
   if (touched('frontend/package.json') || touched('frontend/package-lock.json')) {
-    run('Install frontend dependencies (changed)', 'npm --prefix frontend install');
+    run('Install frontend dependencies (changed)', NPM_INSTALL_FRONTEND);
   } else {
     console.log('· Frontend dependencies unchanged — skipping install');
   }
 
   if (touched('prisma/')) {
-    run('Generate Prisma client (schema changed)', 'npx prisma generate');
+    run('Generate Prisma client (schema changed)', 'npx prisma generate', PRISMA_HINT);
     run('Apply database migrations', 'npx prisma migrate deploy');
   } else {
     console.log('· No schema/migration changes — skipping Prisma');
@@ -140,11 +158,12 @@ if (MODE === 'pull') {
   process.exit(0);
 }
 
-console.log(`\n=== KJ Stationery — ${MODE === 'setup' ? 'initial setup' : 'update'} ===`);
+console.log(`\n=== STMS — ${MODE === 'setup' ? 'initial setup' : 'update'} ===`);
+if (MODE === 'update') stopAppReminder();
 
-run('Install backend dependencies', 'npm install');
-run('Install frontend dependencies', 'npm --prefix frontend install');
-run('Generate Prisma client', 'npx prisma generate');
+run('Install backend dependencies', NPM_INSTALL);
+run('Install frontend dependencies', NPM_INSTALL_FRONTEND);
+run('Generate Prisma client', 'npx prisma generate', PRISMA_HINT);
 run('Apply database migrations', 'npx prisma migrate deploy');
 
 if (MODE === 'setup') {
