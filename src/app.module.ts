@@ -26,6 +26,7 @@ import { PurchasesModule } from './modules/purchases/purchases.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { ServicesModule } from './modules/services/services.module';
+import { SettingsModule } from './modules/settings/settings.module';
 import { SharedModule } from './modules/shared/shared.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { SystemModule } from './modules/system/system.module';
@@ -84,6 +85,7 @@ import { UsersModule } from './modules/users/users.module';
     CategoriesModule,
     ProductsModule,
     ServicesModule,
+    SettingsModule,
     SuppliersModule,
     CustomersModule,
     PurchasesModule,

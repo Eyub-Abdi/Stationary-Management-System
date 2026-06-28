@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Icon } from '@/components/ui';
 import { useAuth } from '@/providers/AuthProvider';
+import { useAppSettings } from '@/hooks/useAppSettings';
 import { visibleNav } from './nav';
 
 export function Sidebar({
@@ -12,6 +13,7 @@ export function Sidebar({
   onClose: () => void;
 }) {
   const { user } = useAuth();
+  const { data: settings } = useAppSettings();
   const items = visibleNav(user?.role);
 
   return (
@@ -73,9 +75,11 @@ export function Sidebar({
               <Icon name="store" size={20} />
             </div>
             <div className="min-w-0">
-              <p className="truncate text-[13px] font-bold text-on-surface">KJ Stationery</p>
-              <p className="text-[10px] uppercase tracking-widest text-on-surface-variant">
-                Main Branch
+              <p className="truncate text-[13px] font-bold text-on-surface">
+                {settings?.businessName ?? 'KJ Stationery'}
+              </p>
+              <p className="truncate text-[10px] uppercase tracking-widest text-on-surface-variant">
+                {settings?.branchName ?? 'Main Branch'}
               </p>
             </div>
           </div>

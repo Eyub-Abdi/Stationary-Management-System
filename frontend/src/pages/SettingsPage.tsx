@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Badge,
   Button,
   Card,
   CardBody,
   CardHeader,
+  Field,
   Icon,
   Input,
   PageHeader,
@@ -15,20 +16,23 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { useDownloadBackup, useRestoreBackup } from '@/hooks/useBackup';
 import { useSetStartup, useStartupStatus } from '@/hooks/useSystem';
+import { useAppSettings, useUpdateAppSettings } from '@/hooks/useAppSettings';
 import { extractMessage } from '@/lib/api';
 import { cn, initials } from '@/lib/utils';
 
-type TabKey = 'preferences' | 'backup';
+type TabKey = 'preferences' | 'business' | 'backup';
 
 const TAB_STORAGE_KEY = 'settings.activeTab';
+const ADMIN_TABS: TabKey[] = ['business', 'backup'];
 
 export default function SettingsPage() {
   const { isAdmin } = useAuth();
+  const allowed = (t: string): t is TabKey =>
+    ['preferences', 'business', 'backup'].includes(t) && (isAdmin || !ADMIN_TABS.includes(t as TabKey));
+
   const [tab, setTab] = useState<TabKey>(() => {
     const saved = localStorage.getItem(TAB_STORAGE_KEY);
-    // Never restore the admin-only Backup tab for a non-admin.
-    if (saved === 'backup') return isAdmin ? 'backup' : 'preferences';
-    return 'preferences';
+    return saved && allowed(saved) ? saved : 'preferences';
   });
 
   const selectTab = (v: TabKey) => {
@@ -38,7 +42,12 @@ export default function SettingsPage() {
 
   const items = [
     { value: 'preferences' as const, label: 'Preferences', icon: 'tune' },
-    ...(isAdmin ? [{ value: 'backup' as const, label: 'System', icon: 'dns' }] : []),
+    ...(isAdmin
+      ? [
+          { value: 'business' as const, label: 'Business', icon: 'storefront' },
+          { value: 'backup' as const, label: 'System', icon: 'dns' },
+        ]
+      : []),
   ];
 
   return (
@@ -47,6 +56,7 @@ export default function SettingsPage() {
       <Tabs value={tab} onChange={(v) => selectTab(v as TabKey)} items={items} />
 
       {tab === 'preferences' && <PreferencesTab />}
+      {tab === 'business' && isAdmin && <BusinessTab />}
       {tab === 'backup' && isAdmin && <SystemTab />}
     </div>
   );
@@ -95,6 +105,73 @@ function PreferencesTab() {
             <Icon name="info" size={16} className="mr-1" />
             Contact an administrator to change your role or reset your password.
           </div>
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
+function BusinessTab() {
+  const toast = useToast();
+  const { data: settings, isLoading } = useAppSettings();
+  const update = useUpdateAppSettings();
+  const [businessName, setBusinessName] = useState('');
+  const [branchName, setBranchName] = useState('');
+
+  useEffect(() => {
+    if (settings) {
+      setBusinessName(settings.businessName);
+      setBranchName(settings.branchName);
+    }
+  }, [settings]);
+
+  const dirty =
+    !!settings &&
+    (businessName.trim() !== settings.businessName || branchName.trim() !== settings.branchName);
+
+  const save = async () => {
+    if (!businessName.trim()) {
+      toast.error('Name required', 'Enter your business name.');
+      return;
+    }
+    try {
+      await update.mutateAsync({ businessName: businessName.trim(), branchName: branchName.trim() });
+      toast.success('Saved', 'Your business name has been updated.');
+    } catch (e) {
+      toast.error('Could not save', extractMessage(e));
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-1 gap-gutter lg:grid-cols-2">
+      <Card>
+        <CardHeader title="Business identity" subtitle="Your shop name, shown in the sidebar and footer" />
+        <CardBody>
+          {isLoading ? (
+            <p className="text-body-sm text-on-surface-variant">Loading…</p>
+          ) : (
+            <div className="space-y-4">
+              <Field label="Business name" required>
+                <Input
+                  value={businessName}
+                  onChange={(e) => setBusinessName(e.target.value)}
+                  placeholder="e.g. KJ Stationery"
+                  maxLength={80}
+                />
+              </Field>
+              <Field label="Branch" hint="Optional label shown under the name">
+                <Input
+                  value={branchName}
+                  onChange={(e) => setBranchName(e.target.value)}
+                  placeholder="e.g. Main Branch"
+                  maxLength={80}
+                />
+              </Field>
+              <Button icon="check" onClick={save} loading={update.isPending} disabled={!dirty}>
+                Save changes
+              </Button>
+            </div>
+          )}
         </CardBody>
       </Card>
     </div>

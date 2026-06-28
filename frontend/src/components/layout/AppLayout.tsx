@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
+import { useAppSettings } from '@/hooks/useAppSettings';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 
 export function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { data: settings } = useAppSettings();
 
   return (
     <div className="min-h-screen bg-background">
@@ -18,7 +20,7 @@ export function AppLayout() {
         </main>
         <footer className="border-t border-outline-variant px-6 py-4">
           <div className="mx-auto flex max-w-[1600px] flex-col items-center justify-between gap-2 text-on-surface-variant sm:flex-row">
-            <p className="text-body-sm">© {new Date().getFullYear()} StatioPro ERP · KJ Stationery</p>
+            <p className="text-body-sm">© {new Date().getFullYear()} StatioPro ERP · {settings?.businessName ?? 'KJ Stationery'}</p>
             <p className="text-label-caps uppercase tracking-wide">Stationery Management System v1.0</p>
           </div>
         </footer>

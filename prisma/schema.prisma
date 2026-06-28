@@ -848,3 +848,17 @@ model AuditLog {
   @@index([createdAt])
   @@map("audit_logs")
 }
+
+// ----------------------------------------------------------------------------
+// Application settings (single row) — owner-editable branding such as the shop
+// name shown across the app.
+// ----------------------------------------------------------------------------
+
+model AppSetting {
+  id           String   @id @default("singleton")
+  businessName String   @default("KJ Stationery")
+  branchName   String   @default("Main Branch")
+  updatedAt    DateTime @updatedAt
+
+  @@map("app_settings")
+}
