@@ -12,6 +12,7 @@ export const SERVICE_TYPE_OPTIONS: { value: ServiceType; label: string; icon: st
   { value: 'PHOTOCOPY_COLOR', label: 'Photocopy — Color', icon: 'content_copy' },
   { value: 'SCANNING', label: 'Scanning', icon: 'scanner' },
   { value: 'LAMINATION', label: 'Lamination', icon: 'note_stack' },
+  { value: 'TYPING', label: 'Typing', icon: 'keyboard' },
 ];
 
 export const SERVICE_TYPE_ICON: Record<ServiceType, string> = {
@@ -21,6 +22,7 @@ export const SERVICE_TYPE_ICON: Record<ServiceType, string> = {
   PHOTOCOPY_COLOR: 'content_copy',
   SCANNING: 'scanner',
   LAMINATION: 'note_stack',
+  TYPING: 'keyboard',
 };
 
 export const PRICING_TYPE_OPTIONS: { value: PricingType; label: string }[] = [

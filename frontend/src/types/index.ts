@@ -12,7 +12,8 @@ export type ServiceType =
   | 'PHOTOCOPY_BW'
   | 'PHOTOCOPY_COLOR'
   | 'SCANNING'
-  | 'LAMINATION';
+  | 'LAMINATION'
+  | 'TYPING';
 export type PricingType = 'PER_PAGE' | 'FIXED';
 export type SaleItemType = 'PRODUCT' | 'SERVICE';
 export type SaleStatus = 'COMPLETED' | 'VOIDED';

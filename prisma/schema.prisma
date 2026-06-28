@@ -47,6 +47,7 @@ enum ServiceType {
   PHOTOCOPY_COLOR
   SCANNING
   LAMINATION
+  TYPING
 }
 
 enum PricingType {
