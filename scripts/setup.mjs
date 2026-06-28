@@ -95,6 +95,23 @@ function stopAppReminder() {
   );
 }
 
+/**
+ * Self-heal: if the build tools are missing (devDependencies were pruned, e.g.
+ * by an earlier production install), reinstall them so the build can run.
+ */
+function ensureBuildable() {
+  const bin = (base, name) =>
+    join(base, 'node_modules', '.bin', process.platform === 'win32' ? `${name}.cmd` : name);
+  if (!existsSync(bin(ROOT, 'nest'))) {
+    console.log('\n· Backend build tools missing (dev deps pruned) — installing');
+    run('Install backend dependencies', NPM_INSTALL);
+  }
+  if (!existsSync(bin(join(ROOT, 'frontend'), 'vite'))) {
+    console.log('· Frontend build tools missing — installing');
+    run('Install frontend dependencies', NPM_INSTALL_FRONTEND);
+  }
+}
+
 /** Run a command and return its trimmed stdout (no streaming). */
 function capture(cmd) {
   return execSync(cmd, { cwd: ROOT, env: process.env }).toString().trim();
@@ -145,6 +162,7 @@ function pullAndUpdate() {
     console.log('· No schema/migration changes — skipping Prisma');
   }
 
+  ensureBuildable();
   run('Build backend + frontend', 'npm run build:all');
 }
 
@@ -170,6 +188,7 @@ if (MODE === 'setup') {
   run('Seed admin user (from .env)', 'npm run prisma:seed:admin');
 }
 
+ensureBuildable();
 run('Build backend + frontend', 'npm run build:all');
 
 console.log('\n✓ Done.');
