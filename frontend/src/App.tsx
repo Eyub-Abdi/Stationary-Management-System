@@ -14,6 +14,7 @@ import PurchasesPage from '@/pages/PurchasesPage';
 import CustomersPage from '@/pages/CustomersPage';
 import SuppliersPage from '@/pages/SuppliersPage';
 import ExpensesPage from '@/pages/ExpensesPage';
+import OfficePurchasesPage from '@/pages/OfficePurchasesPage';
 import CashPage from '@/pages/CashPage';
 import ReportsPage from '@/pages/ReportsPage';
 import ProfitPage from '@/pages/ProfitPage';
@@ -64,6 +65,14 @@ export default function App() {
           }
         />
         <Route path="/expenses" element={<ExpensesPage />} />
+        <Route
+          path="/office-purchases"
+          element={
+            <AdminRoute>
+              <OfficePurchasesPage />
+            </AdminRoute>
+          }
+        />
         <Route path="/cash" element={<CashPage />} />
         <Route
           path="/reports"

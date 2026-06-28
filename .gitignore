@@ -40,3 +40,6 @@ prisma/*.db
 
 # Uploaded files (served from disk; back up separately in production)
 /uploads
+
+# Database dumps (created/uploaded by the in-app backup feature)
+/backups

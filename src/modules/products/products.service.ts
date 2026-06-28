@@ -81,7 +81,7 @@ export class ProductsService {
       rows.push({
         sku,
         label: v.label.trim(),
-        sellingPrice: toPrisma(v.sellingPrice),
+        sellingPrice: toPrisma(v.sellingPrice ?? 0),
         buyingPrice: toPrisma(v.buyingPrice ?? 0),
         bulkSellingPrice:
           hasBulk && v.bulkSellingPrice !== undefined ? toPrisma(v.bulkSellingPrice) : null,

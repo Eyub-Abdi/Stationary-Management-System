@@ -21,6 +21,7 @@ export const qk = {
   movements: (params?: unknown) => ['inventory', 'movements', params] as const,
   valuation: () => ['inventory', 'valuation'] as const,
   expenses: (params?: unknown) => ['expenses', params] as const,
+  officePurchases: (params?: unknown) => ['office-purchases', params] as const,
   cashSessions: (params?: unknown) => ['cash-sessions', params] as const,
   cashSession: (id: string) => ['cash-session', id] as const,
   cashVariances: (params?: unknown) => ['cash-sessions', 'variances', params] as const,

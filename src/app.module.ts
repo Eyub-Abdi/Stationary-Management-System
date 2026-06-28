@@ -14,6 +14,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
+import { BackupModule } from './modules/backup/backup.module';
 import { CashModule } from './modules/cash/cash.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { CustomersModule } from './modules/customers/customers.module';
@@ -91,6 +92,7 @@ import { UsersModule } from './modules/users/users.module';
     CashModule,
     ReportsModule,
     UploadsModule,
+    BackupModule,
     HealthModule,
   ],
   providers: [

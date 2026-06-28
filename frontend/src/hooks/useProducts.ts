@@ -47,7 +47,8 @@ export function useLowStockProducts() {
 export interface VariantInput {
   sku?: string;
   label: string;
-  sellingPrice: number;
+  /** Optional — pricing is set when stock is first purchased. */
+  sellingPrice?: number;
   buyingPrice?: number;
   bulkSellingPrice?: number;
   minStockLevel?: number;

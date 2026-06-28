@@ -13,16 +13,13 @@ import {
 import { useCreateCategory } from '@/hooks/useCatalog';
 import { useUploadImage } from '@/hooks/useUploads';
 import { extractMessage } from '@/lib/api';
-import { imageSrc, num } from '@/lib/utils';
+import { imageSrc } from '@/lib/utils';
 import type { Category, Product } from '@/types';
 
 interface VariantRow {
   key: string;
   id?: string;
   label: string;
-  sellingPrice: string;
-  buyingPrice: string;
-  bulkSellingPrice: string;
   minStockLevel: string;
 }
 
@@ -52,9 +49,6 @@ let rowSeq = 0;
 const newRow = (label = ''): VariantRow => ({
   key: `r${rowSeq++}`,
   label,
-  sellingPrice: '',
-  buyingPrice: '',
-  bulkSellingPrice: '',
   minStockLevel: '0',
 });
 
@@ -129,9 +123,6 @@ export function ProductFormModal({
           key: v.id,
           id: v.id,
           label: v.label,
-          sellingPrice: num(v.sellingPrice).toString(),
-          buyingPrice: num(v.buyingPrice).toString(),
-          bulkSellingPrice: v.bulkSellingPrice ? num(v.bulkSellingPrice).toString() : '',
           minStockLevel: v.minStockLevel.toString(),
         })),
       );
@@ -183,7 +174,6 @@ export function ProductFormModal({
     if (variants.length === 0) errs.variants = 'Add at least one variant';
     variants.forEach((v) => {
       if (!v.label.trim()) errs[`label-${v.key}`] = 'Required';
-      if (v.sellingPrice === '' || num(v.sellingPrice) < 0) errs[`price-${v.key}`] = 'Required';
     });
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -191,9 +181,6 @@ export function ProductFormModal({
 
   const toVariantInput = (v: VariantRow): VariantInput => ({
     label: v.label.trim(),
-    sellingPrice: num(v.sellingPrice),
-    buyingPrice: v.buyingPrice === '' ? undefined : num(v.buyingPrice),
-    bulkSellingPrice: hasBulk && v.bulkSellingPrice !== '' ? num(v.bulkSellingPrice) : undefined,
     minStockLevel: v.minStockLevel === '' ? undefined : parseInt(v.minStockLevel, 10),
   });
 
@@ -388,14 +375,15 @@ export function ProductFormModal({
 
         {/* Variants */}
         <div className="rounded-xl border border-outline-variant p-4">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
               <p className="text-label-caps uppercase tracking-wide text-on-surface-variant">Variants</p>
               <p className="mt-0.5 text-[12px] text-on-surface-variant">
-                Each variant has its own price and stock (e.g. Blue, Red). Use one variant for a simple product.
+                Variants are styles of the same product (e.g. Blue, Red). Prices are set when you purchase
+                stock. Use one variant for a simple product.
               </p>
             </div>
-            <Button type="button" size="sm" variant="outline" icon="add" onClick={addRow}>
+            <Button type="button" size="sm" variant="outline" icon="add" onClick={addRow} className="shrink-0">
               Add variant
             </Button>
           </div>
@@ -403,40 +391,21 @@ export function ProductFormModal({
 
           <div className="mt-3 space-y-2">
             {/* Column headers */}
-            <div className="hidden grid-cols-[1.4fr_1fr_1fr_0.9fr_auto] gap-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-on-surface-variant sm:grid">
+            <div className="hidden grid-cols-[1fr_0.6fr_auto] gap-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-on-surface-variant sm:grid">
               <span>Label</span>
-              <span>Selling</span>
-              <span>Buying</span>
               <span>Min stock</span>
               <span />
             </div>
             {variants.map((v) => (
               <div
                 key={v.key}
-                className="grid grid-cols-2 gap-2 rounded-lg border border-outline-variant bg-surface-container-lowest p-2 sm:grid-cols-[1.4fr_1fr_1fr_0.9fr_auto] sm:border-0 sm:bg-transparent sm:p-0"
+                className="grid grid-cols-[1fr_0.6fr_auto] gap-2 rounded-lg border border-outline-variant bg-surface-container-lowest p-2 sm:border-0 sm:bg-transparent sm:p-0"
               >
                 <Input
                   value={v.label}
                   onChange={(e) => setVar(v.key, { label: e.target.value })}
                   invalid={!!errors[`label-${v.key}`]}
                   placeholder="Default"
-                />
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={v.sellingPrice}
-                  onChange={(e) => setVar(v.key, { sellingPrice: e.target.value })}
-                  invalid={!!errors[`price-${v.key}`]}
-                  placeholder="Selling"
-                />
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={v.buyingPrice}
-                  onChange={(e) => setVar(v.key, { buyingPrice: e.target.value })}
-                  placeholder="Buying"
                 />
                 <Input
                   type="number"
@@ -454,18 +423,6 @@ export function ProductFormModal({
                 >
                   <Icon name="close" size={18} />
                 </button>
-                {hasBulk && (
-                  <div className="col-span-2 sm:col-span-5">
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={v.bulkSellingPrice}
-                      onChange={(e) => setVar(v.key, { bulkSellingPrice: e.target.value })}
-                      placeholder={`Pack price for ${v.label || 'variant'} (blank = pcs × ${form.unitSize || 'size'})`}
-                    />
-                  </div>
-                )}
               </div>
             ))}
           </div>

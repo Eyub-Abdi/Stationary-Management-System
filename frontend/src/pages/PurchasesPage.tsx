@@ -139,7 +139,19 @@ interface DraftItem {
   sellUnit: SellUnit;
   quantity: string;
   unitCost: string;
+  sellingPrice: string;
+  bulkSellingPrice: string;
 }
+
+const newDraft = (): DraftItem => ({
+  key: crypto.randomUUID(),
+  variantId: '',
+  sellUnit: 'BASE',
+  quantity: '1',
+  unitCost: '',
+  sellingPrice: '',
+  bulkSellingPrice: '',
+});
 
 function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const toast = useToast();
@@ -156,6 +168,7 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
           .map((v) => ({
             variantId: v.id,
             product: p,
+            variant: v,
             label:
               v.label && v.label !== 'Default'
                 ? `${p.name} — ${v.label} (${v.sku})`
@@ -183,18 +196,26 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
       setPayment('CASH');
       setAmountPaid('');
       setNotes('');
-      setItems([{ key: crypto.randomUUID(), variantId: '', sellUnit: 'BASE', quantity: '1', unitCost: '' }]);
+      setItems([newDraft()]);
     }
   }, [open]);
 
-  const addRow = () =>
-    setItems((p) => [
-      ...p,
-      { key: crypto.randomUUID(), variantId: '', sellUnit: 'BASE', quantity: '1', unitCost: '' },
-    ]);
+  const addRow = () => setItems((p) => [...p, newDraft()]);
   const updateRow = (key: string, patch: Partial<DraftItem>) =>
     setItems((p) => p.map((i) => (i.key === key ? { ...i, ...patch } : i)));
   const removeRow = (key: string) => setItems((p) => p.filter((i) => i.key !== key));
+
+  // Choosing a variant pre-fills its current selling prices so an unchanged
+  // restock keeps the same tag, and a brand-new product prompts for one.
+  const pickVariant = (key: string, variantId: string) => {
+    const v = variantById.get(variantId)?.variant;
+    updateRow(key, {
+      variantId,
+      sellUnit: 'BASE',
+      sellingPrice: v && num(v.sellingPrice) > 0 ? num(v.sellingPrice).toString() : '',
+      bulkSellingPrice: v?.bulkSellingPrice ? num(v.bulkSellingPrice).toString() : '',
+    });
+  };
 
   const total = items.reduce((a, i) => a + num(i.quantity) * num(i.unitCost), 0);
   const paid = payment === 'CASH' ? total : num(amountPaid);
@@ -214,11 +235,23 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
       toast.error('Amount paid too high', 'Amount paid cannot exceed the total cost.');
       return;
     }
+    // A variant that has never been priced must get a selling price here.
+    const missingPrice = valid.find((i) => {
+      const v = variantById.get(i.variantId)?.variant;
+      return i.sellingPrice.trim() === '' && (!v || num(v.sellingPrice) <= 0);
+    });
+    if (missingPrice) {
+      const name = variantById.get(missingPrice.variantId)?.label ?? 'this item';
+      toast.error('Selling price needed', `Set a selling price for ${name} — it has no price yet.`);
+      return;
+    }
     const payloadItems: PurchaseItemInput[] = valid.map((i) => ({
       variantId: i.variantId,
       sellUnit: i.sellUnit,
       quantity: parseInt(i.quantity, 10),
       unitCost: num(i.unitCost),
+      sellingPrice: i.sellingPrice.trim() === '' ? undefined : num(i.sellingPrice),
+      bulkSellingPrice: i.bulkSellingPrice.trim() === '' ? undefined : num(i.bulkSellingPrice),
     }));
     try {
       await create.mutateAsync({
@@ -321,7 +354,7 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
                   <Field label="Product / variant" className="min-w-[180px] flex-1">
                     <Select
                       value={row.variantId}
-                      onChange={(e) => updateRow(row.key, { variantId: e.target.value, sellUnit: 'BASE' })}
+                      onChange={(e) => pickVariant(row.key, e.target.value)}
                     >
                       <option value="">Select variant…</option>
                       {variantOptions.map((o) => (
@@ -347,7 +380,7 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
                       onChange={(e) => updateRow(row.key, { quantity: e.target.value })}
                     />
                   </Field>
-                  <Field label={`Cost / ${unitLabelOf(product, row.sellUnit)}`} className="w-32">
+                  <Field label={`Cost / ${unitLabelOf(product, row.sellUnit)}`} className="w-28">
                     <Input
                       type="number"
                       min="0"
@@ -356,7 +389,30 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
                       onChange={(e) => updateRow(row.key, { unitCost: e.target.value })}
                     />
                   </Field>
-                  <div className="w-28 pb-2.5 text-right font-mono-data text-body-sm font-semibold">
+                  <Field label={`Sell / ${product?.baseUnit ?? 'pcs'}`} className="w-28">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={row.sellingPrice}
+                      placeholder="Price tag"
+                      disabled={!row.variantId}
+                      onChange={(e) => updateRow(row.key, { sellingPrice: e.target.value })}
+                    />
+                  </Field>
+                  {hasBulk && (
+                    <Field label={`Sell / ${product!.bulkUnit}`} className="w-28">
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={row.bulkSellingPrice}
+                        placeholder={`blank = ×${product!.unitSize}`}
+                        onChange={(e) => updateRow(row.key, { bulkSellingPrice: e.target.value })}
+                      />
+                    </Field>
+                  )}
+                  <div className="w-24 pb-2.5 text-right font-mono-data text-body-sm font-semibold">
                     {currency(lineTotal)}
                   </div>
                   <button

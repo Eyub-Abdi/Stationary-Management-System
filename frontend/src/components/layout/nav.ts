@@ -20,6 +20,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/purchases', label: 'Purchases', icon: 'shopping_cart', adminOnly: true },
   { to: '/suppliers', label: 'Suppliers', icon: 'local_shipping', adminOnly: true },
   { to: '/expenses', label: 'Expenses', icon: 'payments', staffLabel: 'Petty Cash' },
+  { to: '/office-purchases', label: 'Office Purchases', icon: 'business_center', adminOnly: true },
   { to: '/cash', label: 'Cash Management', icon: 'account_balance' },
   { to: '/reports', label: 'Reports', icon: 'assessment', adminOnly: true },
   { to: '/profit', label: 'Profit Analysis', icon: 'trending_up', adminOnly: true },

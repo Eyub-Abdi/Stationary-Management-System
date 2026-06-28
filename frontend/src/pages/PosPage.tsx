@@ -826,7 +826,7 @@ function ProductTile({ product, onAdd }: { product: Product; onAdd: () => void }
           <Icon name="inventory_2" size={28} className="text-on-surface-variant" />
         )}
         {multi && (
-          <span className="absolute right-1.5 top-1.5 rounded-full bg-primary-fixed px-1.5 py-0.5 text-[10px] font-bold text-on-primary-fixed">
+          <span className="absolute right-1.5 top-1.5 rounded-full bg-surface/85 px-1.5 py-0.5 text-[10px] font-semibold text-on-surface-variant ring-1 ring-outline-variant backdrop-blur-sm">
             {activeVariants(product).length} variants
           </span>
         )}
@@ -923,7 +923,7 @@ function ServiceTile({ service, onAdd }: { service: Service; onAdd: () => void }
           <Icon name={SERVICE_TYPE_ICON[service.type]} size={20} />
         </span>
         {multi && (
-          <span className="rounded-full bg-primary-fixed px-1.5 py-0.5 text-[10px] font-bold text-on-primary-fixed">
+          <span className="rounded-full bg-surface-container-high px-1.5 py-0.5 text-[10px] font-semibold text-on-surface-variant">
             {activeServiceVariants(service).length} options
           </span>
         )}

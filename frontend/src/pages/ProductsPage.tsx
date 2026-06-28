@@ -316,7 +316,8 @@ export default function ProductsPage() {
 /** Single price, or a min–max range when variants differ. */
 function priceRange(product: Product, field: 'sellingPrice' | 'buyingPrice'): string {
   const vals = product.variants.map((v) => num(v[field]));
-  if (vals.length === 0) return '—';
+  // Prices are set on first purchase; until then a variant sits at 0 ("not set").
+  if (vals.length === 0 || Math.max(...vals) === 0) return '—';
   const min = Math.min(...vals);
   const max = Math.max(...vals);
   return min === max ? currency(min) : `${currency(min)} – ${currency(max)}`;

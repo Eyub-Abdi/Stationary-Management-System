@@ -31,11 +31,15 @@ export class CreateVariantDto {
   @MaxLength(60)
   label!: string;
 
-  @ApiProperty({ example: 500, description: 'Selling price per base unit / piece (2 dp).' })
+  @ApiPropertyOptional({
+    example: 500,
+    description: 'Selling price per base unit / piece (2 dp). Optional — usually set when stock is first purchased.',
+  })
+  @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
-  sellingPrice!: number;
+  sellingPrice?: number;
 
   @ApiPropertyOptional({ example: 350, description: 'Reference buying price per base unit (true COGS comes from purchase batches).' })
   @IsOptional()

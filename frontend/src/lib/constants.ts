@@ -38,6 +38,7 @@ export const EXPENSE_CATEGORY_OPTIONS: { value: ExpenseCategory; label: string; 
   { value: 'TONER', label: 'Toner', icon: 'opacity' },
   { value: 'PAPER', label: 'Paper', icon: 'description' },
   { value: 'TRANSPORT', label: 'Transport', icon: 'local_shipping' },
+  { value: 'OFFICE_SUPPLIES', label: 'Office / Internal Use', icon: 'business_center' },
   { value: 'MISCELLANEOUS', label: 'Miscellaneous', icon: 'category' },
 ];
 

@@ -398,15 +398,15 @@ function ServiceFormModal({
 
         {/* Options (e.g. paper sizes) */}
         <div className="rounded-xl border border-outline-variant p-4">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
               <p className="text-label-caps uppercase tracking-wide text-on-surface-variant">Options</p>
               <p className="mt-0.5 text-[12px] text-on-surface-variant">
                 e.g. A4 and A3, each with its own {form.pricingType === 'PER_PAGE' ? 'per-page' : 'fixed'} price. Use one
                 option for a simple service.
               </p>
             </div>
-            <Button type="button" size="sm" variant="outline" icon="add" onClick={addRow}>
+            <Button type="button" size="sm" variant="outline" icon="add" onClick={addRow} className="shrink-0">
               Add option
             </Button>
           </div>

@@ -11,6 +11,10 @@ export interface PurchaseItemInput {
   sellUnit?: SellUnit;
   quantity: number;
   unitCost: number;
+  /** New selling price per base unit; updates the variant's price tag. */
+  sellingPrice?: number;
+  /** New selling price for one whole pack (products sold in packs). */
+  bulkSellingPrice?: number;
 }
 
 export interface CreatePurchaseInput {

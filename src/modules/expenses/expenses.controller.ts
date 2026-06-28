@@ -6,6 +6,10 @@ import {
   CurrentUser,
 } from '../../common/decorators/current-user.decorator';
 import { CreateExpenseDto, ExpenseQueryDto } from './dto/expense.dto';
+import {
+  CreateOfficePurchaseDto,
+  OfficePurchaseQueryDto,
+} from './dto/office-purchase.dto';
 import { ExpensesService } from './expenses.service';
 
 @ApiTags('Expenses')
@@ -24,5 +28,22 @@ export class ExpensesController {
   @ApiOperation({ summary: 'List expenses. Staff never see SALARY entries.' })
   findAll(@Query() query: ExpenseQueryDto, @CurrentUser() user: AuthenticatedUser) {
     return this.expenses.findAll(query, user.role === Role.ADMIN);
+  }
+
+  @Post('office')
+  @ApiOperation({
+    summary: 'Record an itemized office/internal-use purchase (booked as a cost, not stock).',
+  })
+  createOfficePurchase(
+    @Body() dto: CreateOfficePurchaseDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.expenses.createOfficePurchase(dto, user.id);
+  }
+
+  @Get('office')
+  @ApiOperation({ summary: 'List office/internal-use purchases with their line items.' })
+  findOfficePurchases(@Query() query: OfficePurchaseQueryDto) {
+    return this.expenses.findOfficePurchases(query);
   }
 }

@@ -80,6 +80,8 @@ enum ExpenseCategory {
   TONER
   PAPER
   TRANSPORT
+  // Itemized buying of goods for internal/office use (not for resale).
+  OFFICE_SUPPLIES
   MISCELLANEOUS
 }
 
@@ -723,19 +725,39 @@ model Expense {
   amount        Decimal         @db.Decimal(14, 2)
   expenseDate   DateTime
   description   String?
+  // Optional free-text vendor, used by itemized office purchases.
+  supplierName  String?
   userId        String          @db.Uuid
   // Linked to the cash session if paid from the till.
   cashSessionId String?         @db.Uuid
   createdAt     DateTime        @default(now())
 
-  user        User         @relation(fields: [userId], references: [id])
-  cashSession CashSession? @relation(fields: [cashSessionId], references: [id])
+  user        User          @relation(fields: [userId], references: [id])
+  cashSession CashSession?  @relation(fields: [cashSessionId], references: [id])
+  // Line items for itemized expenses (office/internal-use purchases).
+  items       ExpenseItem[]
 
   @@index([category])
   @@index([expenseDate])
   @@index([userId])
   @@index([cashSessionId])
   @@map("expenses")
+}
+
+// Line items of an itemized expense (office/internal-use purchase). Names are
+// free text — these goods are consumed internally and never enter sellable stock.
+model ExpenseItem {
+  id        String  @id @default(uuid()) @db.Uuid
+  expenseId String  @db.Uuid
+  name      String
+  quantity  Int
+  unitCost  Decimal @db.Decimal(14, 2)
+  lineTotal Decimal @db.Decimal(14, 2)
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@index([expenseId])
+  @@map("expense_items")
 }
 
 // ----------------------------------------------------------------------------

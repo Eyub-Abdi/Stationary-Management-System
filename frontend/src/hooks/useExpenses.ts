@@ -44,3 +44,51 @@ export function useCreateExpense() {
     },
   });
 }
+
+// --- Office / internal-use purchases (itemized expenses) --------------------
+
+export interface OfficePurchaseFilters {
+  page?: number;
+  limit?: number;
+  from?: string;
+  to?: string;
+}
+
+export interface OfficePurchaseItemInput {
+  name: string;
+  quantity: number;
+  unitCost: number;
+}
+
+export interface CreateOfficePurchaseInput {
+  purchaseDate: string;
+  supplierName?: string;
+  description?: string;
+  items: OfficePurchaseItemInput[];
+}
+
+export function useOfficePurchases(filters: OfficePurchaseFilters) {
+  return useQuery({
+    queryKey: qk.officePurchases(filters),
+    queryFn: async () => {
+      const res = await api.get<Paginated<Expense>>('/expenses/office', {
+        params: clean({ ...filters }),
+      });
+      return res.data;
+    },
+  });
+}
+
+export function useCreateOfficePurchase() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateOfficePurchaseInput) =>
+      unwrap<Expense>(api.post('/expenses/office', input)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['office-purchases'] });
+      qc.invalidateQueries({ queryKey: ['expenses'] });
+      qc.invalidateQueries({ queryKey: ['report'] });
+      qc.invalidateQueries({ queryKey: ['cash-session'] });
+    },
+  });
+}

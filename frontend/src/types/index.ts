@@ -26,6 +26,7 @@ export type ExpenseCategory =
   | 'TONER'
   | 'PAPER'
   | 'TRANSPORT'
+  | 'OFFICE_SUPPLIES'
   | 'MISCELLANEOUS';
 export type CashSessionStatus = 'OPEN' | 'CLOSED';
 export type CashMovementType = 'DEPOSIT' | 'WITHDRAWAL';
@@ -307,15 +308,26 @@ export interface InventoryMovement {
   createdAt: string;
 }
 
+export interface ExpenseItem {
+  id: string;
+  expenseId: string;
+  name: string;
+  quantity: number;
+  unitCost: string;
+  lineTotal: string;
+}
+
 export interface Expense {
   id: string;
   category: ExpenseCategory;
   amount: string;
   expenseDate: string;
   description: string | null;
+  supplierName?: string | null;
   userId: string;
   user?: { fullName: string };
   cashSessionId: string | null;
+  items?: ExpenseItem[];
   createdAt: string;
 }
 

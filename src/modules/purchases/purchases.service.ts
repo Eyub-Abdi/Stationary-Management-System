@@ -74,6 +74,7 @@ export class PurchasesService {
           id: true,
           label: true,
           productId: true,
+          sellingPrice: true,
           product: { select: { name: true, baseUnit: true, bulkUnit: true, unitSize: true } },
         },
       });
@@ -121,6 +122,13 @@ export class PurchasesService {
           variant.label && variant.label !== 'Default'
             ? `${product.name} — ${variant.label}`
             : product.name;
+        // A variant priced at 0 has never been given a selling price; the first
+        // stock-in must set one so it is sellable at the counter.
+        if (item.sellingPrice === undefined && money(variant.sellingPrice).isZero()) {
+          throw new BadRequestException(
+            `Set a selling price for ${nameSnapshot} — it has no price yet.`,
+          );
+        }
         return { item, variant, unitSize, unitLabel, lineTotal, basePieces, pieceCost, nameSnapshot };
       });
 
@@ -192,10 +200,19 @@ export class PurchasesService {
           unitCost: r.pieceCost,
         });
 
-        // Refresh the variant's reference buying price (per base unit).
+        // Refresh the variant's reference buying price (per base unit), and
+        // re-tag selling prices when this purchase set new ones.
         await tx.productVariant.update({
           where: { id: r.variant.id },
-          data: { buyingPrice: toPrisma(r.pieceCost) },
+          data: {
+            buyingPrice: toPrisma(r.pieceCost),
+            ...(r.item.sellingPrice !== undefined
+              ? { sellingPrice: toPrisma(r.item.sellingPrice) }
+              : {}),
+            ...(r.item.bulkSellingPrice !== undefined
+              ? { bulkSellingPrice: toPrisma(r.item.bulkSellingPrice) }
+              : {}),
+          },
         });
       }
 

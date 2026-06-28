@@ -42,6 +42,27 @@ export class PurchaseItemDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   unitCost!: number;
+
+  @ApiPropertyOptional({
+    example: 700,
+    description:
+      'New selling price per base unit / piece (2 dp). When provided, updates the variant price tag. Required on a variant that has no price yet.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  sellingPrice?: number;
+
+  @ApiPropertyOptional({
+    example: 8000,
+    description: 'New selling price for one whole pack/bulk unit (2 dp). Only meaningful for products sold in packs.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  bulkSellingPrice?: number;
 }
 
 export class CreatePurchaseDto {
