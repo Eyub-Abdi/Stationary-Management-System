@@ -103,14 +103,27 @@ on its own. Put a desktop shortcut to `http://localhost:3000` for the operator.
 
 ## 6. Updating after code changes
 
+One command pulls the latest code and applies only what changed:
+
 ```bash
-git pull
-npm run update
+npm run pull
 ```
 
-`update` installs any new dependencies, regenerates the Prisma client, applies
-new migrations, and rebuilds — but skips re-seeding the admin. Then **restart**
-the app (or the service / startup launcher) to pick up the new build.
+`pull` fetches **directly from the repo URL + branch** (no `origin` remote
+needed on the server), then **installs dependencies only if the package files
+changed**, **runs `prisma generate` + migrations only if `prisma/` changed**, and
+rebuilds when there are new commits (it stops early with "Already up to date" if
+there's nothing new). Stop the running app/service first — on Windows the
+Prisma engine is locked while the app runs — then restart it afterward to pick
+up the new build.
+
+> It uses `git pull --ff-only`, so it only ever fast-forwards — the server
+> never creates a commit or a merge. Keep the server checkout clean (no local
+> edits) or the fast-forward will refuse. The repo URL/branch are baked in;
+> override with `REPO_URL` / `REPO_BRANCH` env vars if they change.
+
+There's also `npm run update` (same steps, unconditional, **no** git pull) if you
+ever update the code some other way.
 
 ---
 

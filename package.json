@@ -11,6 +11,7 @@
     "serve": "node dist/src/main.js",
     "setup": "node scripts/setup.mjs setup",
     "update": "node scripts/setup.mjs update",
+    "pull": "node scripts/setup.mjs pull",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",

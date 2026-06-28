@@ -9,11 +9,12 @@
  *
  * Usage:
  *   node scripts/setup.mjs            # first-time setup (includes admin seed)
- *   node scripts/setup.mjs update     # after `git pull` (migrations + rebuild)
+ *   node scripts/setup.mjs update     # apply migrations + rebuild (no git pull)
+ *   node scripts/setup.mjs pull       # git pull, then install/migrate/build *only when needed*
  *
- * Or via npm:  npm run setup   /   npm run update
+ * Or via npm:  npm run setup   /   npm run update   /   npm run pull
  *
- * Both modes are safe to re-run: migrations apply only what's pending and the
+ * All modes are safe to re-run: migrations apply only what's pending and the
  * admin seed upserts (never duplicates).
  */
 import { execSync } from 'node:child_process';
@@ -24,8 +25,14 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const MODE = (process.argv[2] || 'setup').toLowerCase();
 
-if (!['setup', 'update'].includes(MODE)) {
-  console.error(`Unknown mode "${MODE}". Use "setup" or "update".`);
+// The server has no `origin` remote configured, so `pull` fetches directly from
+// the repo URL + branch. Override with REPO_URL / REPO_BRANCH if they ever change.
+const REPO_URL =
+  process.env.REPO_URL || 'https://github.com/Eyub-Abdi/Stationary-Management-System.git';
+const REPO_BRANCH = process.env.REPO_BRANCH || 'main';
+
+if (!['setup', 'update', 'pull'].includes(MODE)) {
+  console.error(`Unknown mode "${MODE}". Use "setup", "update" or "pull".`);
   process.exit(1);
 }
 
@@ -70,9 +77,68 @@ function run(label, cmd) {
   }
 }
 
+/** Run a command and return its trimmed stdout (no streaming). */
+function capture(cmd) {
+  return execSync(cmd, { cwd: ROOT, env: process.env }).toString().trim();
+}
+
+/** `pull` mode: git pull, then run only the steps whose inputs changed. */
+function pullAndUpdate() {
+  console.log('\n=== KJ Stationery — pull & update ===');
+  console.log('  Tip: stop the running app/service first — Windows locks the Prisma engine while it runs.');
+
+  let before;
+  try {
+    before = capture('git rev-parse HEAD');
+  } catch {
+    console.error('✗ This is not a git repository, or git is not installed.');
+    process.exit(1);
+  }
+
+  run(`Pull latest changes (${REPO_BRANCH})`, `git pull --ff-only ${REPO_URL} ${REPO_BRANCH}`);
+
+  const after = capture('git rev-parse HEAD');
+  if (before === after) {
+    console.log('\n✓ Already up to date — nothing to build.');
+    return;
+  }
+
+  const changed = capture(`git diff --name-only ${before} ${after}`)
+    .split(/\r?\n/)
+    .filter(Boolean);
+  const touched = (prefix) => changed.some((f) => f === prefix || f.startsWith(prefix));
+
+  if (touched('package.json') || touched('package-lock.json')) {
+    run('Install backend dependencies (changed)', 'npm install');
+  } else {
+    console.log('\n· Backend dependencies unchanged — skipping install');
+  }
+
+  if (touched('frontend/package.json') || touched('frontend/package-lock.json')) {
+    run('Install frontend dependencies (changed)', 'npm --prefix frontend install');
+  } else {
+    console.log('· Frontend dependencies unchanged — skipping install');
+  }
+
+  if (touched('prisma/')) {
+    run('Generate Prisma client (schema changed)', 'npx prisma generate');
+    run('Apply database migrations', 'npx prisma migrate deploy');
+  } else {
+    console.log('· No schema/migration changes — skipping Prisma');
+  }
+
+  run('Build backend + frontend', 'npm run build:all');
+}
+
 // --- Steps ------------------------------------------------------------------
 loadEnv();
 requireEnv(MODE === 'setup' ? ['DATABASE_URL', 'SEED_ADMIN_EMAIL', 'SEED_ADMIN_PASSWORD'] : ['DATABASE_URL']);
+
+if (MODE === 'pull') {
+  pullAndUpdate();
+  console.log('\n✓ Done. Restart the app / service to pick up the new build.');
+  process.exit(0);
+}
 
 console.log(`\n=== KJ Stationery — ${MODE === 'setup' ? 'initial setup' : 'update'} ===`);
 
