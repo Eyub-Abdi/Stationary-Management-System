@@ -57,7 +57,7 @@ export default function LoginPage() {
               <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-white">
                 <img src="/st-logo.png" alt="Stationery Management System" className="h-full w-full object-contain p-0.5" />
               </div>
-              <span className="text-h2 font-bold">StatioPro ERP</span>
+              <span className="text-h2 font-bold">STMS</span>
             </div>
             <div>
               <h2 className="text-[40px] font-bold leading-tight tracking-tight">
@@ -83,14 +83,14 @@ export default function LoginPage() {
               <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl bg-white shadow-sm">
                 <img src="/st-logo.png" alt="Stationery Management System" className="h-full w-full object-contain p-0.5" />
               </div>
-              <h1 className="text-h1 font-bold text-primary">StatioPro</h1>
+              <h1 className="text-h1 font-bold text-primary">STMS</h1>
             </div>
 
             <div className="rounded-2xl border border-outline-variant bg-surface-container-lowest p-8 shadow-xl">
               <div className="mb-6">
                 <h2 className="text-h2 font-semibold text-on-surface">Secure Access</h2>
                 <p className="mt-1 text-body-sm text-on-surface-variant">
-                  Sign in to your StatioPro workspace.
+                  Sign in to your STMS workspace.
                 </p>
               </div>
 

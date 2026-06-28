@@ -34,7 +34,7 @@ export function Sidebar({
             <img src="/st-logo.png" alt="Stationery Management System" className="h-full w-full object-contain p-0.5" />
           </div>
           <div>
-            <h1 className="text-h3 font-bold leading-tight text-on-surface">StatioPro</h1>
+            <h1 className="text-h3 font-bold leading-tight text-on-surface">STMS</h1>
             <p className="text-[11px] uppercase tracking-widest text-on-surface-variant">
               {user?.role === 'ADMIN' ? 'Admin Console' : 'Staff Console'}
             </p>

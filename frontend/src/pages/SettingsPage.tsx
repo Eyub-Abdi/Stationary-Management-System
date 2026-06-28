@@ -107,7 +107,48 @@ function PreferencesTab() {
           </div>
         </CardBody>
       </Card>
+
+      <SupportCard />
     </div>
+  );
+}
+
+function SupportCard() {
+  return (
+    <Card className="lg:col-span-2">
+      <CardHeader title="Support" subtitle="Need help with STMS? Contact the developer" />
+      <CardBody>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-primary-container text-on-primary-container">
+              <Icon name="support_agent" size={22} />
+            </span>
+            <div>
+              <p className="text-body-lg font-semibold text-on-surface">Ayub Abdi</p>
+              <p className="text-body-sm text-on-surface-variant">Developer &amp; owner</p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+            <a
+              href="mailto:ayubabdiy@gmail.com"
+              className="inline-flex items-center gap-2 rounded-xl border border-outline-variant px-3 py-2 text-body-sm text-on-surface transition-colors hover:bg-surface-container-low"
+            >
+              <Icon name="mail" size={18} className="text-on-surface-variant" /> ayubabdiy@gmail.com
+            </a>
+            <a
+              href="tel:+255657777687"
+              className="inline-flex items-center gap-2 rounded-xl border border-outline-variant px-3 py-2 text-body-sm text-on-surface transition-colors hover:bg-surface-container-low"
+            >
+              <Icon name="call" size={18} className="text-on-surface-variant" /> 0657 777 687
+            </a>
+          </div>
+        </div>
+        <p className="mt-4 border-t border-outline-variant pt-3 text-[12px] text-on-surface-variant">
+          &copy; {new Date().getFullYear()} STMS — Stationery Management System. Developed by Ayub
+          Abdi. All rights reserved.
+        </p>
+      </CardBody>
+    </Card>
   );
 }
 

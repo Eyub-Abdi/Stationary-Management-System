@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /* ==========================================================================
-   StatioPro design tokens — Stitch Material-You palette as RGB channels so
+   STMS design tokens — Stitch Material-You palette as RGB channels so
    Tailwind opacity modifiers (bg-secondary/20) work, with a dark override.
    ========================================================================== */
 :root {
