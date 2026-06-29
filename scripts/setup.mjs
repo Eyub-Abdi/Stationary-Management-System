@@ -153,6 +153,12 @@ function pullAndUpdate() {
     process.exit(1);
   }
 
+  // This box is a read-only mirror: it never edits source, but builds and npm
+  // can rewrite tracked artifacts (e.g. lockfiles) and leave local drift that
+  // would block a fast-forward pull. Discard that drift first so pull is clean.
+  // (Real source is only ever changed and committed on the dev machine.)
+  run('Discard local changes (deploy mirror)', 'git checkout -- .');
+
   run(`Pull latest changes (${REPO_BRANCH})`, `git pull --ff-only ${REPO_URL} ${REPO_BRANCH}`);
 
   const after = capture('git rev-parse HEAD');
