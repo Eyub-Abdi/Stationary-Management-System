@@ -70,6 +70,7 @@ enum ExpenseCategory {
   TONER
   PAPER
   TRANSPORT
+  FOOD
   // Itemized buying of goods for internal/office use (not for resale).
   OFFICE_SUPPLIES
   MISCELLANEOUS

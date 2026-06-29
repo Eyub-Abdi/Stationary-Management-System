@@ -16,6 +16,7 @@ const PETTY_CASH_CATEGORIES: ExpenseCategory[] = [
   ExpenseCategory.TONER,
   ExpenseCategory.PAPER,
   ExpenseCategory.TRANSPORT,
+  ExpenseCategory.FOOD,
   ExpenseCategory.MISCELLANEOUS,
 ];
 

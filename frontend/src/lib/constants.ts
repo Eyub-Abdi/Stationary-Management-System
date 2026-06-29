@@ -20,6 +20,7 @@ export const EXPENSE_CATEGORY_OPTIONS: { value: ExpenseCategory; label: string; 
   { value: 'TONER', label: 'Toner', icon: 'opacity' },
   { value: 'PAPER', label: 'Paper', icon: 'description' },
   { value: 'TRANSPORT', label: 'Transport', icon: 'local_shipping' },
+  { value: 'FOOD', label: 'Food', icon: 'restaurant' },
   { value: 'OFFICE_SUPPLIES', label: 'Office / Internal Use', icon: 'business_center' },
   { value: 'MISCELLANEOUS', label: 'Miscellaneous', icon: 'category' },
 ];
@@ -34,6 +35,7 @@ export const PETTY_CASH_CATEGORIES: ExpenseCategory[] = [
   'TONER',
   'PAPER',
   'TRANSPORT',
+  'FOOD',
   'MISCELLANEOUS',
 ];
 

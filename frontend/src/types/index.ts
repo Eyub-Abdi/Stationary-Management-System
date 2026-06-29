@@ -18,6 +18,7 @@ export type ExpenseCategory =
   | 'TONER'
   | 'PAPER'
   | 'TRANSPORT'
+  | 'FOOD'
   | 'OFFICE_SUPPLIES'
   | 'MISCELLANEOUS';
 export type CashSessionStatus = 'OPEN' | 'CLOSED';
