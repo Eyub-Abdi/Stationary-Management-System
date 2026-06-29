@@ -777,6 +777,15 @@ function QtyStepper({
   min?: number;
   max?: number;
 }) {
+  const clamp = (n: number) => {
+    let c = Math.max(min, n);
+    if (max != null) c = Math.min(max, c);
+    return c;
+  };
+  // Local text so the field can be cleared/retyped (e.g. type "500" directly).
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+
   return (
     <div className="flex items-center rounded-lg border border-outline-variant">
       <button
@@ -785,7 +794,24 @@ function QtyStepper({
       >
         <Icon name="remove" size={16} />
       </button>
-      <span className="w-8 text-center font-mono-data text-[13px] font-semibold">{value}</span>
+      <input
+        value={text}
+        inputMode="numeric"
+        onFocus={(e) => e.target.select()}
+        onChange={(e) => {
+          const raw = e.target.value.replace(/[^0-9]/g, '');
+          setText(raw);
+          const n = parseInt(raw, 10);
+          if (!Number.isNaN(n)) onChange(clamp(n));
+        }}
+        onBlur={() => {
+          const n = parseInt(text, 10);
+          const next = Number.isNaN(n) ? value : clamp(n);
+          setText(String(next));
+          if (!Number.isNaN(n)) onChange(next);
+        }}
+        className="w-8 bg-transparent text-center font-mono-data text-[13px] font-semibold text-on-surface outline-none"
+      />
       <button
         onClick={() => onChange(max ? Math.min(max, value + 1) : value + 1)}
         className="flex h-8 w-8 items-center justify-center text-on-surface-variant hover:bg-surface-container"
