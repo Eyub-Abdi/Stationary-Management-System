@@ -18,7 +18,7 @@
  * admin seed upserts (never duplicates).
  */
 import { execSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -117,6 +117,29 @@ function capture(cmd) {
   return execSync(cmd, { cwd: ROOT, env: process.env }).toString().trim();
 }
 
+/**
+ * On Windows, drop a double-clickable desktop icon that opens the app in the
+ * browser (no terminal for the shop user). Non-fatal if it can't be created.
+ */
+function createDesktopShortcutWindows() {
+  if (process.platform !== 'win32') return;
+  try {
+    const desktop = capture(
+      'powershell -NoProfile -Command "[Environment]::GetFolderPath(\'Desktop\')"',
+    );
+    if (!desktop || !existsSync(desktop)) return;
+    const file = join(desktop, 'STMS.url');
+    writeFileSync(
+      file,
+      ['[InternetShortcut]', 'URL=http://localhost:3000', 'IconIndex=0', ''].join('\r\n'),
+      'utf8',
+    );
+    console.log(`\n✓ Desktop icon created: ${file}`);
+  } catch {
+    /* best-effort */
+  }
+}
+
 /** `pull` mode: git pull, then run only the steps whose inputs changed. */
 function pullAndUpdate() {
   console.log('\n=== STMS — pull & update ===');
@@ -191,9 +214,22 @@ if (MODE === 'setup') {
 ensureBuildable();
 run('Build backend + frontend', 'npm run build:all');
 
+if (MODE === 'setup') {
+  createDesktopShortcutWindows();
+}
+
 console.log('\n✓ Done.');
 if (MODE === 'setup') {
   console.log(`  Admin: ${process.env.SEED_ADMIN_EMAIL}`);
 }
 console.log('  Start the app with:  npm run serve   (then open http://localhost:3000)');
-console.log('  If running as a service / startup launcher, restart it to pick up the new build.');
+if (process.platform === 'win32') {
+  console.log(
+    '\n  To run STMS automatically on boot with NO terminal window, open a terminal\n' +
+      '  as Administrator (right-click → Run as administrator) and run:\n' +
+      '      npm run service:install\n' +
+      '  This installs a Windows service and a desktop icon. Remove it with:\n' +
+      '      npm run service:uninstall',
+  );
+}
+console.log('  If running as a service, restart it to pick up the new build:  npm run service:stop && npm run service:start');

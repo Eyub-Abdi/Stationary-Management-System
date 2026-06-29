@@ -3,6 +3,7 @@ import {
   Badge,
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   ErrorState,
   Field,
@@ -31,15 +32,22 @@ import {
   type PurchaseItemInput,
 } from '@/hooks/usePurchases';
 import { useProducts } from '@/hooks/useProducts';
-import { useCreateUnit, useSuppliers, useUnits } from '@/hooks/useCatalog';
+import {
+  useCreateUnit,
+  useDeleteUnit,
+  useSuppliers,
+  useUnits,
+  useUpdateUnit,
+} from '@/hooks/useCatalog';
 import { extractMessage } from '@/lib/api';
 import { currency, formatDate, num } from '@/lib/utils';
-import type { PaymentMethod, Product, SellUnit } from '@/types';
+import type { PaymentMethod, Product, SellUnit, Unit } from '@/types';
 
 export default function PurchasesPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [unitsOpen, setUnitsOpen] = useState(false);
   const [detailsId, setDetailsId] = useState<string | null>(null);
 
   const { data, isLoading, isError, refetch, error } = usePurchases({
@@ -54,9 +62,14 @@ export default function PurchasesPage() {
         title="Purchases"
         description="Record stock received from suppliers — pay cash or on credit, by piece or by pack."
         actions={
-          <Button icon="add" onClick={() => setCreateOpen(true)}>
-            New Purchase
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" icon="straighten" onClick={() => setUnitsOpen(true)}>
+              Manage units
+            </Button>
+            <Button icon="add" onClick={() => setCreateOpen(true)}>
+              New Purchase
+            </Button>
+          </div>
         }
       />
 
@@ -129,6 +142,7 @@ export default function PurchasesPage() {
 
       <CreatePurchaseModal open={createOpen} onClose={() => setCreateOpen(false)} />
       <PurchaseDetailsModal id={detailsId} onClose={() => setDetailsId(null)} />
+      <ManageUnitsModal open={unitsOpen} onClose={() => setUnitsOpen(false)} />
     </div>
   );
 }
@@ -181,7 +195,6 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
   const { data: products } = useProducts({ status: 'ACTIVE', limit: 100 });
   const { data: suppliers } = useSuppliers({ limit: 100 });
   const { data: units } = useUnits();
-  const createUnit = useCreateUnit();
 
   const productOptions = useMemo(
     () => (products?.data ?? []).filter((p) => p.variants.some((v) => v.status === 'ACTIVE')),
@@ -198,9 +211,6 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
   const [amountPaid, setAmountPaid] = useState('');
   const [notes, setNotes] = useState('');
   const [cards, setCards] = useState<DraftProduct[]>([]);
-  // Inline "register a new unit" (mirrors the category picker on products).
-  const [addingUnitFor, setAddingUnitFor] = useState<string | null>(null);
-  const [newUnitName, setNewUnitName] = useState('');
 
   useEffect(() => {
     if (open) {
@@ -230,24 +240,6 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
   const pickProduct = (key: string, productId: string) => {
     const p = productById.get(productId);
     updateCard(key, { productId, sellUnit: 'BASE', lines: p ? linesFromProduct(p) : [] });
-  };
-
-  // Register a new unit on the fly and select it for the card being edited.
-  const addUnit = async (cardKey: string) => {
-    const name = newUnitName.trim();
-    if (!name) {
-      toast.error('Name required', 'Enter a unit name (e.g. Box).');
-      return;
-    }
-    try {
-      const created = await createUnit.mutateAsync({ name });
-      updateCard(cardKey, { packName: created.name });
-      setNewUnitName('');
-      setAddingUnitFor(null);
-      toast.success('Unit added', created.name);
-    } catch (e) {
-      toast.error('Could not add unit', extractMessage(e));
-    }
   };
 
   const allLines = cards.flatMap((c) => c.lines.map((l) => ({ card: c, line: l })));
@@ -412,89 +404,34 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
                       </Select>
                     </Field>
                     {product && (
-                      <Field label="Received as" className="w-32">
+                      <Field label="Received as" className="w-44">
                         <Select
-                          value={card.sellUnit}
-                          onChange={(e) => updateCard(card.key, { sellUnit: e.target.value as SellUnit })}
+                          value={isPack ? card.packName : 'BASE'}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === 'BASE') updateCard(card.key, { sellUnit: 'BASE', packName: '' });
+                            else updateCard(card.key, { sellUnit: 'BULK', packName: v });
+                          }}
                         >
-                          <option value="BASE">By {product.baseUnit}</option>
-                          <option value="BULK">By pack</option>
+                          <option value="BASE">{product.baseUnit} (single)</option>
+                          {(units ?? []).map((u) => (
+                            <option key={u.id} value={u.name}>
+                              {u.name}
+                            </option>
+                          ))}
                         </Select>
                       </Field>
                     )}
                     {product && isPack && (
-                      <>
-                        <Field label="Pack unit" className="w-44">
-                          {addingUnitFor === card.key ? (
-                            <div className="flex gap-1">
-                              <Input
-                                autoFocus
-                                value={newUnitName}
-                                onChange={(e) => setNewUnitName(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    void addUnit(card.key);
-                                  }
-                                }}
-                                placeholder="New unit"
-                              />
-                              <Button
-                                type="button"
-                                size="sm"
-                                icon="check"
-                                loading={createUnit.isPending}
-                                onClick={() => addUnit(card.key)}
-                              />
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                icon="close"
-                                onClick={() => {
-                                  setAddingUnitFor(null);
-                                  setNewUnitName('');
-                                }}
-                              />
-                            </div>
-                          ) : (
-                            <div className="flex gap-1">
-                              <Select
-                                className="flex-1"
-                                value={card.packName}
-                                onChange={(e) => updateCard(card.key, { packName: e.target.value })}
-                              >
-                                <option value="">Select unit…</option>
-                                {(units ?? []).map((u) => (
-                                  <option key={u.id} value={u.name}>
-                                    {u.name}
-                                  </option>
-                                ))}
-                              </Select>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                icon="add"
-                                title="Add a new unit"
-                                onClick={() => {
-                                  setNewUnitName('');
-                                  setAddingUnitFor(card.key);
-                                }}
-                              />
-                            </div>
-                          )}
-                        </Field>
-                        <Field label="Pcs per pack" className="w-28">
-                          <Input
-                            type="number"
-                            min="2"
-                            value={card.packSize}
-                            placeholder="12"
-                            onChange={(e) => updateCard(card.key, { packSize: e.target.value })}
-                          />
-                        </Field>
-                      </>
+                      <Field label={`${product.baseUnit}/${card.packName || 'pack'}`} className="w-28">
+                        <Input
+                          type="number"
+                          min="2"
+                          value={card.packSize}
+                          placeholder="12"
+                          onChange={(e) => updateCard(card.key, { packSize: e.target.value })}
+                        />
+                      </Field>
                     )}
                     <button
                       onClick={() => removeRow(card.key)}
@@ -586,6 +523,171 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
         </Field>
       </div>
     </Modal>
+  );
+}
+
+/** Full CRUD for the reusable pack units (Box, Roll, …) used in purchases. */
+function ManageUnitsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const toast = useToast();
+  const { data: units, isLoading } = useUnits();
+  const createUnit = useCreateUnit();
+  const updateUnit = useUpdateUnit();
+  const deleteUnit = useDeleteUnit();
+
+  const [newName, setNewName] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [deleting, setDeleting] = useState<Unit | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setNewName('');
+      setEditingId(null);
+      setEditName('');
+      setDeleting(null);
+    }
+  }, [open]);
+
+  const add = async () => {
+    const name = newName.trim();
+    if (!name) {
+      toast.error('Name required', 'Enter a unit name (e.g. Box).');
+      return;
+    }
+    try {
+      await createUnit.mutateAsync({ name });
+      setNewName('');
+      toast.success('Unit added', name);
+    } catch (e) {
+      toast.error('Could not add unit', extractMessage(e));
+    }
+  };
+
+  const saveEdit = async (u: Unit) => {
+    const name = editName.trim();
+    if (!name) {
+      toast.error('Name required', 'A unit needs a name.');
+      return;
+    }
+    try {
+      await updateUnit.mutateAsync({ id: u.id, input: { name } });
+      setEditingId(null);
+      toast.success('Unit renamed', name);
+    } catch (e) {
+      toast.error('Could not rename', extractMessage(e));
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleting) return;
+    try {
+      await deleteUnit.mutateAsync(deleting.id);
+      toast.success('Unit deleted', deleting.name);
+      setDeleting(null);
+    } catch (e) {
+      toast.error('Could not delete', extractMessage(e));
+    }
+  };
+
+  return (
+    <>
+      <Modal
+        open={open}
+        onClose={onClose}
+        size="md"
+        title="Manage units"
+        subtitle="Reusable pack units (Box, Roll, Ream…) for receiving stock"
+        footer={
+          <Button variant="outline" onClick={onClose}>
+            Done
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          <div className="flex items-end gap-2">
+            <Field label="Add a unit" className="flex-1">
+              <Input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void add();
+                  }
+                }}
+                placeholder="e.g. Bundle"
+              />
+            </Field>
+            <Button icon="add" loading={createUnit.isPending} onClick={add}>
+              Add
+            </Button>
+          </div>
+
+          {isLoading ? (
+            <LoadingState label="Loading units…" />
+          ) : (units?.length ?? 0) === 0 ? (
+            <p className="text-body-sm text-on-surface-variant">No units yet. Add one above.</p>
+          ) : (
+            <ul className="divide-y divide-outline-variant rounded-xl border border-outline-variant">
+              {units!.map((u) => (
+                <li key={u.id} className="flex items-center gap-2 p-2.5">
+                  {editingId === u.id ? (
+                    <>
+                      <Input
+                        autoFocus
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void saveEdit(u);
+                          }
+                        }}
+                        className="flex-1"
+                      />
+                      <Button size="sm" icon="check" loading={updateUnit.isPending} onClick={() => saveEdit(u)} />
+                      <Button size="sm" variant="outline" icon="close" onClick={() => setEditingId(null)} />
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex-1 text-body-sm font-medium text-on-surface">{u.name}</span>
+                      <button
+                        onClick={() => {
+                          setEditingId(u.id);
+                          setEditName(u.name);
+                        }}
+                        title="Rename"
+                        className="rounded-lg p-1.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
+                      >
+                        <Icon name="edit" size={18} />
+                      </button>
+                      <button
+                        onClick={() => setDeleting(u)}
+                        title="Delete"
+                        className="rounded-lg p-1.5 text-on-surface-variant hover:bg-surface-container hover:text-error"
+                      >
+                        <Icon name="delete" size={18} />
+                      </button>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={confirmDelete}
+        loading={deleteUnit.isPending}
+        title="Delete unit?"
+        message={`"${deleting?.name}" will be removed from the unit list. Past purchases keep their recorded unit.`}
+        confirmLabel="Delete"
+        icon="delete"
+      />
+    </>
   );
 }
 

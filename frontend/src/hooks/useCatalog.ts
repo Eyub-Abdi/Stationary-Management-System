@@ -77,6 +77,15 @@ export function useCreateUnit() {
   });
 }
 
+export function useUpdateUnit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: { name: string } }) =>
+      unwrap<Unit>(api.patch(`/units/${id}`, input)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.units() }),
+  });
+}
+
 export function useDeleteUnit() {
   const qc = useQueryClient();
   return useMutation({
