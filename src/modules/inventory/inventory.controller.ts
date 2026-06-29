@@ -5,6 +5,7 @@ import {
   AuthenticatedUser,
   CurrentUser,
 } from '../../common/decorators/current-user.decorator';
+import { Permission } from '../../common/decorators/permission.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AdjustStockDto } from './dto/adjust-stock.dto';
 import { MovementQueryDto } from './dto/movement-query.dto';
@@ -29,9 +30,9 @@ export class InventoryController {
     return this.inventory.valuation();
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('inventory')
   @Post('adjust')
-  @ApiOperation({ summary: 'Manually adjust stock with reason (admin)' })
+  @ApiOperation({ summary: 'Manually adjust stock with reason (admin, or staff who manage inventory)' })
   adjust(@Body() dto: AdjustStockDto, @CurrentUser() user: AuthenticatedUser) {
     return this.inventory.adjust(dto, user.id);
   }

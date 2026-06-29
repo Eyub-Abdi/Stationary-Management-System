@@ -1,7 +1,7 @@
 import { SetMetadata } from '@nestjs/common';
 
 /** Grantable staff capabilities (admins always have all of them). */
-export type PermissionKey = 'products' | 'services' | 'purchases';
+export type PermissionKey = 'products' | 'services' | 'purchases' | 'inventory';
 
 export const PERMISSION_KEY = 'required_permission';
 

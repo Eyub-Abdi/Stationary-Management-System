@@ -41,7 +41,8 @@ const MOVE_TONE: Record<InventoryMovementType, 'success' | 'error' | 'info' | 'w
 };
 
 export default function InventoryPage() {
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
+  const canManage = can('inventory');
   const [tab, setTab] = useState<TabKey>('movements');
   const [adjustOpen, setAdjustOpen] = useState(false);
 
@@ -57,7 +58,7 @@ export default function InventoryPage() {
         title="Inventory"
         description="Track stock movements, monitor low stock, and reconcile counts."
         actions={
-          isAdmin && (
+          canManage && (
             <Button icon="tune" onClick={() => setAdjustOpen(true)}>
               Adjust Stock
             </Button>

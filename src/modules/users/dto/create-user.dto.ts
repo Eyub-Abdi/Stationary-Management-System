@@ -54,4 +54,9 @@ export class CreateUserDto {
   @IsOptional()
   @IsBoolean()
   canManagePurchases?: boolean;
+
+  @ApiPropertyOptional({ default: false, description: 'STAFF only: may adjust stock (inventory).' })
+  @IsOptional()
+  @IsBoolean()
+  canManageInventory?: boolean;
 }

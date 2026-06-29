@@ -23,6 +23,7 @@ const SAFE_SELECT = {
   canManageProducts: true,
   canManageServices: true,
   canManagePurchases: true,
+  canManageInventory: true,
   lastLoginAt: true,
   createdAt: true,
   updatedAt: true,
@@ -49,6 +50,7 @@ export class UsersService {
         canManageProducts: dto.canManageProducts ?? false,
         canManageServices: dto.canManageServices ?? false,
         canManagePurchases: dto.canManagePurchases ?? false,
+        canManageInventory: dto.canManageInventory ?? false,
       },
       select: SAFE_SELECT,
     });
@@ -112,6 +114,9 @@ export class UsersService {
           : {}),
         ...(dto.canManagePurchases !== undefined
           ? { canManagePurchases: dto.canManagePurchases }
+          : {}),
+        ...(dto.canManageInventory !== undefined
+          ? { canManageInventory: dto.canManageInventory }
           : {}),
       },
       select: SAFE_SELECT,

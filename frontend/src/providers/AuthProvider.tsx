@@ -5,7 +5,7 @@ import { tokenStore } from '@/lib/tokenStore';
 import type { AuthUser, TokenPair, User } from '@/types';
 
 /** Grantable staff capabilities (admins always have all). */
-export type PermissionKey = 'products' | 'services' | 'purchases';
+export type PermissionKey = 'products' | 'services' | 'purchases' | 'inventory';
 
 interface AuthCtx {
   user: AuthUser | null;
@@ -71,6 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       canManageProducts: me.canManageProducts,
       canManageServices: me.canManageServices,
       canManagePurchases: me.canManagePurchases,
+      canManageInventory: me.canManageInventory,
     };
     tokenStore.updateUser(authUser);
     setUser(authUser);
@@ -87,7 +88,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (isAdmin) return true;
         if (key === 'products') return user.canManageProducts;
         if (key === 'services') return user.canManageServices;
-        return user.canManagePurchases;
+        if (key === 'purchases') return user.canManagePurchases;
+        return user.canManageInventory;
       },
       login,
       logout: doLogout,

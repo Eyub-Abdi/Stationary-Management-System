@@ -48,6 +48,7 @@ export class AuthService {
         | 'canManageProducts'
         | 'canManageServices'
         | 'canManagePurchases'
+        | 'canManageInventory'
       >;
     }
   > {
@@ -83,6 +84,7 @@ export class AuthService {
         canManageProducts: user.canManageProducts,
         canManageServices: user.canManageServices,
         canManagePurchases: user.canManagePurchases,
+        canManageInventory: user.canManageInventory,
       },
     };
   }

@@ -56,6 +56,7 @@ export interface User {
   canManageProducts: boolean;
   canManageServices: boolean;
   canManagePurchases: boolean;
+  canManageInventory: boolean;
   lastLoginAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -69,6 +70,7 @@ export interface AuthUser {
   canManageProducts: boolean;
   canManageServices: boolean;
   canManagePurchases: boolean;
+  canManageInventory: boolean;
 }
 
 export interface TokenPair {

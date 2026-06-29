@@ -122,6 +122,7 @@ model User {
   canManageProducts  Boolean @default(false)
   canManageServices  Boolean @default(false)
   canManagePurchases Boolean @default(false)
+  canManageInventory Boolean @default(false)
   lastLoginAt  DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

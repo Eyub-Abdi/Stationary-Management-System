@@ -38,7 +38,9 @@ export class PermissionsGuard implements CanActivate {
         ? user.canManageProducts
         : key === 'services'
           ? user.canManageServices
-          : user.canManagePurchases;
+          : key === 'purchases'
+            ? user.canManagePurchases
+            : user.canManageInventory;
 
     if (!granted) {
       throw new ForbiddenException(

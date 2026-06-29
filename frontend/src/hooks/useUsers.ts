@@ -20,6 +20,7 @@ export interface UserPermissions {
   canManageProducts?: boolean;
   canManageServices?: boolean;
   canManagePurchases?: boolean;
+  canManageInventory?: boolean;
 }
 
 export interface CreateUserInput extends UserPermissions {

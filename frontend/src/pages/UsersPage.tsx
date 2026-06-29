@@ -205,6 +205,7 @@ function UserFormModal({ open, onClose, user }: { open: boolean; onClose: () => 
     canManageProducts: false,
     canManageServices: false,
     canManagePurchases: false,
+    canManageInventory: false,
   });
 
   useEffect(() => {
@@ -218,12 +219,18 @@ function UserFormModal({ open, onClose, user }: { open: boolean; onClose: () => 
         canManageProducts: user.canManageProducts,
         canManageServices: user.canManageServices,
         canManagePurchases: user.canManagePurchases,
+        canManageInventory: user.canManageInventory,
       });
     } else {
       setFullName('');
       setEmail('');
       setRole('STAFF');
-      setPerms({ canManageProducts: false, canManageServices: false, canManagePurchases: false });
+      setPerms({
+        canManageProducts: false,
+        canManageServices: false,
+        canManagePurchases: false,
+        canManageInventory: false,
+      });
     }
   }, [open, user]);
 
@@ -232,6 +239,7 @@ function UserFormModal({ open, onClose, user }: { open: boolean; onClose: () => 
     canManageProducts: false,
     canManageServices: false,
     canManagePurchases: false,
+    canManageInventory: false,
   };
 
   const submit = async () => {
@@ -305,6 +313,12 @@ function UserFormModal({ open, onClose, user }: { open: boolean; onClose: () => 
                 label="Manage purchases (record stock & manage units)"
                 checked={perms.canManagePurchases}
                 onChange={(e) => setPerms((p) => ({ ...p, canManagePurchases: e.target.checked }))}
+              />
+              <Checkbox
+                id="perm-inventory"
+                label="Manage inventory (adjust stock counts)"
+                checked={perms.canManageInventory}
+                onChange={(e) => setPerms((p) => ({ ...p, canManageInventory: e.target.checked }))}
               />
             </div>
           </div>

@@ -40,6 +40,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
         canManageProducts: true,
         canManageServices: true,
         canManagePurchases: true,
+        canManageInventory: true,
       },
     });
     if (!user || !user.isActive) {
@@ -52,6 +53,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       canManageProducts: user.canManageProducts,
       canManageServices: user.canManageServices,
       canManagePurchases: user.canManagePurchases,
+      canManageInventory: user.canManageInventory,
     };
   }
 }

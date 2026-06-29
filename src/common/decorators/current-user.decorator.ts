@@ -8,6 +8,7 @@ export interface AuthenticatedUser {
   canManageProducts: boolean;
   canManageServices: boolean;
   canManagePurchases: boolean;
+  canManageInventory: boolean;
 }
 
 /**
