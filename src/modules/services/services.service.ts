@@ -25,7 +25,7 @@ export class ServicesService {
     return this.prisma.service.create({
       data: {
         name: dto.name,
-        type: dto.type,
+        icon: dto.icon,
         pricingType: dto.pricingType,
         status: dto.status,
         variants: {
@@ -68,7 +68,7 @@ export class ServicesService {
       where: { id },
       data: {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
-        ...(dto.type !== undefined ? { type: dto.type } : {}),
+        ...(dto.icon !== undefined ? { icon: dto.icon } : {}),
         ...(dto.pricingType !== undefined ? { pricingType: dto.pricingType } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
       },

@@ -3,7 +3,6 @@ import {
   PrismaClient,
   Role,
   PricingType,
-  ServiceType,
   ProductStatus,
 } from '@prisma/client';
 import * as argon2 from 'argon2';
@@ -82,12 +81,12 @@ async function main() {
 
   // ---- Services -----------------------------------------------------------
   const services = [
-    { name: 'Printing - Black & White', type: ServiceType.PRINTING_BW, pricingType: PricingType.PER_PAGE, unitPrice: 100 },
-    { name: 'Printing - Color', type: ServiceType.PRINTING_COLOR, pricingType: PricingType.PER_PAGE, unitPrice: 500 },
-    { name: 'Photocopy - Black & White', type: ServiceType.PHOTOCOPY_BW, pricingType: PricingType.PER_PAGE, unitPrice: 50 },
-    { name: 'Photocopy - Color', type: ServiceType.PHOTOCOPY_COLOR, pricingType: PricingType.PER_PAGE, unitPrice: 300 },
-    { name: 'Scanning', type: ServiceType.SCANNING, pricingType: PricingType.PER_PAGE, unitPrice: 200 },
-    { name: 'Lamination (A4)', type: ServiceType.LAMINATION, pricingType: PricingType.FIXED, unitPrice: 1000 },
+    { name: 'Printing - Black & White', icon: 'print', pricingType: PricingType.PER_PAGE, unitPrice: 100 },
+    { name: 'Printing - Color', icon: 'print', pricingType: PricingType.PER_PAGE, unitPrice: 500 },
+    { name: 'Photocopy - Black & White', icon: 'content_copy', pricingType: PricingType.PER_PAGE, unitPrice: 50 },
+    { name: 'Photocopy - Color', icon: 'content_copy', pricingType: PricingType.PER_PAGE, unitPrice: 300 },
+    { name: 'Scanning', icon: 'scanner', pricingType: PricingType.PER_PAGE, unitPrice: 200 },
+    { name: 'Lamination (A4)', icon: 'note_stack', pricingType: PricingType.FIXED, unitPrice: 1000 },
   ];
   for (const s of services) {
     await prisma.service.upsert({
@@ -95,7 +94,7 @@ async function main() {
       update: {},
       create: {
         name: s.name,
-        type: s.type,
+        icon: s.icon,
         pricingType: s.pricingType,
         variants: {
           create: [{ label: 'Standard', unitPrice: s.unitPrice, isDefault: true }],

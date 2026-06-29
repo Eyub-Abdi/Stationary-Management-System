@@ -32,23 +32,19 @@ export class ProductsService {
       sku = await this.generateProductSku(dto.name);
     }
 
-    // A bulk unit only makes sense with a pack size > 1.
-    const bulkUnit = dto.bulkUnit?.trim() || null;
-    const unitSize = bulkUnit ? Math.max(1, dto.unitSize ?? 1) : 1;
-
+    // Products are sold by the single unit; pack size is set per purchase.
     // Resolve each variant's SKU and prices up-front (so we fail before insert).
-    const variants = await this.buildVariantRows(dto.variants, dto.name, !!bulkUnit, true);
+    const variants = await this.buildVariantRows(dto.variants, dto.name, true);
 
     return this.prisma.product.create({
       data: {
         sku,
         name: dto.name,
-        description: dto.description,
         imageUrl: dto.imageUrl,
         categoryId: dto.categoryId,
         baseUnit: dto.baseUnit?.trim() || 'pcs',
-        bulkUnit,
-        unitSize,
+        bulkUnit: null,
+        unitSize: 1,
         status: dto.status,
         variants: { create: variants },
       },
@@ -56,11 +52,10 @@ export class ProductsService {
     });
   }
 
-  /** Builds variant create rows, generating unique SKUs and validating bulk price. */
+  /** Builds variant create rows, generating unique SKUs. */
   private async buildVariantRows(
     variants: CreateVariantDto[],
     productName: string,
-    hasBulk: boolean,
     markFirstDefault: boolean,
   ): Promise<Prisma.ProductVariantCreateWithoutProductInput[]> {
     const seenSkus = new Set<string>();
@@ -82,9 +77,8 @@ export class ProductsService {
         sku,
         label: v.label.trim(),
         sellingPrice: toPrisma(v.sellingPrice ?? 0),
+        wholesalePrice: v.wholesalePrice !== undefined ? toPrisma(v.wholesalePrice) : null,
         buyingPrice: toPrisma(v.buyingPrice ?? 0),
-        bulkSellingPrice:
-          hasBulk && v.bulkSellingPrice !== undefined ? toPrisma(v.bulkSellingPrice) : null,
         minStockLevel: v.minStockLevel ?? 0,
         status: v.status,
         isDefault: markFirstDefault && i === 0,
@@ -181,33 +175,24 @@ export class ProductsService {
   }
 
   async update(id: string, dto: UpdateProductDto) {
-    const current = await this.findOne(id);
+    await this.findOne(id);
 
     const data: Prisma.ProductUpdateInput = {
       ...(dto.name !== undefined ? { name: dto.name } : {}),
-      ...(dto.description !== undefined ? { description: dto.description } : {}),
       ...(dto.imageUrl !== undefined ? { imageUrl: dto.imageUrl } : {}),
       ...(dto.categoryId !== undefined
         ? { category: dto.categoryId ? { connect: { id: dto.categoryId } } : { disconnect: true } }
         : {}),
       ...(dto.baseUnit !== undefined ? { baseUnit: dto.baseUnit?.trim() || 'pcs' } : {}),
       ...(dto.status !== undefined ? { status: dto.status } : {}),
+      // Products are piece-only; migrate any legacy pack settings away on save.
+      bulkUnit: null,
+      unitSize: 1,
     };
-
-    // Clearing the bulk unit resets pack size to 1 and drops all bulk prices.
-    if (dto.bulkUnit !== undefined) {
-      const bulkUnit = dto.bulkUnit?.trim() || null;
-      data.bulkUnit = bulkUnit;
-      data.unitSize = bulkUnit ? Math.max(1, dto.unitSize ?? current.unitSize) : 1;
-      if (!bulkUnit) {
-        await this.prisma.productVariant.updateMany({
-          where: { productId: id },
-          data: { bulkSellingPrice: null },
-        });
-      }
-    } else if (dto.unitSize !== undefined) {
-      data.unitSize = Math.max(1, dto.unitSize);
-    }
+    await this.prisma.productVariant.updateMany({
+      where: { productId: id, bulkSellingPrice: { not: null } },
+      data: { bulkSellingPrice: null },
+    });
 
     return this.prisma.product.update({ where: { id }, data, include: PRODUCT_INCLUDE });
   }
@@ -216,19 +201,15 @@ export class ProductsService {
 
   async addVariant(productId: string, dto: CreateVariantDto) {
     const product = await this.findOne(productId);
-    const [row] = await this.buildVariantRows([dto], product.name, !!product.bulkUnit, false);
+    const [row] = await this.buildVariantRows([dto], product.name, false);
     return this.prisma.productVariant.create({
       data: { ...row, product: { connect: { id: productId } } },
     });
   }
 
   async updateVariant(variantId: string, dto: UpdateVariantDto) {
-    const variant = await this.prisma.productVariant.findUnique({
-      where: { id: variantId },
-      include: { product: { select: { bulkUnit: true } } },
-    });
+    const variant = await this.prisma.productVariant.findUnique({ where: { id: variantId } });
     if (!variant) throw new NotFoundException('Variant not found');
-    const hasBulk = !!variant.product.bulkUnit;
 
     const data: Prisma.ProductVariantUpdateInput = {
       ...(dto.label !== undefined ? { label: dto.label.trim() } : {}),
@@ -236,9 +217,7 @@ export class ProductsService {
       ...(dto.buyingPrice !== undefined ? { buyingPrice: toPrisma(dto.buyingPrice) } : {}),
       ...(dto.minStockLevel !== undefined ? { minStockLevel: dto.minStockLevel } : {}),
       ...(dto.status !== undefined ? { status: dto.status } : {}),
-      ...(dto.bulkSellingPrice !== undefined
-        ? { bulkSellingPrice: hasBulk ? toPrisma(dto.bulkSellingPrice) : null }
-        : {}),
+      ...(dto.wholesalePrice !== undefined ? { wholesalePrice: toPrisma(dto.wholesalePrice) } : {}),
     };
     return this.prisma.productVariant.update({ where: { id: variantId }, data });
   }

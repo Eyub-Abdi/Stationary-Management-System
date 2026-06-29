@@ -40,16 +40,6 @@ enum ServiceStatus {
   INACTIVE
 }
 
-enum ServiceType {
-  PRINTING_BW
-  PRINTING_COLOR
-  PHOTOCOPY_BW
-  PHOTOCOPY_COLOR
-  SCANNING
-  LAMINATION
-  TYPING
-}
-
 enum PricingType {
   PER_PAGE
   FIXED
@@ -186,6 +176,17 @@ model Category {
   @@map("categories")
 }
 
+// A reusable packaging/measure unit (e.g. pcs, Box, Roll, Ream) the owner
+// registers and reuses when receiving stock by the pack in Purchases.
+model Unit {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("units")
+}
+
 // A Product is the grouping/template (name, category, packaging). Its sellable
 // SKUs — with their own price, stock and FIFO cost — live in ProductVariant.
 // Every product has at least one variant (a single-variant product behaves like
@@ -194,7 +195,6 @@ model Product {
   id            String        @id @default(uuid()) @db.Uuid
   sku           String        @unique // product group code; each variant has its own sku
   name          String
-  description   String?
   imageUrl      String?
   categoryId    String?       @db.Uuid
 
@@ -233,9 +233,11 @@ model ProductVariant {
   label         String // human label shown at the counter, e.g. "Blue"
   // Reference selling price PER BASE UNIT (piece). Snapshotted at sale time.
   sellingPrice  Decimal       @db.Decimal(14, 2)
+  // Optional wholesale price PER BASE UNIT (piece). Null = no wholesale tier.
+  wholesalePrice Decimal?     @db.Decimal(14, 2)
   // Reference/last buying price PER BASE UNIT — true COGS comes from batches.
   buyingPrice   Decimal       @db.Decimal(14, 2) @default(0)
-  // Selling price for one whole bulk unit. Null falls back to sellingPrice * unitSize.
+  // Legacy: selling price for one whole bulk unit (no longer set; sells are per piece).
   bulkSellingPrice Decimal?   @db.Decimal(14, 2)
   // Denormalized live stock IN BASE UNITS; kept consistent with batches.
   currentStock  Int           @default(0)
@@ -268,7 +270,8 @@ model ProductVariant {
 model Service {
   id          String        @id @default(uuid()) @db.Uuid
   name        String        @unique
-  type        ServiceType
+  // Optional Material Symbols icon name for display (e.g. "print"). Cosmetic only.
+  icon        String?
   pricingType PricingType
   status      ServiceStatus @default(ACTIVE)
   createdAt   DateTime      @default(now())
@@ -858,6 +861,14 @@ model AppSetting {
   id           String   @id @default("singleton")
   businessName String   @default("KJ Stationery")
   branchName   String   @default("Main Branch")
+  // Automatic database backups to local disk (drive D on Windows by default).
+  autoBackupEnabled Boolean  @default(false)
+  // Optional custom folder; null = OS default (D:\STMS-Backups on Windows).
+  backupDir         String?
+  lastBackupAt      DateTime?
+  // "ok" after a successful run, or a short error message; null = never run.
+  lastBackupStatus  String?
+  lastBackupPath    String?
   updatedAt    DateTime @updatedAt
 
   @@map("app_settings")

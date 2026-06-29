@@ -30,6 +30,7 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { SharedModule } from './modules/shared/shared.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { SystemModule } from './modules/system/system.module';
+import { UnitsModule } from './modules/units/units.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { UsersModule } from './modules/users/users.module';
 
@@ -83,6 +84,7 @@ import { UsersModule } from './modules/users/users.module';
     AuthModule,
     UsersModule,
     CategoriesModule,
+    UnitsModule,
     ProductsModule,
     ServicesModule,
     SettingsModule,

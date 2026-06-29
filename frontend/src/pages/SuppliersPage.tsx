@@ -14,6 +14,7 @@ import {
   PageHeader,
   Pagination,
   SearchInput,
+  SegmentedControl,
   StatCard,
   TBody,
   TD,
@@ -40,7 +41,7 @@ import type { Supplier } from '@/types';
 export default function SuppliersPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [owingOnly, setOwingOnly] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'owing'>('all');
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Supplier | null>(null);
   const [detailsId, setDetailsId] = useState<string | null>(null);
@@ -49,7 +50,7 @@ export default function SuppliersPage() {
     page,
     limit: 12,
     search: search || undefined,
-    withBalance: owingOnly || undefined,
+    withBalance: filter === 'owing' || undefined,
   });
   const summary = useSupplierSummary();
   const stats = summary.data;
@@ -117,14 +118,16 @@ export default function SuppliersPage() {
             placeholder="Search by name…"
             className="max-w-md"
           />
-          <Checkbox
-            id="owing-only-sup"
-            label="We owe only"
-            checked={owingOnly}
-            onChange={(e) => {
-              setOwingOnly(e.target.checked);
+          <SegmentedControl
+            value={filter}
+            onChange={(v) => {
+              setFilter(v);
               setPage(1);
             }}
+            items={[
+              { value: 'all', label: 'All' },
+              { value: 'owing', label: 'We owe' },
+            ]}
           />
         </div>
 

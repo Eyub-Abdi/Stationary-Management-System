@@ -31,11 +31,29 @@ export class PurchaseItemDto {
   @IsEnum(SellUnit)
   sellUnit?: SellUnit;
 
-  @ApiProperty({ example: 100, description: 'Quantity in the chosen unit (pieces or bulk packs).' })
+  @ApiProperty({ example: 100, description: 'Quantity in the chosen unit (pieces or packs).' })
   @Type(() => Number)
   @IsInt()
   @Min(1)
   quantity!: number;
+
+  @ApiPropertyOptional({
+    example: 12,
+    description: 'Pieces in each pack for this delivery. Required when sellUnit is BULK (min 2).',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  unitSize?: number;
+
+  @ApiPropertyOptional({
+    example: 'Box',
+    description: 'Pack name for this delivery (e.g. Box, Roll, Ream). Used when sellUnit is BULK.',
+  })
+  @IsOptional()
+  @IsString()
+  unitLabel?: string;
 
   @ApiProperty({ example: 500, description: 'Cost per chosen unit at purchase (2 dp).' })
   @Type(() => Number)
@@ -55,14 +73,14 @@ export class PurchaseItemDto {
   sellingPrice?: number;
 
   @ApiPropertyOptional({
-    example: 8000,
-    description: 'New selling price for one whole pack/bulk unit (2 dp). Only meaningful for products sold in packs.',
+    example: 500,
+    description: 'New wholesale price per piece (2 dp). Updates the variant wholesale tag.',
   })
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
-  bulkSellingPrice?: number;
+  wholesalePrice?: number;
 }
 
 export class CreatePurchaseDto {

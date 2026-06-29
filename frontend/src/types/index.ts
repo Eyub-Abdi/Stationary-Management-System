@@ -6,14 +6,6 @@
 export type Role = 'ADMIN' | 'STAFF';
 export type ProductStatus = 'ACTIVE' | 'INACTIVE';
 export type ServiceStatus = 'ACTIVE' | 'INACTIVE';
-export type ServiceType =
-  | 'PRINTING_BW'
-  | 'PRINTING_COLOR'
-  | 'PHOTOCOPY_BW'
-  | 'PHOTOCOPY_COLOR'
-  | 'SCANNING'
-  | 'LAMINATION'
-  | 'TYPING';
 export type PricingType = 'PER_PAGE' | 'FIXED';
 export type SaleItemType = 'PRODUCT' | 'SERVICE';
 export type SaleStatus = 'COMPLETED' | 'VOIDED';
@@ -90,6 +82,13 @@ export interface Category {
   _count?: { products: number };
 }
 
+export interface Unit {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // A sellable variant of a product — its own SKU, price, stock and cost.
 export interface ProductVariant {
   id: string;
@@ -97,6 +96,7 @@ export interface ProductVariant {
   sku: string;
   label: string;
   sellingPrice: string;
+  wholesalePrice: string | null;
   buyingPrice: string;
   bulkSellingPrice: string | null;
   currentStock: number;
@@ -111,7 +111,6 @@ export interface Product {
   id: string;
   sku: string;
   name: string;
-  description: string | null;
   imageUrl: string | null;
   categoryId: string | null;
   category?: Category | null;
@@ -140,7 +139,8 @@ export interface ServiceVariant {
 export interface Service {
   id: string;
   name: string;
-  type: ServiceType;
+  /** Optional Material Symbols icon name for display. */
+  icon: string | null;
   pricingType: PricingType;
   status: ServiceStatus;
   variants: ServiceVariant[];

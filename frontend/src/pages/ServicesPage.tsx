@@ -31,10 +31,10 @@ import {
   type ServiceInput,
   type ServiceVariantInput,
 } from '@/hooks/useCatalog';
-import { PRICING_TYPE_OPTIONS, SERVICE_TYPE_ICON, SERVICE_TYPE_OPTIONS } from '@/lib/constants';
+import { DEFAULT_SERVICE_ICON, PRICING_TYPE_OPTIONS } from '@/lib/constants';
 import { extractMessage } from '@/lib/api';
-import { currency, humanize, num } from '@/lib/utils';
-import type { PricingType, Service, ServiceType } from '@/types';
+import { currency, num } from '@/lib/utils';
+import type { PricingType, Service } from '@/types';
 
 /** Single price, or a min–max range when options differ. */
 function servicePriceLabel(s: Service): string {
@@ -143,7 +143,7 @@ export default function ServicesPage() {
             <Card key={s.id} className="flex flex-col p-5">
               <div className="mb-4 flex items-start justify-between">
                 <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-fixed text-on-primary-fixed">
-                  <Icon name={SERVICE_TYPE_ICON[s.type]} size={22} />
+                  <Icon name={s.icon ?? DEFAULT_SERVICE_ICON} size={22} />
                 </span>
                 {isAdmin && (
                   <Dropdown
@@ -183,7 +183,6 @@ export default function ServicesPage() {
                 )}
               </div>
               <h3 className="text-body-lg font-semibold text-on-surface">{s.name}</h3>
-              <p className="mt-0.5 text-[12px] text-on-surface-variant">{humanize(s.type)}</p>
               <div className="mt-4 flex items-end justify-between">
                 <div>
                   <p className="font-mono-data text-h3 font-bold text-primary">{servicePriceLabel(s)}</p>
@@ -230,7 +229,7 @@ export default function ServicesPage() {
 
 interface ServiceFormState {
   name: string;
-  type: ServiceType;
+  icon: string;
   pricingType: PricingType;
   status: 'ACTIVE' | 'INACTIVE';
 }
@@ -270,7 +269,7 @@ function ServiceFormModal({
 
   const [form, setForm] = useState<ServiceFormState>({
     name: '',
-    type: 'PRINTING_BW',
+    icon: DEFAULT_SERVICE_ICON,
     pricingType: 'PER_PAGE',
     status: 'ACTIVE',
   });
@@ -285,7 +284,7 @@ function ServiceFormModal({
     if (service) {
       setForm({
         name: service.name,
-        type: service.type,
+        icon: service.icon ?? DEFAULT_SERVICE_ICON,
         pricingType: service.pricingType,
         status: service.status,
       });
@@ -298,7 +297,7 @@ function ServiceFormModal({
         })),
       );
     } else {
-      setForm({ name: '', type: 'PRINTING_BW', pricingType: 'PER_PAGE', status: 'ACTIVE' });
+      setForm({ name: '', icon: DEFAULT_SERVICE_ICON, pricingType: 'PER_PAGE', status: 'ACTIVE' });
       setOptions([newOpt('Standard')]);
     }
   }, [open, service]);
@@ -325,7 +324,7 @@ function ServiceFormModal({
 
     const serviceFields: ServiceInput = {
       name: form.name.trim(),
-      type: form.type,
+      icon: form.icon,
       pricingType: form.pricingType,
       status: form.status,
     };
@@ -372,29 +371,18 @@ function ServiceFormModal({
         <Field label="Service name" required error={errors.name}>
           <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} invalid={!!errors.name} placeholder="Printing — Black & White" />
         </Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Service type" required>
-            <Select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as ServiceType }))}>
-              {SERVICE_TYPE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Pricing type" required>
-            <Select
-              value={form.pricingType}
-              onChange={(e) => setForm((f) => ({ ...f, pricingType: e.target.value as PricingType }))}
-            >
-              {PRICING_TYPE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
+        <Field label="Pricing type" required>
+          <Select
+            value={form.pricingType}
+            onChange={(e) => setForm((f) => ({ ...f, pricingType: e.target.value as PricingType }))}
+          >
+            {PRICING_TYPE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
 
         {/* Options (e.g. paper sizes) */}
         <div className="rounded-xl border border-outline-variant p-4">

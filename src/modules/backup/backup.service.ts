@@ -5,13 +5,27 @@ import {
   Logger,
 } from '@nestjs/common';
 import { spawn } from 'child_process';
-import { existsSync, mkdirSync, readdirSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'fs';
+import { homedir } from 'os';
 import { join } from 'path';
+import { PrismaService } from '../../prisma/prisma.service';
 
 /** Temp working area for dumps being produced/uploaded (cleaned up after use). */
 export const BACKUP_TMP_DIR = join(process.cwd(), 'backups', 'tmp');
 
+/** Folder name used for on-disk automatic backups. */
+const BACKUP_FOLDER = 'STMS-Backups';
+/** Auto-backups older than this many days are pruned. */
+const RETENTION_DAYS = 30;
+
 type PgTool = 'pg_dump' | 'pg_restore';
+
+export interface LocalBackupResult {
+  dir: string;
+  filename: string;
+  path: string;
+  sizeBytes: number;
+}
 
 /**
  * Wraps the PostgreSQL client tools to produce and apply custom-format dumps
@@ -22,6 +36,8 @@ type PgTool = 'pg_dump' | 'pg_restore';
 @Injectable()
 export class BackupService {
   private readonly logger = new Logger(BackupService.name);
+
+  constructor(private readonly prisma: PrismaService) {}
 
   private dbUrl(): string {
     const url = process.env.DATABASE_URL;
@@ -101,6 +117,77 @@ export class BackupService {
       throw new InternalServerErrorException(`Backup failed: ${(e as Error).message}`);
     }
     return { path, filename };
+  }
+
+  /**
+   * Default on-disk backup folder. On Windows this is drive D (the owner's data
+   * disk) when present, otherwise the user's home folder; on other systems it is
+   * always the home folder — a safe, writable, per-user location.
+   */
+  defaultBackupDir(): string {
+    if (process.platform === 'win32' && existsSync('D:\\')) {
+      return join('D:\\', BACKUP_FOLDER);
+    }
+    return join(homedir(), BACKUP_FOLDER);
+  }
+
+  /** The folder backups actually go to: the admin's override, or the default. */
+  async effectiveBackupDir(): Promise<string> {
+    const s = await this.prisma.appSetting.findUnique({ where: { id: 'singleton' } });
+    return s?.backupDir?.trim() || this.defaultBackupDir();
+  }
+
+  /**
+   * Writes a verified dump to the configured on-disk folder, prunes old files,
+   * and records the outcome on the settings row. Used by the manual "Back up
+   * now" button and the automatic scheduler. Rethrows on failure (after marking
+   * lastBackupStatus) so callers can surface the error.
+   */
+  async runLocalBackup(): Promise<LocalBackupResult> {
+    const dir = await this.effectiveBackupDir();
+    const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+    const filename = `kj_${stamp}.dump`;
+    const path = join(dir, filename);
+    try {
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      await this.run(this.resolveBin('pg_dump'), [
+        `--dbname=${this.dbUrl()}`,
+        '--format=custom',
+        '--no-owner',
+        '--no-privileges',
+        `--file=${path}`,
+      ]);
+      await this.run(this.resolveBin('pg_restore'), ['--list', path]);
+      const sizeBytes = statSync(path).size;
+      this.prune(dir);
+      await this.prisma.appSetting.update({
+        where: { id: 'singleton' },
+        data: { lastBackupAt: new Date(), lastBackupStatus: 'ok', lastBackupPath: path },
+      });
+      this.logger.log(`Local backup written to ${path} (${sizeBytes} bytes)`);
+      return { dir, filename, path, sizeBytes };
+    } catch (e) {
+      const msg = (e as Error).message?.slice(0, 300) || 'Backup failed';
+      this.logger.error(`Local backup failed: ${msg}`);
+      await this.prisma.appSetting
+        .update({ where: { id: 'singleton' }, data: { lastBackupStatus: msg } })
+        .catch(() => undefined);
+      throw new InternalServerErrorException(`Backup failed: ${msg}`);
+    }
+  }
+
+  /** Deletes auto-backup dumps older than the retention window. */
+  private prune(dir: string): void {
+    const cutoff = Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    try {
+      for (const name of readdirSync(dir)) {
+        if (!/^kj_\d{14}\.dump$/.test(name)) continue;
+        const full = join(dir, name);
+        if (statSync(full).mtimeMs < cutoff) unlinkSync(full);
+      }
+    } catch (e) {
+      this.logger.warn(`Backup prune skipped: ${(e as Error).message}`);
+    }
   }
 
   /**

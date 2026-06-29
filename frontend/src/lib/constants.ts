@@ -2,28 +2,10 @@ import type {
   ExpenseCategory,
   PricingType,
   Role,
-  ServiceType,
 } from '@/types';
 
-export const SERVICE_TYPE_OPTIONS: { value: ServiceType; label: string; icon: string }[] = [
-  { value: 'PRINTING_BW', label: 'Printing — Black & White', icon: 'print' },
-  { value: 'PRINTING_COLOR', label: 'Printing — Color', icon: 'print' },
-  { value: 'PHOTOCOPY_BW', label: 'Photocopy — Black & White', icon: 'content_copy' },
-  { value: 'PHOTOCOPY_COLOR', label: 'Photocopy — Color', icon: 'content_copy' },
-  { value: 'SCANNING', label: 'Scanning', icon: 'scanner' },
-  { value: 'LAMINATION', label: 'Lamination', icon: 'note_stack' },
-  { value: 'TYPING', label: 'Typing', icon: 'keyboard' },
-];
-
-export const SERVICE_TYPE_ICON: Record<ServiceType, string> = {
-  PRINTING_BW: 'print',
-  PRINTING_COLOR: 'print',
-  PHOTOCOPY_BW: 'content_copy',
-  PHOTOCOPY_COLOR: 'content_copy',
-  SCANNING: 'scanner',
-  LAMINATION: 'note_stack',
-  TYPING: 'keyboard',
-};
+/** Icon used for all services in the UI (services no longer carry their own). */
+export const DEFAULT_SERVICE_ICON = 'design_services';
 
 export const PRICING_TYPE_OPTIONS: { value: PricingType; label: string }[] = [
   { value: 'PER_PAGE', label: 'Per Page' },

@@ -618,26 +618,18 @@ export class SalesService {
             ? `${product.name} — ${variant.label}`
             : product.name;
 
+        // Everything sells by the piece (unitSize 1). BULK = the wholesale price tier.
         const sellUnit = item.sellUnit ?? 'BASE';
+        const unitSize = 1;
+        const unitLabel = product.baseUnit;
         let unitPrice: Decimal;
-        let unitLabel: string;
-        let unitSize: number;
 
         if (sellUnit === 'BULK') {
-          if (!product.bulkUnit || product.unitSize <= 1) {
-            throw new BadRequestException(
-              `${displayName} is not sold by the unit; only individual pieces.`,
-            );
+          if (!variant.wholesalePrice || money(variant.wholesalePrice).isZero()) {
+            throw new BadRequestException(`${displayName} has no wholesale price set.`);
           }
-          unitSize = product.unitSize;
-          unitLabel = product.bulkUnit;
-          // Bulk price falls back to per-piece price * pack size when unset.
-          unitPrice = variant.bulkSellingPrice
-            ? money(variant.bulkSellingPrice)
-            : mul(variant.sellingPrice, unitSize);
+          unitPrice = money(variant.wholesalePrice);
         } else {
-          unitSize = 1;
-          unitLabel = product.baseUnit;
           unitPrice = money(variant.sellingPrice);
         }
 

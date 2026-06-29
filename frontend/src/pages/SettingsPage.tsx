@@ -14,7 +14,7 @@ import {
 import { useTheme } from '@/providers/ThemeProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/providers/ToastProvider';
-import { useDownloadBackup, useRestoreBackup } from '@/hooks/useBackup';
+import { useDownloadBackup, useRestoreBackup, useRunLocalBackup } from '@/hooks/useBackup';
 import { useSetStartup, useStartupStatus } from '@/hooks/useSystem';
 import { useAppSettings, useUpdateAppSettings } from '@/hooks/useAppSettings';
 import { extractMessage } from '@/lib/api';
@@ -225,8 +225,147 @@ function SystemTab() {
   return (
     <div className="flex flex-col gap-gutter">
       <StartupSection />
+      <AutoBackupSection />
       <BackupRestoreSection />
     </div>
+  );
+}
+
+function AutoBackupSection() {
+  const toast = useToast();
+  const { data: settings, isLoading } = useAppSettings();
+  const update = useUpdateAppSettings();
+  const runBackup = useRunLocalBackup();
+  const [dir, setDir] = useState('');
+
+  useEffect(() => {
+    if (settings) setDir(settings.backupDir ?? '');
+  }, [settings]);
+
+  const enabled = !!settings?.autoBackupEnabled;
+  const lastOk = settings?.lastBackupStatus === 'ok';
+
+  const toggle = async () => {
+    try {
+      await update.mutateAsync({ autoBackupEnabled: !enabled });
+      toast.success(
+        !enabled ? 'Automatic backups on' : 'Automatic backups off',
+        !enabled ? 'A backup will be saved to disk once a day.' : 'Daily backups are paused.',
+      );
+    } catch (e) {
+      toast.error('Could not change setting', extractMessage(e));
+    }
+  };
+
+  const saveDir = async () => {
+    try {
+      await update.mutateAsync({ backupDir: dir.trim() });
+      toast.success('Saved', 'Backup folder updated.');
+    } catch (e) {
+      toast.error('Could not save folder', extractMessage(e));
+    }
+  };
+
+  const backupNow = async () => {
+    try {
+      const r = await runBackup.mutateAsync();
+      toast.success('Backup saved', `Saved to ${r.dir}`);
+    } catch (e) {
+      toast.error('Backup failed', extractMessage(e));
+    }
+  };
+
+  const dirDirty = !!settings && dir.trim() !== (settings.backupDir ?? '');
+
+  return (
+    <Card>
+      <CardHeader title="Automatic backups" subtitle="Save a daily copy of your data to this computer's disk" />
+      <CardBody>
+        {isLoading || !settings ? (
+          <p className="text-body-sm text-on-surface-variant">Loading…</p>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-xl bg-surface-container-low p-3">
+              <div className="flex items-center gap-3">
+                <span
+                  className={cn(
+                    'flex h-9 w-9 items-center justify-center rounded-lg',
+                    enabled ? 'bg-secondary-container text-on-secondary-container' : 'bg-surface-container text-on-surface-variant',
+                  )}
+                >
+                  <Icon name={enabled ? 'cloud_done' : 'cloud_off'} size={20} />
+                </span>
+                <div>
+                  <p className="text-body-sm font-semibold text-on-surface">
+                    {enabled ? 'On — backs up once a day' : 'Off'}
+                  </p>
+                  <p className="text-[12px] text-on-surface-variant">
+                    Saved to <span className="font-mono-data">{settings.effectiveBackupDir}</span>
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant={enabled ? 'outline' : 'primary'}
+                icon={enabled ? 'toggle_off' : 'toggle_on'}
+                loading={update.isPending}
+                onClick={toggle}
+              >
+                {enabled ? 'Disable' : 'Enable'}
+              </Button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 text-[13px]">
+              <span className="text-on-surface-variant">Last backup:</span>
+              {settings.lastBackupAt ? (
+                <>
+                  <span className="font-medium text-on-surface">
+                    {new Date(settings.lastBackupAt).toLocaleString()}
+                  </span>
+                  <Badge tone={lastOk ? 'success' : 'error'}>{lastOk ? 'OK' : 'Failed'}</Badge>
+                </>
+              ) : (
+                <span className="text-on-surface-variant">Never</span>
+              )}
+              {!lastOk && settings.lastBackupStatus && (
+                <span className="text-error">{settings.lastBackupStatus}</span>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                icon="save"
+                className="ml-auto"
+                loading={runBackup.isPending}
+                onClick={backupNow}
+              >
+                Back up now
+              </Button>
+            </div>
+
+            <Field label="Backup folder" hint="Leave blank to use the default (drive D on Windows)">
+              <div className="flex gap-2">
+                <Input
+                  value={dir}
+                  onChange={(e) => setDir(e.target.value)}
+                  placeholder={settings.defaultBackupDir}
+                  className="flex-1 font-mono-data"
+                />
+                <Button variant="outline" icon="check" onClick={saveDir} loading={update.isPending} disabled={!dirDirty}>
+                  Save
+                </Button>
+              </div>
+            </Field>
+
+            <div className="flex gap-2 rounded-xl bg-surface-container-low p-3 text-[13px] text-on-surface-variant">
+              <Icon name="info" size={16} className="mt-0.5 shrink-0" />
+              <span>
+                These on-disk backups stay on this computer. For safety against disk failure or theft,
+                still download a copy to a USB drive or cloud now and then (below).
+              </span>
+            </div>
+          </div>
+        )}
+      </CardBody>
+    </Card>
   );
 }
 

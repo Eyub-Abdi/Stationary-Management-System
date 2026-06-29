@@ -106,13 +106,14 @@ export class PurchasesService {
         let unitSize = 1;
         let unitLabel = product.baseUnit;
         if (sellUnit === 'BULK') {
-          if (!product.bulkUnit || product.unitSize <= 1) {
+          const size = item.unitSize ?? 0;
+          if (size < 2) {
             throw new BadRequestException(
-              `${product.name} is not bought by the unit; only individual pieces.`,
+              `Enter how many pieces are in each pack for ${product.name} (2 or more).`,
             );
           }
-          unitSize = product.unitSize;
-          unitLabel = product.bulkUnit;
+          unitSize = size;
+          unitLabel = item.unitLabel?.trim() || 'pack';
         }
         const lineTotal = mul(item.unitCost, item.quantity);
         const basePieces = item.quantity * unitSize;
@@ -201,7 +202,7 @@ export class PurchasesService {
         });
 
         // Refresh the variant's reference buying price (per base unit), and
-        // re-tag selling prices when this purchase set new ones.
+        // re-tag the selling price when this purchase set a new one.
         await tx.productVariant.update({
           where: { id: r.variant.id },
           data: {
@@ -209,8 +210,8 @@ export class PurchasesService {
             ...(r.item.sellingPrice !== undefined
               ? { sellingPrice: toPrisma(r.item.sellingPrice) }
               : {}),
-            ...(r.item.bulkSellingPrice !== undefined
-              ? { bulkSellingPrice: toPrisma(r.item.bulkSellingPrice) }
+            ...(r.item.wholesalePrice !== undefined
+              ? { wholesalePrice: toPrisma(r.item.wholesalePrice) }
               : {}),
           },
         });

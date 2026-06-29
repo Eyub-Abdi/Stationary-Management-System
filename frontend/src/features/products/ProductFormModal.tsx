@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Field, Icon, Input, Modal, Select, Textarea } from '@/components/ui';
+import { Button, Field, Icon, Input, Modal, Select } from '@/components/ui';
 import { useToast } from '@/providers/ToastProvider';
 import {
   useAddVariant,
@@ -26,22 +26,16 @@ interface VariantRow {
 interface FormState {
   sku: string;
   name: string;
-  description: string;
   categoryId: string;
   baseUnit: string;
-  bulkUnit: string;
-  unitSize: string;
   status: 'ACTIVE' | 'INACTIVE';
 }
 
 const EMPTY: FormState = {
   sku: '',
   name: '',
-  description: '',
   categoryId: '',
   baseUnit: 'pcs',
-  bulkUnit: '',
-  unitSize: '',
   status: 'ACTIVE',
 };
 
@@ -91,7 +85,6 @@ export function ProductFormModal({
   }, [categories, createdCategories]);
 
   const isEdit = !!product;
-  const hasBulk = form.bulkUnit.trim().length > 0;
   const saving =
     create.isPending ||
     update.isPending ||
@@ -111,11 +104,8 @@ export function ProductFormModal({
       setForm({
         sku: product.sku,
         name: product.name,
-        description: product.description ?? '',
         categoryId: product.categoryId ?? '',
         baseUnit: product.baseUnit || 'pcs',
-        bulkUnit: product.bulkUnit ?? '',
-        unitSize: product.bulkUnit ? product.unitSize.toString() : '',
         status: product.status,
       });
       setVariants(
@@ -188,14 +178,10 @@ export function ProductFormModal({
     e.preventDefault();
     if (!validate()) return;
 
-    const bulkUnit = form.bulkUnit.trim();
     const productFields = {
       name: form.name.trim(),
-      description: form.description.trim() || undefined,
       categoryId: form.categoryId || undefined,
       baseUnit: form.baseUnit.trim() || 'pcs',
-      bulkUnit,
-      unitSize: bulkUnit ? Math.max(1, parseInt(form.unitSize || '1', 10)) : undefined,
       status: form.status,
     };
 
@@ -330,14 +316,6 @@ export function ProductFormModal({
           </div>
         </div>
 
-        <Field label="Description">
-          <Textarea
-            value={form.description}
-            onChange={(e) => set('description', e.target.value)}
-            placeholder="Optional product description…"
-          />
-        </Field>
-
         <div className="grid grid-cols-2 gap-4">
           <Field label="Status">
             <Select value={form.status} onChange={(e) => set('status', e.target.value)}>
@@ -345,32 +323,6 @@ export function ProductFormModal({
               <option value="INACTIVE">Inactive</option>
             </Select>
           </Field>
-        </div>
-
-        {/* Units of measure */}
-        <div className="rounded-xl border border-outline-variant bg-surface-container-low p-4">
-          <p className="text-label-caps uppercase tracking-wide text-on-surface-variant">Units of measure</p>
-          <p className="mt-0.5 text-[12px] text-on-surface-variant">
-            Stock is always counted in the base unit. Add a pack unit to also sell/buy in bulk (e.g. a Box of 12 pcs).
-          </p>
-          <div className="mt-3 grid grid-cols-3 gap-4">
-            <Field label="Base unit" hint="e.g. pcs">
-              <Input value={form.baseUnit} onChange={(e) => set('baseUnit', e.target.value)} placeholder="pcs" />
-            </Field>
-            <Field label="Pack unit" hint="optional">
-              <Input value={form.bulkUnit} onChange={(e) => set('bulkUnit', e.target.value)} placeholder="Box" />
-            </Field>
-            <Field label="Pcs per pack">
-              <Input
-                type="number"
-                min="1"
-                value={form.unitSize}
-                onChange={(e) => set('unitSize', e.target.value)}
-                placeholder="12"
-                disabled={!hasBulk}
-              />
-            </Field>
-          </div>
         </div>
 
         {/* Variants */}
@@ -425,6 +377,19 @@ export function ProductFormModal({
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Unit of measure */}
+        <div className="rounded-xl border border-outline-variant bg-surface-container-low p-4">
+          <p className="text-label-caps uppercase tracking-wide text-on-surface-variant">How it's counted</p>
+          <p className="mt-0.5 text-[12px] text-on-surface-variant">
+            Stock is counted and sold in single units. Pack sizes are entered when you receive stock in Purchases.
+          </p>
+          <div className="mt-3 grid grid-cols-3 gap-4">
+            <Field label="Single unit" hint="e.g. piece, sheet">
+              <Input value={form.baseUnit} onChange={(e) => set('baseUnit', e.target.value)} placeholder="pcs" />
+            </Field>
           </div>
         </div>
 

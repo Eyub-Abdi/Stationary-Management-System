@@ -5,14 +5,12 @@ import {
   ArrayMinSize,
   IsArray,
   IsEnum,
-  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
   MaxLength,
-  Min,
   ValidateNested,
 } from 'class-validator';
 import { CreateVariantDto } from './create-variant.dto';
@@ -33,11 +31,6 @@ export class CreateProductDto {
   @IsNotEmpty()
   name!: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  description?: string;
-
   @ApiPropertyOptional({
     description: 'Public image URL, e.g. value returned by POST /uploads/image',
     example: '/uploads/products/3f2c....png',
@@ -52,26 +45,11 @@ export class CreateProductDto {
   @IsUUID()
   categoryId?: string;
 
-  // --- Dual unit of measure (shared by all variants) ------------------------
-
-  @ApiPropertyOptional({ example: 'pcs', default: 'pcs', description: 'Name of the smallest sellable unit (piece).' })
+  @ApiPropertyOptional({ example: 'pcs', default: 'pcs', description: 'Name of the single sellable unit (piece).' })
   @IsOptional()
   @IsString()
   @MaxLength(20)
   baseUnit?: string;
-
-  @ApiPropertyOptional({ example: 'Box', description: 'Optional larger packaging unit. Enables selling/buying by the pack.' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(20)
-  bulkUnit?: string;
-
-  @ApiPropertyOptional({ example: 12, default: 1, description: 'Base units (pieces) contained in one bulk unit.' })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  unitSize?: number;
 
   @ApiPropertyOptional({ enum: ProductStatus, default: ProductStatus.ACTIVE })
   @IsOptional()

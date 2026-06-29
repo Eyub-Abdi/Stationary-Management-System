@@ -48,12 +48,12 @@ export class CreateVariantDto {
   @Min(0)
   buyingPrice?: number;
 
-  @ApiPropertyOptional({ example: 6000, description: 'Selling price for one whole bulk unit. Defaults to sellingPrice × unitSize.' })
+  @ApiPropertyOptional({ example: 450, description: 'Optional wholesale price per piece (2 dp). Usually set when stock is purchased.' })
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
-  bulkSellingPrice?: number;
+  wholesalePrice?: number;
 
   @ApiPropertyOptional({ example: 10 })
   @IsOptional()

@@ -4,6 +4,7 @@ export const qk = {
   product: (id: string) => ['product', id] as const,
   lowStock: () => ['products', 'low-stock'] as const,
   categories: () => ['categories'] as const,
+  units: () => ['units'] as const,
   services: (params?: unknown) => ['services', params] as const,
   service: (id: string) => ['service', id] as const,
   suppliers: (params?: unknown) => ['suppliers', params] as const,

@@ -41,6 +41,20 @@ export class BackupController {
     private readonly audit: AuditService,
   ) {}
 
+  @Post('backup/local')
+  @ApiOperation({ summary: 'Write a backup to the configured on-disk folder now (admin).' })
+  async backupToDisk(@CurrentUser() user: AuthenticatedUser) {
+    const result = await this.backup.runLocalBackup();
+    await this.audit.record({
+      userId: user.id,
+      action: 'DB_BACKUP_LOCAL',
+      entityType: 'Database',
+      entityId: result.filename,
+      metadata: { dir: result.dir, sizeBytes: result.sizeBytes },
+    });
+    return result;
+  }
+
   @Post('backup')
   @ApiOperation({ summary: 'Create and download a full database backup (admin).' })
   async download(@CurrentUser() user: AuthenticatedUser, @Res() res: Response) {

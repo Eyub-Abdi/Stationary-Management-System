@@ -4,7 +4,7 @@ import {
   OmitType,
   PartialType,
 } from '@nestjs/swagger';
-import { PricingType, ServiceStatus, ServiceType } from '@prisma/client';
+import { PricingType, ServiceStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
@@ -47,9 +47,14 @@ export class CreateServiceDto {
   @IsNotEmpty()
   name!: string;
 
-  @ApiProperty({ enum: ServiceType })
-  @IsEnum(ServiceType)
-  type!: ServiceType;
+  @ApiPropertyOptional({
+    example: 'print',
+    description: 'Material Symbols icon name shown in the UI. Cosmetic only.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  icon?: string;
 
   @ApiProperty({ enum: PricingType })
   @IsEnum(PricingType)

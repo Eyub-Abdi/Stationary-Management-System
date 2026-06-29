@@ -7,9 +7,9 @@ import type {
   PricingType,
   Service,
   ServiceStatus,
-  ServiceType,
   ServiceVariant,
   Supplier,
+  Unit,
 } from '@/types';
 
 const clean = (p: Record<string, unknown>) =>
@@ -59,6 +59,32 @@ export function useDeleteCategory() {
   });
 }
 
+// ---- Units (packaging/measure units, e.g. pcs, Box, Roll) ------------------
+
+export function useUnits() {
+  return useQuery({
+    queryKey: qk.units(),
+    queryFn: () => unwrap<Unit[]>(api.get('/units')),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useCreateUnit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string }) => unwrap<Unit>(api.post('/units', input)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.units() }),
+  });
+}
+
+export function useDeleteUnit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/units/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.units() }),
+  });
+}
+
 // ---- Services -------------------------------------------------------------
 
 export interface ServiceFilters {
@@ -78,7 +104,7 @@ export interface ServiceVariantInput {
 /** Service-level fields (the priced options live in variants). */
 export interface ServiceInput {
   name: string;
-  type: ServiceType;
+  icon?: string | null;
   pricingType: PricingType;
   status?: ServiceStatus;
 }

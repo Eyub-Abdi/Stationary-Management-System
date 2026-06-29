@@ -34,13 +34,13 @@ export class SaleItemInputDto {
     enum: SellUnit,
     default: SellUnit.BASE,
     description:
-      'For products: BASE sells single pieces, BULK sells whole packaging units (box/carton). Ignored for services.',
+      'For products: BASE sells at the retail price, BULK sells at the wholesale price (both per piece). Ignored for services.',
   })
   @IsOptional()
   @IsEnum(SellUnit)
   sellUnit?: SellUnit;
 
-  @ApiProperty({ example: 2, description: 'Quantity in the chosen unit (pieces, boxes) or job count (services).' })
+  @ApiProperty({ example: 2, description: 'Quantity in pieces (products) or job count (services).' })
   @Type(() => Number)
   @IsInt()
   @Min(1)

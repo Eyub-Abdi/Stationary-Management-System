@@ -1,5 +1,21 @@
-import { useMutation } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { api, unwrap } from '@/lib/api';
+
+export interface LocalBackupResult {
+  dir: string;
+  filename: string;
+  path: string;
+  sizeBytes: number;
+}
+
+/** Writes a backup to the configured on-disk folder (drive D by default). */
+export function useRunLocalBackup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => unwrap<LocalBackupResult>(api.post('/admin/backup/local', {})),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['app-settings'] }),
+  });
+}
 
 /**
  * Creates a backup on the server and downloads the .dump to the browser. The

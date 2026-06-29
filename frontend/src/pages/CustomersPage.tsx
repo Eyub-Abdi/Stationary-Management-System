@@ -3,7 +3,6 @@ import {
   Badge,
   Button,
   Card,
-  Checkbox,
   EmptyState,
   ErrorState,
   Field,
@@ -14,6 +13,7 @@ import {
   PageHeader,
   Pagination,
   SearchInput,
+  SegmentedControl,
   StatCard,
   TBody,
   TD,
@@ -37,7 +37,7 @@ import type { Customer } from '@/types';
 export default function CustomersPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [owingOnly, setOwingOnly] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'owing'>('all');
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [detailsId, setDetailsId] = useState<string | null>(null);
@@ -46,7 +46,7 @@ export default function CustomersPage() {
     page,
     limit: 12,
     search: search || undefined,
-    withBalance: owingOnly || undefined,
+    withBalance: filter === 'owing' || undefined,
   });
 
   const aging = useCustomerAging();
@@ -101,14 +101,16 @@ export default function CustomersPage() {
             placeholder="Search by name or phone…"
             className="max-w-md"
           />
-          <Checkbox
-            id="owing-only"
-            label="Owing only"
-            checked={owingOnly}
-            onChange={(e) => {
-              setOwingOnly(e.target.checked);
+          <SegmentedControl
+            value={filter}
+            onChange={(v) => {
+              setFilter(v);
               setPage(1);
             }}
+            items={[
+              { value: 'all', label: 'All' },
+              { value: 'owing', label: 'Owing' },
+            ]}
           />
         </div>
 

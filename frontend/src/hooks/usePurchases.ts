@@ -10,11 +10,15 @@ export interface PurchaseItemInput {
   variantId: string;
   sellUnit?: SellUnit;
   quantity: number;
+  /** Pieces per pack for this delivery (when received as a pack). */
+  unitSize?: number;
+  /** Pack name for this delivery, e.g. "Box" (when received as a pack). */
+  unitLabel?: string;
   unitCost: number;
   /** New selling price per base unit; updates the variant's price tag. */
   sellingPrice?: number;
-  /** New selling price for one whole pack (products sold in packs). */
-  bulkSellingPrice?: number;
+  /** New wholesale price per piece; updates the variant's wholesale tag. */
+  wholesalePrice?: number;
 }
 
 export interface CreatePurchaseInput {

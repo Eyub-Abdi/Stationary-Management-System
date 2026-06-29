@@ -5,12 +5,22 @@ export interface AppSettings {
   id: string;
   businessName: string;
   branchName: string;
+  autoBackupEnabled: boolean;
+  backupDir: string | null;
+  lastBackupAt: string | null;
+  lastBackupStatus: string | null;
+  lastBackupPath: string | null;
+  /** Folder backups actually go to (override or OS default). */
+  effectiveBackupDir: string;
+  defaultBackupDir: string;
   updatedAt: string;
 }
 
 export interface UpdateAppSettingsInput {
   businessName?: string;
   branchName?: string;
+  autoBackupEnabled?: boolean;
+  backupDir?: string;
 }
 
 /** Shop branding (name, branch). Read by any signed-in user to render the UI. */

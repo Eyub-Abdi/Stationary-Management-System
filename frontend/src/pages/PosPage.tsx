@@ -19,7 +19,7 @@ import { useServices } from '@/hooks/useCatalog';
 import { useCustomers } from '@/hooks/useCustomers';
 import { useCreateSale, type SaleItemInput } from '@/hooks/useSales';
 import { CustomerFormModal } from '@/features/customers/CustomerFormModal';
-import { SERVICE_TYPE_ICON } from '@/lib/constants';
+import { DEFAULT_SERVICE_ICON } from '@/lib/constants';
 import { extractMessage } from '@/lib/api';
 import { cn, currency, imageSrc, num } from '@/lib/utils';
 import type { PaymentMethod, Product, ProductVariant, Sale, SellUnit, Service, ServiceVariant } from '@/types';
@@ -34,6 +34,38 @@ function serviceVariantName(s: Service, v: ServiceVariant): string {
 function minServicePrice(s: Service): number {
   const vs = activeServiceVariants(s);
   return vs.length ? Math.min(...vs.map((v) => num(v.unitPrice))) : 0;
+}
+
+/**
+ * Services are grouped in the POS by the part of their name before the first
+ * separator (-, –, —). e.g. "Printing - Black & White" and "Printing - Color"
+ * share the group "Printing"; the user picks the group, then the type inside.
+ */
+const SERVICE_NAME_SEP = /\s*[-–—]\s*/;
+function serviceGroupKey(s: Service): string {
+  return s.name.split(SERVICE_NAME_SEP)[0].trim() || s.name;
+}
+/** The part after the prefix, shown when choosing within a group. */
+function serviceSubLabel(s: Service): string {
+  const parts = s.name.split(SERVICE_NAME_SEP);
+  return parts.length > 1 ? parts.slice(1).join(' - ').trim() : s.name;
+}
+
+interface ServiceGroup {
+  key: string;
+  icon: string;
+  services: Service[];
+}
+/** Groups services by name prefix, preserving the incoming order. */
+function groupServices(services: Service[]): ServiceGroup[] {
+  const map = new Map<string, ServiceGroup>();
+  for (const s of services) {
+    const key = serviceGroupKey(s);
+    const existing = map.get(key);
+    if (existing) existing.services.push(s);
+    else map.set(key, { key, icon: s.icon ?? DEFAULT_SERVICE_ICON, services: [s] });
+  }
+  return [...map.values()];
 }
 
 /** Active, sellable variants of a product. */
@@ -61,30 +93,17 @@ interface CartLine {
   pages?: number; // PER_PAGE services
   perPage: boolean;
   discount: number;
-  // dual-unit (products)
+  // products are sold by the piece; BULK = wholesale price tier
   sellUnit: SellUnit;
   baseUnit: string;
-  bulkUnit: string | null;
-  unitSize: number;
-  basePrice: number;
-  bulkPrice: number;
+  retailPrice: number;
+  wholesalePrice: number | null;
   stockBase?: number; // currentStock in base units (products)
 }
 
 function lineTotal(l: CartLine): number {
   const gross = l.perPage ? l.unitPrice * (l.pages || 1) * l.quantity : l.unitPrice * l.quantity;
   return Math.max(0, gross - l.discount);
-}
-
-/** Resolve unit price + max sellable quantity for a product line's chosen unit. */
-function unitPricing(l: CartLine, sellUnit: SellUnit) {
-  if (sellUnit === 'BULK') {
-    return {
-      unitPrice: l.bulkPrice,
-      maxStock: l.stockBase !== undefined ? Math.floor(l.stockBase / l.unitSize) : undefined,
-    };
-  }
-  return { unitPrice: l.basePrice, maxStock: l.stockBase };
 }
 
 export default function PosPage() {
@@ -101,9 +120,9 @@ export default function PosPage() {
   const [cashReceived, setCashReceived] = useState('');
   const [notes, setNotes] = useState('');
   const [receipt, setReceipt] = useState<Sale | null>(null);
-  const [unitPick, setUnitPick] = useState<{ product: Product; variant: ProductVariant } | null>(null);
   const [variantPick, setVariantPick] = useState<Product | null>(null);
   const [serviceVariantPick, setServiceVariantPick] = useState<Service | null>(null);
+  const [serviceCat, setServiceCat] = useState<string>('all');
   const [custModalOpen, setCustModalOpen] = useState(false);
   const [view, setView] = useState<'grid' | 'list'>(
     () => (localStorage.getItem('pos-view') === 'list' ? 'list' : 'grid'),
@@ -115,6 +134,11 @@ export default function PosPage() {
   const products = useProducts({ status: 'ACTIVE', limit: 50, search: tab === 'products' ? search || undefined : undefined });
   const services = useServices({ status: 'ACTIVE', limit: 50, search: tab === 'services' ? search || undefined : undefined });
   const customers = useCustomers({ limit: 100 });
+
+  const serviceGroups = useMemo(() => groupServices(services.data?.data ?? []), [services.data]);
+  // A category chip filters the flat list; "all" (or a stale key) shows everything.
+  const activeGroup = serviceGroups.find((g) => g.key === serviceCat);
+  const visibleServices = activeGroup ? activeGroup.services : services.data?.data ?? [];
 
   const subtotal = useMemo(() => cart.reduce((a, l) => a + lineTotal(l), 0), [cart]);
   const orderDisc = num(orderDiscount);
@@ -138,37 +162,29 @@ export default function PosPage() {
     pickVariant(p, vs[0]);
   };
 
-  /** A variant chosen — dual-unit products ask piece-or-pack, else add directly. */
+  /** A variant chosen — add it directly (sold by the piece). */
   const pickVariant = (p: Product, v: ProductVariant) => {
-    const hasBulk = !!p.bulkUnit && p.unitSize > 1;
-    if (hasBulk) {
-      setUnitPick({ product: p, variant: v });
-      return;
-    }
-    addVariantUnit(p, v, 'BASE');
+    addVariantUnit(p, v);
   };
 
-  /** Adds (or increments) a variant line for the chosen unit of sale. */
-  const addVariantUnit = (p: Product, v: ProductVariant, sellUnit: SellUnit) => {
-    const basePrice = num(v.sellingPrice);
-    const bulkPrice = v.bulkSellingPrice ? num(v.bulkSellingPrice) : basePrice * p.unitSize;
-    const unitPrice = sellUnit === 'BULK' ? bulkPrice : basePrice;
-    const maxStock = sellUnit === 'BULK' ? Math.floor(v.currentStock / p.unitSize) : v.currentStock;
-    const unitName = sellUnit === 'BULK' && p.bulkUnit ? p.bulkUnit : p.baseUnit;
-    // A variant sold in a different unit is a separate line.
-    const key = `P-${v.id}-${sellUnit}`;
+  /** Adds (or increments) a product variant line (sold by the piece). */
+  const addVariantUnit = (p: Product, v: ProductVariant) => {
+    const retailPrice = num(v.sellingPrice);
+    const wholesalePrice = v.wholesalePrice && num(v.wholesalePrice) > 0 ? num(v.wholesalePrice) : null;
+    const maxStock = v.currentStock;
+    const key = `P-${v.id}`;
 
     setCart((prev) => {
       const existing = prev.find((l) => l.key === key);
       if (existing) {
         if (existing.quantity >= maxStock) {
-          toast.warning('Stock limit reached', `Only ${maxStock} ${unitName} in stock.`);
+          toast.warning('Stock limit reached', `Only ${maxStock} ${p.baseUnit} in stock.`);
           return prev;
         }
         return prev.map((l) => (l.key === key ? { ...l, quantity: l.quantity + 1 } : l));
       }
       if (maxStock <= 0) {
-        toast.warning('Out of stock', `Not enough stock to sell a whole ${unitName}.`);
+        toast.warning('Out of stock', `${variantName(p, v)} is out of stock.`);
         return prev;
       }
       return [
@@ -178,16 +194,14 @@ export default function PosPage() {
           itemType: 'PRODUCT',
           refId: v.id,
           name: variantName(p, v),
-          unitPrice,
+          unitPrice: retailPrice,
           quantity: 1,
           perPage: false,
           discount: 0,
-          sellUnit,
+          sellUnit: 'BASE',
           baseUnit: p.baseUnit,
-          bulkUnit: p.bulkUnit,
-          unitSize: p.unitSize,
-          basePrice,
-          bulkPrice,
+          retailPrice,
+          wholesalePrice,
           stockBase: v.currentStock,
         },
       ];
@@ -230,10 +244,9 @@ export default function PosPage() {
           discount: 0,
           sellUnit: 'BASE',
           baseUnit: 'job',
-          bulkUnit: null,
-          unitSize: 1,
-          basePrice: price,
-          bulkPrice: price,
+          retailPrice: price,
+          wholesalePrice: null,
+          stockBase: undefined,
         },
       ];
     });
@@ -241,29 +254,6 @@ export default function PosPage() {
 
   const updateLine = (key: string, patch: Partial<CartLine>) =>
     setCart((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
-
-  /**
-   * Switch a product line between piece and bulk units: reprices, reclamps to
-   * stock, and rekeys (product+unit). If a line for the target unit already
-   * exists, merge into it so we never end up with duplicate same-unit lines.
-   */
-  const switchUnit = (key: string, sellUnit: SellUnit) =>
-    setCart((prev) => {
-      const line = prev.find((l) => l.key === key);
-      if (!line || line.sellUnit === sellUnit) return prev;
-      const newKey = `P-${line.refId}-${sellUnit}`;
-      const { unitPrice, maxStock } = unitPricing(line, sellUnit);
-      const cap = maxStock ?? Number.POSITIVE_INFINITY;
-      const target = prev.find((l) => l.key === newKey);
-      if (target) {
-        const merged = Math.min(target.quantity + line.quantity, cap);
-        return prev
-          .filter((l) => l.key !== key)
-          .map((l) => (l.key === newKey ? { ...l, quantity: merged } : l));
-      }
-      const quantity = Math.min(line.quantity, Math.max(1, cap));
-      return prev.map((l) => (l.key === key ? { ...l, key: newKey, sellUnit, unitPrice, quantity } : l));
-    });
 
   const removeLine = (key: string) => setCart((prev) => prev.filter((l) => l.key !== key));
   const clearCart = () => {
@@ -403,18 +393,46 @@ export default function PosPage() {
                 )
               ) : services.data!.data.length === 0 ? (
                 <EmptyState icon="print" title="No services" description="No active services match your search." />
-              ) : view === 'grid' ? (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-                  {services.data!.data.map((s) => (
-                    <ServiceTile key={s.id} service={s} onAdd={() => addService(s)} />
-                  ))}
-                </div>
               ) : (
-                <ul className="flex flex-col gap-2">
-                  {services.data!.data.map((s) => (
-                    <ServiceRow key={s.id} service={s} onAdd={() => addService(s)} />
-                  ))}
-                </ul>
+                <>
+                  {serviceGroups.length > 1 && (
+                    <div className="mb-4 flex flex-wrap gap-2">
+                      <ServiceChip label="All" active={!activeGroup} onClick={() => setServiceCat('all')} />
+                      {serviceGroups.map((g) => (
+                        <ServiceChip
+                          key={g.key}
+                          icon={g.icon}
+                          label={g.key}
+                          active={activeGroup?.key === g.key}
+                          onClick={() => setServiceCat(g.key)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {view === 'grid' ? (
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+                      {visibleServices.map((s) => (
+                        <ServiceTile
+                          key={s.id}
+                          service={s}
+                          label={activeGroup ? serviceSubLabel(s) : s.name}
+                          onAdd={() => addService(s)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <ul className="flex flex-col gap-2">
+                      {visibleServices.map((s) => (
+                        <ServiceRow
+                          key={s.id}
+                          service={s}
+                          label={activeGroup ? serviceSubLabel(s) : s.name}
+                          onAdd={() => addService(s)}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </>
               )}
             </div>
           </Card>
@@ -441,16 +459,26 @@ export default function PosPage() {
               ) : (
                 <ul className="space-y-3">
                   {cart.map((l) => {
-                    const { maxStock } = unitPricing(l, l.sellUnit);
-                    const hasBulk = l.itemType === 'PRODUCT' && !!l.bulkUnit && l.unitSize > 1;
+                    const maxStock = l.stockBase;
+                    const color = lineColor(l.refId);
                     return (
-                      <li key={l.key} className="rounded-xl border border-outline-variant p-3">
+                      <li
+                        key={l.key}
+                        className="rounded-xl border border-l-4 border-outline-variant p-3"
+                        style={{ borderLeftColor: color }}
+                      >
                         <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="truncate text-body-sm font-semibold text-on-surface">{l.name}</p>
-                            <p className="font-mono-data text-[11px] text-on-surface-variant">
-                              {currency(l.unitPrice)} {l.perPage ? '/ page' : `/ ${unitWord(l)}`}
-                            </p>
+                          <div className="flex min-w-0 items-start gap-2">
+                            <span
+                              className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+                              style={{ backgroundColor: color }}
+                            />
+                            <div className="min-w-0">
+                              <p className="truncate text-body-sm font-semibold text-on-surface">{l.name}</p>
+                              <p className="font-mono-data text-[11px] text-on-surface-variant">
+                                {currency(l.unitPrice)} {l.perPage ? '/ page' : `/ ${unitWord(l)}`}
+                              </p>
+                            </div>
                           </div>
                           <button
                             onClick={() => removeLine(l.key)}
@@ -460,14 +488,19 @@ export default function PosPage() {
                           </button>
                         </div>
 
-                        {hasBulk && (
+                        {l.wholesalePrice != null && (
                           <div className="mt-2">
                             <SegmentedControl
                               value={l.sellUnit}
-                              onChange={(v) => switchUnit(l.key, v)}
+                              onChange={(v) =>
+                                updateLine(l.key, {
+                                  sellUnit: v,
+                                  unitPrice: v === 'BULK' ? l.wholesalePrice! : l.retailPrice,
+                                })
+                              }
                               items={[
-                                { value: 'BASE', label: l.baseUnit },
-                                { value: 'BULK', label: `${l.bulkUnit} ×${l.unitSize}` },
+                                { value: 'BASE', label: `Retail ${currency(l.retailPrice)}` },
+                                { value: 'BULK', label: `Wholesale ${currency(l.wholesalePrice)}` },
                               ]}
                             />
                           </div>
@@ -625,15 +658,6 @@ export default function PosPage() {
         }}
         onClose={() => setServiceVariantPick(null)}
       />
-      <UnitPickModal
-        product={unitPick?.product ?? null}
-        variant={unitPick?.variant ?? null}
-        onPick={(unit) => {
-          if (unitPick) addVariantUnit(unitPick.product, unitPick.variant, unit);
-          setUnitPick(null);
-        }}
-        onClose={() => setUnitPick(null)}
-      />
       <CustomerFormModal
         open={custModalOpen}
         onClose={() => setCustModalOpen(false)}
@@ -714,56 +738,23 @@ function ServiceVariantPickModal({
   );
 }
 
-/** Asks how a dual-unit variant is being sold: by piece or by whole pack. */
-function UnitPickModal({
-  product,
-  variant,
-  onPick,
-  onClose,
-}: {
-  product: Product | null;
-  variant: ProductVariant | null;
-  onPick: (unit: SellUnit) => void;
-  onClose: () => void;
-}) {
-  if (!product || !variant) return null;
-  const basePrice = num(variant.sellingPrice);
-  const bulkPrice = variant.bulkSellingPrice ? num(variant.bulkSellingPrice) : basePrice * product.unitSize;
-  const wholePacks = Math.floor(variant.currentStock / product.unitSize);
-  return (
-    <Modal open={!!product} onClose={onClose} size="sm" title={variantName(product, variant)} subtitle="How is this being sold?">
-      <div className="grid grid-cols-2 gap-3">
-        <button
-          onClick={() => onPick('BASE')}
-          disabled={variant.currentStock <= 0}
-          className="flex flex-col items-center gap-1 rounded-xl border border-outline-variant bg-surface-container-lowest p-4 transition-all hover:-translate-y-0.5 hover:border-secondary hover:shadow-md disabled:opacity-50"
-        >
-          <Icon name="looks_one" size={26} className="text-secondary" />
-          <span className="text-body-sm font-semibold text-on-surface">By {product.baseUnit}</span>
-          <span className="font-mono-data text-[13px] font-bold text-primary">{currency(basePrice)}</span>
-          <span className="text-[11px] text-on-surface-variant">{variant.currentStock} in stock</span>
-        </button>
-        <button
-          onClick={() => onPick('BULK')}
-          disabled={wholePacks <= 0}
-          className="flex flex-col items-center gap-1 rounded-xl border border-outline-variant bg-surface-container-lowest p-4 transition-all hover:-translate-y-0.5 hover:border-secondary hover:shadow-md disabled:opacity-50"
-        >
-          <Icon name="inventory_2" size={26} className="text-secondary" />
-          <span className="text-body-sm font-semibold text-on-surface">
-            By {product.bulkUnit} (×{product.unitSize})
-          </span>
-          <span className="font-mono-data text-[13px] font-bold text-primary">{currency(bulkPrice)}</span>
-          <span className="text-[11px] text-on-surface-variant">{wholePacks} whole in stock</span>
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
 /** Human label for the unit a line is transacted in. */
 function unitWord(l: CartLine): string {
-  if (l.perPage) return 'page';
-  return l.sellUnit === 'BULK' && l.bulkUnit ? l.bulkUnit : l.baseUnit;
+  return l.perPage ? 'page' : l.baseUnit;
+}
+
+/** A fixed palette of distinct accent colours for cart lines. */
+const LINE_COLORS = [
+  '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6',
+  '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
+];
+
+/** Stable colour for a cart line, derived from its item id so the same product
+ * always gets the same colour (helps tell similar items apart at a glance). */
+function lineColor(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return LINE_COLORS[h % LINE_COLORS.length];
 }
 
 function Row({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
@@ -879,7 +870,35 @@ function ProductRow({ product, onAdd }: { product: Product; onAdd: () => void })
   );
 }
 
-function ServiceRow({ service, onAdd }: { service: Service; onAdd: () => void }) {
+/** A category filter chip above the service list (e.g. All / Printing / Photocopy). */
+function ServiceChip({
+  label,
+  icon,
+  active,
+  onClick,
+}: {
+  label: string;
+  icon?: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-semibold transition-colors',
+        active
+          ? 'border-primary bg-primary-fixed text-on-primary-fixed'
+          : 'border-outline-variant text-on-surface-variant hover:border-secondary hover:text-on-surface',
+      )}
+    >
+      {icon && <Icon name={icon} size={16} />}
+      {label}
+    </button>
+  );
+}
+
+function ServiceRow({ service, label, onAdd }: { service: Service; label: string; onAdd: () => void }) {
   const multi = activeServiceVariants(service).length > 1;
   const price = minServicePrice(service);
   return (
@@ -889,10 +908,10 @@ function ServiceRow({ service, onAdd }: { service: Service; onAdd: () => void })
         className="flex w-full items-center gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-2.5 text-left transition-all hover:border-secondary hover:shadow-sm"
       >
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary-fixed text-on-primary-fixed">
-          <Icon name={SERVICE_TYPE_ICON[service.type]} size={20} />
+          <Icon name={service.icon ?? DEFAULT_SERVICE_ICON} size={20} />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-semibold text-on-surface">{service.name}</p>
+          <p className="truncate text-[13px] font-semibold text-on-surface">{label}</p>
           {multi && (
             <p className="truncate text-[11px] text-on-surface-variant">
               {activeServiceVariants(service).length} options
@@ -910,7 +929,7 @@ function ServiceRow({ service, onAdd }: { service: Service; onAdd: () => void })
   );
 }
 
-function ServiceTile({ service, onAdd }: { service: Service; onAdd: () => void }) {
+function ServiceTile({ service, label, onAdd }: { service: Service; label: string; onAdd: () => void }) {
   const multi = activeServiceVariants(service).length > 1;
   const price = minServicePrice(service);
   return (
@@ -920,7 +939,7 @@ function ServiceTile({ service, onAdd }: { service: Service; onAdd: () => void }
     >
       <div className="flex items-center justify-between">
         <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-fixed text-on-primary-fixed">
-          <Icon name={SERVICE_TYPE_ICON[service.type]} size={20} />
+          <Icon name={service.icon ?? DEFAULT_SERVICE_ICON} size={20} />
         </span>
         {multi && (
           <span className="rounded-full bg-surface-container-high px-1.5 py-0.5 text-[10px] font-semibold text-on-surface-variant">
@@ -928,7 +947,7 @@ function ServiceTile({ service, onAdd }: { service: Service; onAdd: () => void }
           </span>
         )}
       </div>
-      <p className="mt-2 line-clamp-2 text-[13px] font-semibold leading-tight text-on-surface">{service.name}</p>
+      <p className="mt-2 line-clamp-2 text-[13px] font-semibold leading-tight text-on-surface">{label}</p>
       <div className="mt-auto flex items-center justify-between pt-2">
         <span className="font-mono-data text-[13px] font-bold text-primary">
           {multi ? `from ${currency(price)}` : currency(price)}

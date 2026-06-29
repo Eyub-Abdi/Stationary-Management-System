@@ -31,7 +31,7 @@ import {
   type PurchaseItemInput,
 } from '@/hooks/usePurchases';
 import { useProducts } from '@/hooks/useProducts';
-import { useSuppliers } from '@/hooks/useCatalog';
+import { useCreateUnit, useSuppliers, useUnits } from '@/hooks/useCatalog';
 import { extractMessage } from '@/lib/api';
 import { currency, formatDate, num } from '@/lib/utils';
 import type { PaymentMethod, Product, SellUnit } from '@/types';
@@ -133,53 +133,63 @@ export default function PurchasesPage() {
   );
 }
 
-interface DraftItem {
-  key: string;
+interface DraftLine {
   variantId: string;
-  sellUnit: SellUnit;
+  label: string;
   quantity: string;
   unitCost: string;
   sellingPrice: string;
-  bulkSellingPrice: string;
+  wholesalePrice: string;
+  hadPrice: boolean;
 }
 
-const newDraft = (): DraftItem => ({
+interface DraftProduct {
+  key: string;
+  productId: string;
+  sellUnit: SellUnit;
+  packName: string;
+  packSize: string;
+  lines: DraftLine[];
+}
+
+const newDraft = (): DraftProduct => ({
   key: crypto.randomUUID(),
-  variantId: '',
+  productId: '',
   sellUnit: 'BASE',
-  quantity: '1',
-  unitCost: '',
-  sellingPrice: '',
-  bulkSellingPrice: '',
+  packName: '',
+  packSize: '',
+  lines: [],
 });
+
+/** Builds editable lines from a product's active variants, prefilling the price tag. */
+const linesFromProduct = (p: Product): DraftLine[] =>
+  p.variants
+    .filter((v) => v.status === 'ACTIVE')
+    .map((v) => ({
+      variantId: v.id,
+      label: v.label && v.label !== 'Default' ? v.label : '—',
+      quantity: '',
+      unitCost: '',
+      sellingPrice: num(v.sellingPrice) > 0 ? num(v.sellingPrice).toString() : '',
+      wholesalePrice: v.wholesalePrice && num(v.wholesalePrice) > 0 ? num(v.wholesalePrice).toString() : '',
+      hadPrice: num(v.sellingPrice) > 0,
+    }));
 
 function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const toast = useToast();
   const create = useCreatePurchase();
   const { data: products } = useProducts({ status: 'ACTIVE', limit: 100 });
   const { data: suppliers } = useSuppliers({ limit: 100 });
+  const { data: units } = useUnits();
+  const createUnit = useCreateUnit();
 
-  // Flatten products → one option per active variant.
-  const variantOptions = useMemo(
-    () =>
-      (products?.data ?? []).flatMap((p) =>
-        p.variants
-          .filter((v) => v.status === 'ACTIVE')
-          .map((v) => ({
-            variantId: v.id,
-            product: p,
-            variant: v,
-            label:
-              v.label && v.label !== 'Default'
-                ? `${p.name} — ${v.label} (${v.sku})`
-                : `${p.name} (${v.sku})`,
-          })),
-      ),
+  const productOptions = useMemo(
+    () => (products?.data ?? []).filter((p) => p.variants.some((v) => v.status === 'ACTIVE')),
     [products],
   );
-  const variantById = useMemo(
-    () => new Map(variantOptions.map((o) => [o.variantId, o] as const)),
-    [variantOptions],
+  const productById = useMemo(
+    () => new Map(productOptions.map((p) => [p.id, p] as const)),
+    [productOptions],
   );
 
   const [supplierId, setSupplierId] = useState('');
@@ -187,7 +197,10 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
   const [payment, setPayment] = useState<PaymentMethod>('CASH');
   const [amountPaid, setAmountPaid] = useState('');
   const [notes, setNotes] = useState('');
-  const [items, setItems] = useState<DraftItem[]>([]);
+  const [cards, setCards] = useState<DraftProduct[]>([]);
+  // Inline "register a new unit" (mirrors the category picker on products).
+  const [addingUnitFor, setAddingUnitFor] = useState<string | null>(null);
+  const [newUnitName, setNewUnitName] = useState('');
 
   useEffect(() => {
     if (open) {
@@ -196,35 +209,58 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
       setPayment('CASH');
       setAmountPaid('');
       setNotes('');
-      setItems([newDraft()]);
+      setCards([newDraft()]);
     }
   }, [open]);
 
-  const addRow = () => setItems((p) => [...p, newDraft()]);
-  const updateRow = (key: string, patch: Partial<DraftItem>) =>
-    setItems((p) => p.map((i) => (i.key === key ? { ...i, ...patch } : i)));
-  const removeRow = (key: string) => setItems((p) => p.filter((i) => i.key !== key));
+  const addRow = () => setCards((p) => [...p, newDraft()]);
+  const updateCard = (key: string, patch: Partial<DraftProduct>) =>
+    setCards((p) => p.map((c) => (c.key === key ? { ...c, ...patch } : c)));
+  const removeRow = (key: string) => setCards((p) => p.filter((c) => c.key !== key));
+  const updateLine = (key: string, variantId: string, patch: Partial<DraftLine>) =>
+    setCards((p) =>
+      p.map((c) =>
+        c.key === key
+          ? { ...c, lines: c.lines.map((l) => (l.variantId === variantId ? { ...l, ...patch } : l)) }
+          : c,
+      ),
+    );
 
-  // Choosing a variant pre-fills its current selling prices so an unchanged
-  // restock keeps the same tag, and a brand-new product prompts for one.
-  const pickVariant = (key: string, variantId: string) => {
-    const v = variantById.get(variantId)?.variant;
-    updateRow(key, {
-      variantId,
-      sellUnit: 'BASE',
-      sellingPrice: v && num(v.sellingPrice) > 0 ? num(v.sellingPrice).toString() : '',
-      bulkSellingPrice: v?.bulkSellingPrice ? num(v.bulkSellingPrice).toString() : '',
-    });
+  // Choosing a product loads all its active variants, prefilling their price tags.
+  const pickProduct = (key: string, productId: string) => {
+    const p = productById.get(productId);
+    updateCard(key, { productId, sellUnit: 'BASE', lines: p ? linesFromProduct(p) : [] });
   };
 
-  const total = items.reduce((a, i) => a + num(i.quantity) * num(i.unitCost), 0);
+  // Register a new unit on the fly and select it for the card being edited.
+  const addUnit = async (cardKey: string) => {
+    const name = newUnitName.trim();
+    if (!name) {
+      toast.error('Name required', 'Enter a unit name (e.g. Box).');
+      return;
+    }
+    try {
+      const created = await createUnit.mutateAsync({ name });
+      updateCard(cardKey, { packName: created.name });
+      setNewUnitName('');
+      setAddingUnitFor(null);
+      toast.success('Unit added', created.name);
+    } catch (e) {
+      toast.error('Could not add unit', extractMessage(e));
+    }
+  };
+
+  const allLines = cards.flatMap((c) => c.lines.map((l) => ({ card: c, line: l })));
+  const total = allLines.reduce((a, { line }) => a + num(line.quantity) * num(line.unitCost), 0);
   const paid = payment === 'CASH' ? total : num(amountPaid);
   const owing = Math.max(0, total - paid);
 
   const submit = async () => {
-    const valid = items.filter((i) => i.variantId && num(i.quantity) > 0 && num(i.unitCost) >= 0);
+    const valid = allLines.filter(
+      ({ line }) => line.variantId && num(line.quantity) > 0 && num(line.unitCost) >= 0,
+    );
     if (valid.length === 0) {
-      toast.error('Add at least one item', 'Select a product, quantity and unit cost.');
+      toast.error('Add at least one item', 'Pick a product, then enter quantity and unit cost.');
       return;
     }
     if (payment === 'CREDIT' && !supplierId) {
@@ -235,23 +271,31 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
       toast.error('Amount paid too high', 'Amount paid cannot exceed the total cost.');
       return;
     }
+    // Packs need a pieces-per-pack count (2+) to convert into stock.
+    const badPack = valid.find(({ card }) => card.sellUnit === 'BULK' && num(card.packSize) < 2);
+    if (badPack) {
+      const p = productById.get(badPack.card.productId);
+      toast.error('Pack size needed', `Enter how many pieces are in each pack for ${p?.name ?? 'this product'} (2 or more).`);
+      return;
+    }
     // A variant that has never been priced must get a selling price here.
-    const missingPrice = valid.find((i) => {
-      const v = variantById.get(i.variantId)?.variant;
-      return i.sellingPrice.trim() === '' && (!v || num(v.sellingPrice) <= 0);
-    });
-    if (missingPrice) {
-      const name = variantById.get(missingPrice.variantId)?.label ?? 'this item';
+    const missing = valid.find(({ line }) => line.sellingPrice.trim() === '' && !line.hadPrice);
+    if (missing) {
+      const p = productById.get(missing.card.productId);
+      const name = p ? `${p.name} (${missing.line.label})` : 'this item';
       toast.error('Selling price needed', `Set a selling price for ${name} — it has no price yet.`);
       return;
     }
-    const payloadItems: PurchaseItemInput[] = valid.map((i) => ({
-      variantId: i.variantId,
-      sellUnit: i.sellUnit,
-      quantity: parseInt(i.quantity, 10),
-      unitCost: num(i.unitCost),
-      sellingPrice: i.sellingPrice.trim() === '' ? undefined : num(i.sellingPrice),
-      bulkSellingPrice: i.bulkSellingPrice.trim() === '' ? undefined : num(i.bulkSellingPrice),
+    const payloadItems: PurchaseItemInput[] = valid.map(({ card, line }) => ({
+      variantId: line.variantId,
+      sellUnit: card.sellUnit,
+      quantity: parseInt(line.quantity, 10),
+      ...(card.sellUnit === 'BULK'
+        ? { unitSize: parseInt(card.packSize, 10), unitLabel: card.packName.trim() || 'pack' }
+        : {}),
+      unitCost: num(line.unitCost),
+      sellingPrice: line.sellingPrice.trim() === '' ? undefined : num(line.sellingPrice),
+      wholesalePrice: line.wholesalePrice.trim() === '' ? undefined : num(line.wholesalePrice),
     }));
     try {
       await create.mutateAsync({
@@ -339,89 +383,198 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
 
         <div>
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-label-caps uppercase tracking-wide text-on-surface-variant">Line items</span>
+            <span className="text-label-caps uppercase tracking-wide text-on-surface-variant">Products received</span>
             <Button size="sm" variant="ghost" icon="add" onClick={addRow}>
-              Add line
+              Add product
             </Button>
           </div>
-          <div className="space-y-2">
-            {items.map((row) => {
-              const product = row.variantId ? variantById.get(row.variantId)?.product : undefined;
-              const hasBulk = !!product?.bulkUnit && product.unitSize > 1;
-              const lineTotal = num(row.quantity) * num(row.unitCost);
+          <div className="space-y-3">
+            {cards.map((card) => {
+              const product = card.productId ? productById.get(card.productId) : undefined;
+              const isPack = card.sellUnit === 'BULK';
+              const costUnit = isPack ? card.packName.trim() || 'pack' : product?.baseUnit ?? 'pcs';
+              const taken = new Set(
+                cards.filter((c) => c.key !== card.key && c.productId).map((c) => c.productId),
+              );
+              const cols = 'minmax(90px,1.2fr) 84px 128px 128px 128px 96px';
               return (
-                <div key={row.key} className="flex flex-wrap items-end gap-2 rounded-xl border border-outline-variant p-2.5">
-                  <Field label="Product / variant" className="min-w-[180px] flex-1">
-                    <Select
-                      value={row.variantId}
-                      onChange={(e) => pickVariant(row.key, e.target.value)}
-                    >
-                      <option value="">Select variant…</option>
-                      {variantOptions.map((o) => (
-                        <option key={o.variantId} value={o.variantId}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                  {hasBulk && (
-                    <Field label="Unit" className="w-36">
-                      <Select value={row.sellUnit} onChange={(e) => updateRow(row.key, { sellUnit: e.target.value as SellUnit })}>
-                        <option value="BASE">{product!.baseUnit}</option>
-                        <option value="BULK">{product!.bulkUnit} (×{product!.unitSize})</option>
+                <div key={card.key} className="rounded-xl border border-outline-variant p-3">
+                  {/* Card header: which product, and how it was received */}
+                  <div className="flex flex-wrap items-end gap-2">
+                    <Field label="Product" className="min-w-[200px] flex-1">
+                      <Select value={card.productId} onChange={(e) => pickProduct(card.key, e.target.value)}>
+                        <option value="">Select product…</option>
+                        {productOptions.map((p) => (
+                          <option key={p.id} value={p.id} disabled={taken.has(p.id)}>
+                            {p.name} ({p.sku})
+                          </option>
+                        ))}
                       </Select>
                     </Field>
-                  )}
-                  <Field label="Qty" className="w-20">
-                    <Input
-                      type="number"
-                      min="1"
-                      value={row.quantity}
-                      onChange={(e) => updateRow(row.key, { quantity: e.target.value })}
-                    />
-                  </Field>
-                  <Field label={`Cost / ${unitLabelOf(product, row.sellUnit)}`} className="w-28">
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={row.unitCost}
-                      onChange={(e) => updateRow(row.key, { unitCost: e.target.value })}
-                    />
-                  </Field>
-                  <Field label={`Sell / ${product?.baseUnit ?? 'pcs'}`} className="w-28">
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={row.sellingPrice}
-                      placeholder="Price tag"
-                      disabled={!row.variantId}
-                      onChange={(e) => updateRow(row.key, { sellingPrice: e.target.value })}
-                    />
-                  </Field>
-                  {hasBulk && (
-                    <Field label={`Sell / ${product!.bulkUnit}`} className="w-28">
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={row.bulkSellingPrice}
-                        placeholder={`blank = ×${product!.unitSize}`}
-                        onChange={(e) => updateRow(row.key, { bulkSellingPrice: e.target.value })}
-                      />
-                    </Field>
-                  )}
-                  <div className="w-24 pb-2.5 text-right font-mono-data text-body-sm font-semibold">
-                    {currency(lineTotal)}
+                    {product && (
+                      <Field label="Received as" className="w-32">
+                        <Select
+                          value={card.sellUnit}
+                          onChange={(e) => updateCard(card.key, { sellUnit: e.target.value as SellUnit })}
+                        >
+                          <option value="BASE">By {product.baseUnit}</option>
+                          <option value="BULK">By pack</option>
+                        </Select>
+                      </Field>
+                    )}
+                    {product && isPack && (
+                      <>
+                        <Field label="Pack unit" className="w-44">
+                          {addingUnitFor === card.key ? (
+                            <div className="flex gap-1">
+                              <Input
+                                autoFocus
+                                value={newUnitName}
+                                onChange={(e) => setNewUnitName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    void addUnit(card.key);
+                                  }
+                                }}
+                                placeholder="New unit"
+                              />
+                              <Button
+                                type="button"
+                                size="sm"
+                                icon="check"
+                                loading={createUnit.isPending}
+                                onClick={() => addUnit(card.key)}
+                              />
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                icon="close"
+                                onClick={() => {
+                                  setAddingUnitFor(null);
+                                  setNewUnitName('');
+                                }}
+                              />
+                            </div>
+                          ) : (
+                            <div className="flex gap-1">
+                              <Select
+                                className="flex-1"
+                                value={card.packName}
+                                onChange={(e) => updateCard(card.key, { packName: e.target.value })}
+                              >
+                                <option value="">Select unit…</option>
+                                {(units ?? []).map((u) => (
+                                  <option key={u.id} value={u.name}>
+                                    {u.name}
+                                  </option>
+                                ))}
+                              </Select>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                icon="add"
+                                title="Add a new unit"
+                                onClick={() => {
+                                  setNewUnitName('');
+                                  setAddingUnitFor(card.key);
+                                }}
+                              />
+                            </div>
+                          )}
+                        </Field>
+                        <Field label="Pcs per pack" className="w-28">
+                          <Input
+                            type="number"
+                            min="2"
+                            value={card.packSize}
+                            placeholder="12"
+                            onChange={(e) => updateCard(card.key, { packSize: e.target.value })}
+                          />
+                        </Field>
+                      </>
+                    )}
+                    <button
+                      onClick={() => removeRow(card.key)}
+                      disabled={cards.length === 1}
+                      title="Remove product"
+                      className="mb-1.5 rounded-lg p-2 text-on-surface-variant hover:bg-surface-container hover:text-error disabled:opacity-30"
+                    >
+                      <Icon name="delete" size={18} />
+                    </button>
                   </div>
-                  <button
-                    onClick={() => removeRow(row.key)}
-                    disabled={items.length === 1}
-                    className="mb-1.5 rounded-lg p-2 text-on-surface-variant hover:bg-surface-container hover:text-error disabled:opacity-30"
-                  >
-                    <Icon name="delete" size={18} />
-                  </button>
+
+                  {product && card.lines.length > 0 && (
+                    <div className="mt-3 overflow-x-auto">
+                      <div className="min-w-[560px] space-y-1.5">
+                        {/* Group headers: buying vs selling */}
+                        <div className="grid gap-2 text-[10px] font-bold uppercase tracking-wide" style={{ gridTemplateColumns: cols }}>
+                          <span />
+                          <span className="col-span-2 text-on-surface-variant">Buying</span>
+                          <span className="col-span-2 border-l border-outline-variant pl-2 text-on-surface-variant">
+                            Selling price (tag)
+                          </span>
+                          <span />
+                        </div>
+                        {/* Column labels */}
+                        <div className="grid gap-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-on-surface-variant" style={{ gridTemplateColumns: cols }}>
+                          <span>Variant</span>
+                          <span>Qty</span>
+                          <span>Cost / {costUnit}</span>
+                          <span className="border-l border-outline-variant pl-2">Retail / {product.baseUnit}</span>
+                          <span>Wholesale / {product.baseUnit}</span>
+                          <span className="text-right">Total</span>
+                        </div>
+                        {/* Variant rows */}
+                        {card.lines.map((line) => {
+                          const lineTotal = num(line.quantity) * num(line.unitCost);
+                          return (
+                            <div key={line.variantId} className="grid items-center gap-2" style={{ gridTemplateColumns: cols }}>
+                              <span className="truncate text-[13px] font-medium text-on-surface">{line.label}</span>
+                              <Input
+                                type="number"
+                                min="0"
+                                value={line.quantity}
+                                placeholder="0"
+                                onChange={(e) => updateLine(card.key, line.variantId, { quantity: e.target.value })}
+                              />
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={line.unitCost}
+                                placeholder="Cost"
+                                onChange={(e) => updateLine(card.key, line.variantId, { unitCost: e.target.value })}
+                              />
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                className="border-dashed bg-surface-container-low/40"
+                                value={line.sellingPrice}
+                                placeholder="Retail"
+                                onChange={(e) => updateLine(card.key, line.variantId, { sellingPrice: e.target.value })}
+                              />
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                className="border-dashed bg-surface-container-low/40"
+                                value={line.wholesalePrice}
+                                placeholder="Wholesale"
+                                onChange={(e) => updateLine(card.key, line.variantId, { wholesalePrice: e.target.value })}
+                              />
+                              <span className="text-right font-mono-data text-body-sm font-semibold">
+                                {currency(lineTotal)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -434,11 +587,6 @@ function CreatePurchaseModal({ open, onClose }: { open: boolean; onClose: () => 
       </div>
     </Modal>
   );
-}
-
-function unitLabelOf(product: Product | undefined, sellUnit: SellUnit): string {
-  if (!product) return 'unit';
-  return sellUnit === 'BULK' && product.bulkUnit ? product.bulkUnit : product.baseUnit;
 }
 
 function PurchaseDetailsModal({ id, onClose }: { id: string | null; onClose: () => void }) {
