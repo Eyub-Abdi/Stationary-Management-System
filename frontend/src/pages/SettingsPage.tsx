@@ -26,9 +26,10 @@ const TAB_STORAGE_KEY = 'settings.activeTab';
 const ADMIN_TABS: TabKey[] = ['business', 'backup'];
 
 export default function SettingsPage() {
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
+  const canSettings = can('settings');
   const allowed = (t: string): t is TabKey =>
-    ['preferences', 'business', 'backup'].includes(t) && (isAdmin || !ADMIN_TABS.includes(t as TabKey));
+    ['preferences', 'business', 'backup'].includes(t) && (canSettings || !ADMIN_TABS.includes(t as TabKey));
 
   const [tab, setTab] = useState<TabKey>(() => {
     const saved = localStorage.getItem(TAB_STORAGE_KEY);
@@ -42,7 +43,7 @@ export default function SettingsPage() {
 
   const items = [
     { value: 'preferences' as const, label: 'Preferences', icon: 'tune' },
-    ...(isAdmin
+    ...(canSettings
       ? [
           { value: 'business' as const, label: 'Business', icon: 'storefront' },
           { value: 'backup' as const, label: 'System', icon: 'dns' },
@@ -56,8 +57,8 @@ export default function SettingsPage() {
       <Tabs value={tab} onChange={(v) => selectTab(v as TabKey)} items={items} />
 
       {tab === 'preferences' && <PreferencesTab />}
-      {tab === 'business' && isAdmin && <BusinessTab />}
-      {tab === 'backup' && isAdmin && <SystemTab />}
+      {tab === 'business' && canSettings && <BusinessTab />}
+      {tab === 'backup' && canSettings && <SystemTab />}
     </div>
   );
 }

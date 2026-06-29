@@ -5,6 +5,7 @@ import {
   AuthenticatedUser,
   CurrentUser,
 } from '../../common/decorators/current-user.decorator';
+import { Permission } from '../../common/decorators/permission.decorator';
 import { CreateExpenseDto, ExpenseQueryDto } from './dto/expense.dto';
 import {
   CreateOfficePurchaseDto,
@@ -31,6 +32,7 @@ export class ExpensesController {
   }
 
   @Post('office')
+  @Permission('officePurchases')
   @ApiOperation({
     summary: 'Record an itemized office/internal-use purchase (booked as a cost, not stock).',
   })
@@ -42,6 +44,7 @@ export class ExpensesController {
   }
 
   @Get('office')
+  @Permission('officePurchases')
   @ApiOperation({ summary: 'List office/internal-use purchases with their line items.' })
   findOfficePurchases(@Query() query: OfficePurchaseQueryDto) {
     return this.expenses.findOfficePurchases(query);

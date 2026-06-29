@@ -14,14 +14,13 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import { Response } from 'express';
 import { rm } from 'fs/promises';
 import {
   AuthenticatedUser,
   CurrentUser,
 } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { Permission } from '../../common/decorators/permission.decorator';
 import { AuditService } from '../audit/audit.service';
 import { BackupService } from './backup.service';
 import { backupMulterOptions } from './backup.upload';
@@ -33,7 +32,7 @@ import { backupMulterOptions } from './backup.upload';
  */
 @ApiTags('Backup')
 @ApiBearerAuth()
-@Roles(Role.ADMIN)
+@Permission('settings')
 @Controller('admin')
 export class BackupController {
   constructor(

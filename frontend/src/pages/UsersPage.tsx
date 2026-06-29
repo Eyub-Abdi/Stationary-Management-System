@@ -35,6 +35,7 @@ import {
   useUsers,
 } from '@/hooks/useUsers';
 import { ROLE_OPTIONS } from '@/lib/constants';
+import { PERMISSION_OPTIONS } from '@/lib/permissions';
 import { extractMessage } from '@/lib/api';
 import { formatDate, initials, timeAgo } from '@/lib/utils';
 import type { Role, User } from '@/types';
@@ -201,12 +202,9 @@ function UserFormModal({ open, onClose, user }: { open: boolean; onClose: () => 
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('STAFF');
   const [password, setPassword] = useState('');
-  const [perms, setPerms] = useState({
-    canManageProducts: false,
-    canManageServices: false,
-    canManagePurchases: false,
-    canManageInventory: false,
-  });
+  const [perms, setPerms] = useState<string[]>([]);
+  const toggle = (key: string, on: boolean) =>
+    setPerms((p) => (on ? [...new Set([...p, key])] : p.filter((k) => k !== key)));
 
   useEffect(() => {
     if (!open) return;
@@ -215,32 +213,17 @@ function UserFormModal({ open, onClose, user }: { open: boolean; onClose: () => 
       setFullName(user.fullName);
       setEmail(user.email);
       setRole(user.role);
-      setPerms({
-        canManageProducts: user.canManageProducts,
-        canManageServices: user.canManageServices,
-        canManagePurchases: user.canManagePurchases,
-        canManageInventory: user.canManageInventory,
-      });
+      setPerms(user.permissions ?? []);
     } else {
       setFullName('');
       setEmail('');
       setRole('STAFF');
-      setPerms({
-        canManageProducts: false,
-        canManageServices: false,
-        canManagePurchases: false,
-        canManageInventory: false,
-      });
+      setPerms([]);
     }
   }, [open, user]);
 
   // Admins implicitly have everything; only send grants for staff.
-  const grants = role === 'STAFF' ? perms : {
-    canManageProducts: false,
-    canManageServices: false,
-    canManagePurchases: false,
-    canManageInventory: false,
-  };
+  const grants = role === 'STAFF' ? perms : [];
 
   const submit = async () => {
     if (!fullName.trim()) return toast.error('Full name is required');
@@ -249,12 +232,18 @@ function UserFormModal({ open, onClose, user }: { open: boolean; onClose: () => 
       if (isEdit) {
         await update.mutateAsync({
           id: user!.id,
-          input: { fullName: fullName.trim(), email: email.trim(), role, ...grants },
+          input: { fullName: fullName.trim(), email: email.trim(), role, permissions: grants },
         });
         toast.success('User updated', fullName);
       } else {
         if (password.length < 8) return toast.error('Password must be at least 8 characters');
-        await create.mutateAsync({ fullName: fullName.trim(), email: email.trim(), role, password, ...grants });
+        await create.mutateAsync({
+          fullName: fullName.trim(),
+          email: email.trim(),
+          role,
+          password,
+          permissions: grants,
+        });
         toast.success('User created', fullName);
       }
       onClose();
@@ -295,31 +284,16 @@ function UserFormModal({ open, onClose, user }: { open: boolean; onClose: () => 
             <p className="mt-0.5 text-[12px] text-on-surface-variant">
               Staff can sell and view by default. Grant extra management rights below.
             </p>
-            <div className="mt-3 space-y-2">
-              <Checkbox
-                id="perm-products"
-                label="Manage products (add/edit products & categories)"
-                checked={perms.canManageProducts}
-                onChange={(e) => setPerms((p) => ({ ...p, canManageProducts: e.target.checked }))}
-              />
-              <Checkbox
-                id="perm-services"
-                label="Manage services (add/edit services)"
-                checked={perms.canManageServices}
-                onChange={(e) => setPerms((p) => ({ ...p, canManageServices: e.target.checked }))}
-              />
-              <Checkbox
-                id="perm-purchases"
-                label="Manage purchases (record stock & manage units)"
-                checked={perms.canManagePurchases}
-                onChange={(e) => setPerms((p) => ({ ...p, canManagePurchases: e.target.checked }))}
-              />
-              <Checkbox
-                id="perm-inventory"
-                label="Manage inventory (adjust stock counts)"
-                checked={perms.canManageInventory}
-                onChange={(e) => setPerms((p) => ({ ...p, canManageInventory: e.target.checked }))}
-              />
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {PERMISSION_OPTIONS.map((o) => (
+                <Checkbox
+                  key={o.key}
+                  id={`perm-${o.key}`}
+                  label={`${o.label} — ${o.hint}`}
+                  checked={perms.includes(o.key)}
+                  onChange={(e) => toggle(o.key, e.target.checked)}
+                />
+              ))}
             </div>
           </div>
         ) : (

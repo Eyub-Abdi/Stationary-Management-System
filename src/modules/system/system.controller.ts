@@ -1,22 +1,21 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import {
   AuthenticatedUser,
   CurrentUser,
 } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { Permission } from '../../common/decorators/permission.decorator';
 import { AuditService } from '../audit/audit.service';
 import { SetStartupDto } from './dto/startup.dto';
 import { SystemService } from './system.service';
 
 /**
- * Host/system controls (admin only). Currently: whether the app launches when
- * Windows starts. Technical — the frontend gates this behind a clear warning.
+ * Host/system controls. Whether the app launches when Windows starts. Technical
+ * — the frontend gates this behind a clear warning.
  */
 @ApiTags('System')
 @ApiBearerAuth()
-@Roles(Role.ADMIN)
+@Permission('settings')
 @Controller('admin/system')
 export class SystemController {
   constructor(

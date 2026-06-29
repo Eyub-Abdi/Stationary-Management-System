@@ -16,18 +16,12 @@ export function useUsers(filters: { page?: number; limit?: number; search?: stri
   });
 }
 
-export interface UserPermissions {
-  canManageProducts?: boolean;
-  canManageServices?: boolean;
-  canManagePurchases?: boolean;
-  canManageInventory?: boolean;
-}
-
-export interface CreateUserInput extends UserPermissions {
+export interface CreateUserInput {
   email: string;
   fullName: string;
   password: string;
   role: Role;
+  permissions?: string[];
 }
 
 export function useCreateUser() {
@@ -51,7 +45,8 @@ export function useUpdateUser() {
         email?: string;
         role?: Role;
         isActive?: boolean;
-      } & UserPermissions;
+        permissions?: string[];
+      };
     }) => unwrap<User>(api.patch(`/users/${id}`, input)),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
   });

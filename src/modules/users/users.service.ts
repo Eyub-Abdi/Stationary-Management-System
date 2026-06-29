@@ -1,12 +1,14 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, Role, User } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { PaginationQueryDto, paginate } from '../../common/dto/pagination.dto';
+import { isPermissionKey } from '../../common/permissions';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -20,10 +22,7 @@ const SAFE_SELECT = {
   fullName: true,
   role: true,
   isActive: true,
-  canManageProducts: true,
-  canManageServices: true,
-  canManagePurchases: true,
-  canManageInventory: true,
+  permissions: true,
   lastLoginAt: true,
   createdAt: true,
   updatedAt: true,
@@ -33,7 +32,10 @@ const SAFE_SELECT = {
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(dto: CreateUserDto): Promise<SafeUser> {
+  async create(dto: CreateUserDto, actorIsAdmin: boolean): Promise<SafeUser> {
+    if (!actorIsAdmin && dto.role === Role.ADMIN) {
+      throw new ForbiddenException('Only an administrator can create admin accounts.');
+    }
     const existing = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },
     });
@@ -47,10 +49,7 @@ export class UsersService {
         fullName: dto.fullName,
         role: dto.role,
         passwordHash,
-        canManageProducts: dto.canManageProducts ?? false,
-        canManageServices: dto.canManageServices ?? false,
-        canManagePurchases: dto.canManagePurchases ?? false,
-        canManageInventory: dto.canManageInventory ?? false,
+        permissions: (dto.permissions ?? []).filter(isPermissionKey),
       },
       select: SAFE_SELECT,
     });
@@ -97,8 +96,12 @@ export class UsersService {
     });
   }
 
-  async update(id: string, dto: UpdateUserDto): Promise<SafeUser> {
-    await this.findOne(id);
+  async update(id: string, dto: UpdateUserDto, actorIsAdmin: boolean): Promise<SafeUser> {
+    const target = await this.findOne(id);
+    // A non-admin user-manager may not touch admin accounts nor make anyone admin.
+    if (!actorIsAdmin && (target.role === Role.ADMIN || dto.role === Role.ADMIN)) {
+      throw new ForbiddenException('Only an administrator can manage admin accounts.');
+    }
     return this.prisma.user.update({
       where: { id },
       data: {
@@ -106,25 +109,19 @@ export class UsersService {
         ...(dto.fullName !== undefined ? { fullName: dto.fullName } : {}),
         ...(dto.role ? { role: dto.role } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
-        ...(dto.canManageProducts !== undefined
-          ? { canManageProducts: dto.canManageProducts }
-          : {}),
-        ...(dto.canManageServices !== undefined
-          ? { canManageServices: dto.canManageServices }
-          : {}),
-        ...(dto.canManagePurchases !== undefined
-          ? { canManagePurchases: dto.canManagePurchases }
-          : {}),
-        ...(dto.canManageInventory !== undefined
-          ? { canManageInventory: dto.canManageInventory }
+        ...(dto.permissions !== undefined
+          ? { permissions: dto.permissions.filter(isPermissionKey) }
           : {}),
       },
       select: SAFE_SELECT,
     });
   }
 
-  async setActive(id: string, isActive: boolean): Promise<SafeUser> {
-    await this.findOne(id);
+  async setActive(id: string, isActive: boolean, actorIsAdmin: boolean): Promise<SafeUser> {
+    const target = await this.findOne(id);
+    if (!actorIsAdmin && target.role === Role.ADMIN) {
+      throw new ForbiddenException('Only an administrator can manage admin accounts.');
+    }
     return this.prisma.user.update({
       where: { id },
       data: { isActive },
@@ -138,11 +135,14 @@ export class UsersService {
    * carry foreign-key references and must be deactivated instead to preserve
    * history. Refresh tokens cascade away automatically.
    */
-  async remove(id: string, actorId: string): Promise<{ id: string }> {
+  async remove(id: string, actorId: string, actorIsAdmin: boolean): Promise<{ id: string }> {
     if (id === actorId) {
       throw new BadRequestException('You cannot delete your own account.');
     }
-    await this.findOne(id);
+    const target = await this.findOne(id);
+    if (!actorIsAdmin && target.role === Role.ADMIN) {
+      throw new ForbiddenException('Only an administrator can manage admin accounts.');
+    }
     try {
       await this.prisma.user.delete({ where: { id } });
       return { id };
@@ -159,8 +159,11 @@ export class UsersService {
     }
   }
 
-  async changePassword(id: string, newPassword: string): Promise<void> {
-    await this.findOne(id);
+  async changePassword(id: string, newPassword: string, actorIsAdmin: boolean): Promise<void> {
+    const target = await this.findOne(id);
+    if (!actorIsAdmin && target.role === Role.ADMIN) {
+      throw new ForbiddenException('Only an administrator can manage admin accounts.');
+    }
     const passwordHash = await this.hash(newPassword);
     await this.prisma.$transaction([
       this.prisma.user.update({ where: { id }, data: { passwordHash } }),

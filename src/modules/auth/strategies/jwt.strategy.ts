@@ -37,10 +37,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
         email: true,
         role: true,
         isActive: true,
-        canManageProducts: true,
-        canManageServices: true,
-        canManagePurchases: true,
-        canManageInventory: true,
+        permissions: true,
       },
     });
     if (!user || !user.isActive) {
@@ -50,10 +47,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       id: user.id,
       email: user.email,
       role: user.role,
-      canManageProducts: user.canManageProducts,
-      canManageServices: user.canManageServices,
-      canManagePurchases: user.canManagePurchases,
-      canManageInventory: user.canManageInventory,
+      permissions: user.permissions,
     };
   }
 }

@@ -39,17 +39,7 @@ export class AuthService {
     ctx: RequestContext,
   ): Promise<
     TokenPair & {
-      user: Pick<
-        User,
-        | 'id'
-        | 'email'
-        | 'fullName'
-        | 'role'
-        | 'canManageProducts'
-        | 'canManageServices'
-        | 'canManagePurchases'
-        | 'canManageInventory'
-      >;
+      user: Pick<User, 'id' | 'email' | 'fullName' | 'role' | 'permissions'>;
     }
   > {
     const user = await this.users.findByEmailWithHash(email);
@@ -81,10 +71,7 @@ export class AuthService {
         email: user.email,
         fullName: user.fullName,
         role: user.role,
-        canManageProducts: user.canManageProducts,
-        canManageServices: user.canManageServices,
-        canManagePurchases: user.canManagePurchases,
-        canManageInventory: user.canManageInventory,
+        permissions: user.permissions,
       },
     };
   }

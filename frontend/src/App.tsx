@@ -59,51 +59,51 @@ export default function App() {
         <Route
           path="/suppliers"
           element={
-            <AdminRoute>
+            <PermissionRoute permission="suppliers">
               <SuppliersPage />
-            </AdminRoute>
+            </PermissionRoute>
           }
         />
         <Route path="/expenses" element={<ExpensesPage />} />
         <Route
           path="/office-purchases"
           element={
-            <AdminRoute>
+            <PermissionRoute permission="officePurchases">
               <OfficePurchasesPage />
-            </AdminRoute>
+            </PermissionRoute>
           }
         />
         <Route path="/cash" element={<CashPage />} />
         <Route
           path="/reports"
           element={
-            <AdminRoute>
+            <PermissionRoute permission="reports">
               <ReportsPage />
-            </AdminRoute>
+            </PermissionRoute>
           }
         />
         <Route
           path="/profit"
           element={
-            <AdminRoute>
+            <PermissionRoute permission="reports">
               <ProfitPage />
-            </AdminRoute>
+            </PermissionRoute>
           }
         />
         <Route
           path="/movement"
           element={
-            <AdminRoute>
+            <PermissionRoute permission="reports">
               <MovementPage />
-            </AdminRoute>
+            </PermissionRoute>
           }
         />
         <Route
           path="/users"
           element={
-            <AdminRoute>
+            <PermissionRoute permission="users">
               <UsersPage />
-            </AdminRoute>
+            </PermissionRoute>
           }
         />
         <Route

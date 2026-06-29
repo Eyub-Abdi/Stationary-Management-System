@@ -118,11 +118,9 @@ model User {
   fullName     String
   role         Role     @default(STAFF)
   isActive     Boolean  @default(true)
-  // Per-staff grants (admins always have full access regardless of these).
-  canManageProducts  Boolean @default(false)
-  canManageServices  Boolean @default(false)
-  canManagePurchases Boolean @default(false)
-  canManageInventory Boolean @default(false)
+  // Per-staff grants (admins always have full access regardless of this list).
+  // Values come from common/permissions.ts, e.g. ["products","reports"].
+  permissions  String[]
   lastLoginAt  DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

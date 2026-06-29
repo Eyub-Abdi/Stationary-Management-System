@@ -1,11 +1,10 @@
 import { Body, Controller, Get, Patch } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import {
   AuthenticatedUser,
   CurrentUser,
 } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { Permission } from '../../common/decorators/permission.decorator';
 import { AuditService } from '../audit/audit.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { SettingsService } from './settings.service';
@@ -30,8 +29,8 @@ export class SettingsController {
   }
 
   @Patch()
-  @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'Update application settings (admin).' })
+  @Permission('settings')
+  @ApiOperation({ summary: 'Update application settings (admin, or staff with settings access).' })
   async update(@Body() dto: UpdateSettingsDto, @CurrentUser() user: AuthenticatedUser) {
     const setting = await this.settings.update(dto);
     await this.audit.record({

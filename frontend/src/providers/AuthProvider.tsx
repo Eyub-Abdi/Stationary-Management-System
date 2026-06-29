@@ -2,10 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { useQueryClient } from '@tanstack/react-query';
 import { api, setAuthFailureHandler, unwrap } from '@/lib/api';
 import { tokenStore } from '@/lib/tokenStore';
+import type { PermissionKey } from '@/lib/permissions';
 import type { AuthUser, TokenPair, User } from '@/types';
 
-/** Grantable staff capabilities (admins always have all). */
-export type PermissionKey = 'products' | 'services' | 'purchases' | 'inventory';
+export type { PermissionKey };
 
 interface AuthCtx {
   user: AuthUser | null;
@@ -68,10 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email: me.email,
       fullName: me.fullName,
       role: me.role,
-      canManageProducts: me.canManageProducts,
-      canManageServices: me.canManageServices,
-      canManagePurchases: me.canManagePurchases,
-      canManageInventory: me.canManageInventory,
+      permissions: me.permissions ?? [],
     };
     tokenStore.updateUser(authUser);
     setUser(authUser);
@@ -86,10 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       can: (key: PermissionKey) => {
         if (!user) return false;
         if (isAdmin) return true;
-        if (key === 'products') return user.canManageProducts;
-        if (key === 'services') return user.canManageServices;
-        if (key === 'purchases') return user.canManagePurchases;
-        return user.canManageInventory;
+        return (user.permissions ?? []).includes(key);
       },
       login,
       logout: doLogout,

@@ -4,11 +4,8 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   role: 'ADMIN' | 'STAFF';
-  /** Per-staff grants (admins are allowed regardless of these). */
-  canManageProducts: boolean;
-  canManageServices: boolean;
-  canManagePurchases: boolean;
-  canManageInventory: boolean;
+  /** Per-staff grants (admins are allowed regardless of this list). */
+  permissions: string[];
 }
 
 /**

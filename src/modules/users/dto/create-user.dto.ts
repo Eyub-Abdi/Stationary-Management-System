@@ -1,9 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import {
-  IsBoolean,
+  IsArray,
   IsEmail,
   IsEnum,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -11,6 +12,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { PERMISSION_KEYS, PermissionKey } from '../../../common/permissions';
 
 export class CreateUserDto {
   @ApiProperty({ example: 'jane@kjstationery.co.tz' })
@@ -40,23 +42,13 @@ export class CreateUserDto {
   @IsEnum(Role)
   role: Role = Role.STAFF;
 
-  @ApiPropertyOptional({ default: false, description: 'STAFF only: may create/edit products & categories.' })
+  @ApiPropertyOptional({
+    isArray: true,
+    enum: PERMISSION_KEYS,
+    description: 'STAFF grants (ignored for admins, who have everything).',
+  })
   @IsOptional()
-  @IsBoolean()
-  canManageProducts?: boolean;
-
-  @ApiPropertyOptional({ default: false, description: 'STAFF only: may create/edit services.' })
-  @IsOptional()
-  @IsBoolean()
-  canManageServices?: boolean;
-
-  @ApiPropertyOptional({ default: false, description: 'STAFF only: may record purchases & manage units.' })
-  @IsOptional()
-  @IsBoolean()
-  canManagePurchases?: boolean;
-
-  @ApiPropertyOptional({ default: false, description: 'STAFF only: may adjust stock (inventory).' })
-  @IsOptional()
-  @IsBoolean()
-  canManageInventory?: boolean;
+  @IsArray()
+  @IsIn(PERMISSION_KEYS as readonly string[], { each: true })
+  permissions?: PermissionKey[];
 }

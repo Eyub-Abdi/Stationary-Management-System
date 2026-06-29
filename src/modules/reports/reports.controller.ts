@@ -1,7 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { Permission } from '../../common/decorators/permission.decorator';
 import {
   ReportRangeDto,
   SalesReportQueryDto,
@@ -10,7 +9,7 @@ import { ReportsService } from './reports.service';
 
 @ApiTags('Reports')
 @ApiBearerAuth()
-@Roles(Role.ADMIN)
+@Permission('reports')
 @Controller('reports')
 export class ReportsController {
   constructor(private readonly reports: ReportsService) {}

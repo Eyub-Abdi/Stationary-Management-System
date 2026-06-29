@@ -10,12 +10,11 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import {
   AuthenticatedUser,
   CurrentUser,
 } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { Permission } from '../../common/decorators/permission.decorator';
 import { AuditService } from '../audit/audit.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -25,7 +24,7 @@ import { UsersService } from './users.service';
 
 @ApiTags('Users')
 @ApiBearerAuth()
-@Roles(Role.ADMIN)
+@Permission('users')
 @Controller('users')
 export class UsersController {
   constructor(
@@ -39,7 +38,7 @@ export class UsersController {
     @Body() dto: CreateUserDto,
     @CurrentUser() actor: AuthenticatedUser,
   ) {
-    const user = await this.users.create(dto);
+    const user = await this.users.create(dto, actor.role === 'ADMIN');
     await this.audit.record({
       userId: actor.id,
       action: 'USER_CREATED',
@@ -69,7 +68,7 @@ export class UsersController {
     @Body() dto: UpdateUserDto,
     @CurrentUser() actor: AuthenticatedUser,
   ) {
-    const user = await this.users.update(id, dto);
+    const user = await this.users.update(id, dto, actor.role === 'ADMIN');
     await this.audit.record({
       userId: actor.id,
       action: 'USER_UPDATED',
@@ -86,7 +85,7 @@ export class UsersController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() actor: AuthenticatedUser,
   ) {
-    const user = await this.users.setActive(id, true);
+    const user = await this.users.setActive(id, true, actor.role === 'ADMIN');
     await this.audit.record({
       userId: actor.id,
       action: 'USER_ACTIVATED',
@@ -102,7 +101,7 @@ export class UsersController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() actor: AuthenticatedUser,
   ) {
-    const user = await this.users.setActive(id, false);
+    const user = await this.users.setActive(id, false, actor.role === 'ADMIN');
     await this.audit.record({
       userId: actor.id,
       action: 'USER_DEACTIVATED',
@@ -121,7 +120,7 @@ export class UsersController {
     @CurrentUser() actor: AuthenticatedUser,
   ) {
     const before = await this.users.findOne(id);
-    const result = await this.users.remove(id, actor.id);
+    const result = await this.users.remove(id, actor.id, actor.role === 'ADMIN');
     await this.audit.record({
       userId: actor.id,
       action: 'USER_DELETED',
@@ -139,7 +138,7 @@ export class UsersController {
     @Body() dto: ChangePasswordDto,
     @CurrentUser() actor: AuthenticatedUser,
   ) {
-    await this.users.changePassword(id, dto.newPassword);
+    await this.users.changePassword(id, dto.newPassword, actor.role === 'ADMIN');
     await this.audit.record({
       userId: actor.id,
       action: 'USER_PASSWORD_RESET',
