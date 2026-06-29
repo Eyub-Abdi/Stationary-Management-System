@@ -39,7 +39,7 @@ export class SystemController {
       action: dto.enabled ? 'STARTUP_ENABLED' : 'STARTUP_DISABLED',
       entityType: 'System',
       entityId: 'startup',
-      metadata: { launcherPath: status.launcherPath },
+      metadata: { serviceName: status.serviceName, enabled: status.enabled },
     });
     return status;
   }

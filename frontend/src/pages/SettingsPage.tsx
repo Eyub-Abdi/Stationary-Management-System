@@ -381,8 +381,8 @@ function StartupSection() {
       toast.success(
         next.enabled ? 'Startup enabled' : 'Startup disabled',
         next.enabled
-          ? 'The app will launch automatically when Windows starts.'
-          : 'The app will no longer launch on startup.',
+          ? 'STMS will start automatically when this computer boots.'
+          : "STMS won't start on boot (it keeps running now; start it manually next time).",
       );
     } catch (e) {
       toast.error('Could not change startup', extractMessage(e));
@@ -391,10 +391,11 @@ function StartupSection() {
 
   const enabled = !!status?.enabled;
   const supported = !!status?.supported;
+  const installed = !!status?.installed;
 
   return (
     <Card className="border border-tertiary/40">
-      <CardHeader title="Run on startup" subtitle="Launch the app automatically when this computer turns on" />
+      <CardHeader title="Run on startup" subtitle="Start STMS automatically when this computer turns on" />
       <CardBody>
         {/* Technical warning, as requested. */}
         <div className="mb-4 flex gap-2 rounded-xl border border-outline-variant bg-surface-container-high p-3 text-[13px] text-on-surface-variant">
@@ -403,8 +404,8 @@ function StartupSection() {
             <strong className="text-on-surface">
               Technical setting — only change this if you know what you're doing.
             </strong>{' '}
-            It registers a launcher in Windows so the app and browser open on sign-in. For a shop
-            till this is convenient, but it's meant for whoever set the computer up.
+            It sets the STMS background service to start (or not) when Windows boots. For a shop till
+            this is convenient, but it's meant for whoever set the computer up.
           </span>
         </div>
 
@@ -414,6 +415,15 @@ function StartupSection() {
           <p className="text-body-sm text-on-surface-variant">
             Automatic startup is only available on Windows.
           </p>
+        ) : !installed ? (
+          <div className="flex gap-2 rounded-xl bg-surface-container-high p-3 text-[13px] text-on-surface-variant">
+            <Icon name="info" size={16} className="mt-0.5 shrink-0" />
+            <span>
+              The STMS background service isn't installed yet. On this computer, open a terminal as
+              Administrator and run <span className="font-mono-data">npm run service:install</span>{' '}
+              once — then this toggle controls whether it starts on boot.
+            </span>
+          </div>
         ) : (
           <>
             <div className="flex items-center justify-between rounded-xl bg-surface-container-low p-3">
@@ -428,10 +438,11 @@ function StartupSection() {
                 </span>
                 <div>
                   <p className="text-body-sm font-semibold text-on-surface">
-                    {enabled ? 'Enabled' : 'Disabled'}
+                    {enabled ? 'Starts on boot' : 'Manual start'}
                   </p>
                   <p className="text-[12px] text-on-surface-variant">
-                    Opens <span className="font-mono-data">{status?.url}</span> on sign-in
+                    Runs as the <span className="font-mono-data">{status?.serviceName}</span> service,
+                    serving <span className="font-mono-data">{status?.url}</span>
                   </p>
                 </div>
               </div>
@@ -449,9 +460,8 @@ function StartupSection() {
               <div className="mt-3 flex gap-2 rounded-xl bg-error-container/40 p-3 text-[13px] text-on-error-container">
                 <Icon name="build" size={16} className="mt-0.5 shrink-0" />
                 <span>
-                  No production build found yet. Startup will only work once the app is built
-                  (<span className="font-mono-data">npm run build:all</span>). Until then it stays in
-                  development mode.
+                  No production build found yet. The service can only serve once the app is built
+                  (<span className="font-mono-data">npm run build:all</span>).
                 </span>
               </div>
             )}

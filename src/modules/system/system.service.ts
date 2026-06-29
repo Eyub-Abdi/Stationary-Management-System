@@ -1,42 +1,64 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { existsSync, rmSync, writeFileSync } from 'fs';
+import { execFileSync } from 'child_process';
+import { existsSync } from 'fs';
 import { join } from 'path';
 
 export interface StartupStatus {
   /** Whether automatic startup can be managed on this host (Windows only). */
   supported: boolean;
-  /** Whether automatic startup is currently registered. */
+  /** Whether the STMS Windows service is installed. */
+  installed: boolean;
+  /** Whether the service is set to start automatically on boot. */
   enabled: boolean;
   platform: string;
-  /** Full path of the launcher we manage (null when unsupported). */
-  launcherPath: string | null;
-  /** Whether a production build exists so `npm run serve` can actually start. */
+  /** Whether a production build exists so the service can actually serve. */
   productionReady: boolean;
-  /** URL the launcher opens. */
+  /** URL the app is served at. */
   url: string;
+  /** Name of the Windows service. */
+  serviceName: string;
 }
 
 const APP_URL = 'http://localhost:3000';
+const SERVICE_NAME = 'STMS';
 
 /**
- * Manages whether the app launches automatically when Windows starts. Uses the
- * per-user Startup folder (no admin rights needed): a small .cmd there runs the
- * production server and opens the browser on login. A true auto-restarting
- * Windows Service needs elevation and is set up separately.
+ * Controls whether the STMS Windows service starts automatically on boot —
+ * the "Run on startup" toggle. The service itself is installed once from a
+ * terminal (`npm run service:install`, as Administrator); this only flips its
+ * start mode between Automatic and Manual, so it never stops or removes the
+ * running app. Changing the start mode needs admin rights, which the app has
+ * when it runs as the service (LocalSystem).
  */
 @Injectable()
 export class SystemService {
   private readonly projectRoot = process.cwd();
 
-  private startupDir(): string | null {
-    const appData = process.env.APPDATA;
-    if (process.platform !== 'win32' || !appData) return null;
-    return join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup');
+  /** Run `sc.exe`, returning its exit code and combined output (never throws). */
+  private sc(args: string[]): { code: number; out: string } {
+    try {
+      const out = execFileSync('sc', args, { encoding: 'utf8', windowsHide: true });
+      return { code: 0, out };
+    } catch (e) {
+      const err = e as { status?: number; stdout?: Buffer; stderr?: Buffer; message?: string };
+      const out =
+        (err.stdout?.toString() ?? '') + (err.stderr?.toString() ?? '') + (err.message ?? '');
+      return { code: err.status ?? 1, out };
+    }
   }
 
-  private launcherPath(): string | null {
-    const dir = this.startupDir();
-    return dir ? join(dir, 'STMS.cmd') : null;
+  /** Whether the service exists and its start mode (auto / manual / disabled). */
+  private queryService(): {
+    installed: boolean;
+    startType: 'auto' | 'manual' | 'disabled' | null;
+  } {
+    if (process.platform !== 'win32') return { installed: false, startType: null };
+    const { code, out } = this.sc(['qc', SERVICE_NAME]);
+    if (code !== 0 || /does not exist/i.test(out)) return { installed: false, startType: null };
+    const m = /START_TYPE\s*:\s*(\d)/i.exec(out);
+    const t = m?.[1];
+    const startType = t === '2' ? 'auto' : t === '3' ? 'manual' : t === '4' ? 'disabled' : null;
+    return { installed: true, startType };
   }
 
   private productionReady(): boolean {
@@ -47,42 +69,41 @@ export class SystemService {
   }
 
   status(): StartupStatus {
-    const launcherPath = this.launcherPath();
+    const { installed, startType } = this.queryService();
     return {
-      supported: !!launcherPath,
-      enabled: !!launcherPath && existsSync(launcherPath),
+      supported: process.platform === 'win32',
+      installed,
+      enabled: installed && startType === 'auto',
       platform: process.platform,
-      launcherPath,
       productionReady: this.productionReady(),
       url: APP_URL,
+      serviceName: SERVICE_NAME,
     };
   }
 
   setEnabled(enabled: boolean): StartupStatus {
-    const launcherPath = this.launcherPath();
-    if (!launcherPath) {
+    if (process.platform !== 'win32') {
       throw new BadRequestException('Automatic startup is only supported on Windows.');
     }
-    if (enabled) {
-      writeFileSync(launcherPath, this.launcherScript(), 'utf8');
-    } else if (existsSync(launcherPath)) {
-      rmSync(launcherPath, { force: true });
+    if (!this.queryService().installed) {
+      throw new BadRequestException(
+        'The STMS background service is not installed yet. On this computer, open a terminal as ' +
+          'Administrator and run "npm run service:install" once.',
+      );
     }
+    // `sc config <svc> start= auto|demand` — the space after "start=" is required.
+    const res = this.sc(['config', SERVICE_NAME, 'start=', enabled ? 'auto' : 'demand']);
+    if (res.code !== 0) {
+      if (/access is denied/i.test(res.out)) {
+        throw new BadRequestException(
+          'Changing startup needs administrator rights. This works when the app runs as the STMS ' +
+            'service; otherwise use an elevated terminal.',
+        );
+      }
+      throw new BadRequestException(`Could not change startup: ${res.out.trim().slice(0, 200)}`);
+    }
+    // Turning it on: also start it now if it isn't already (ignore "already running").
+    if (enabled) this.sc(['start', SERVICE_NAME]);
     return this.status();
-  }
-
-  /** Contents of the Startup-folder launcher. Deleting it disables startup. */
-  private launcherScript(): string {
-    return [
-      '@echo off',
-      'REM Auto-generated by STMS (Settings > System). Deleting this file disables startup.',
-      `cd /d "${this.projectRoot}"`,
-      'REM Start the server minimized in the background.',
-      'start "STMS Server" /min cmd /c "npm run serve"',
-      'REM Wait for it to come up, then open the app in the default browser.',
-      'timeout /t 6 >nul',
-      `start "" "${APP_URL}"`,
-      '',
-    ].join('\r\n');
   }
 }

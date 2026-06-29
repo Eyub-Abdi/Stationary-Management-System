@@ -3,11 +3,12 @@ import { api, unwrap } from '@/lib/api';
 
 export interface StartupStatus {
   supported: boolean;
+  installed: boolean;
   enabled: boolean;
   platform: string;
-  launcherPath: string | null;
   productionReady: boolean;
   url: string;
+  serviceName: string;
 }
 
 export function useStartupStatus() {
