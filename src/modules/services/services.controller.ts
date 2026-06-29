@@ -11,12 +11,11 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import {
   AuthenticatedUser,
   CurrentUser,
 } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { Permission } from '../../common/decorators/permission.decorator';
 import { AuditService } from '../audit/audit.service';
 import {
   CreateServiceDto,
@@ -52,7 +51,7 @@ export class ServicesController {
     return this.services.findOne(id);
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('services')
   @Post()
   @ApiOperation({ summary: 'Create a service (admin)' })
   async create(
@@ -70,7 +69,7 @@ export class ServicesController {
     return service;
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('services')
   @Patch(':id')
   async update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -90,7 +89,7 @@ export class ServicesController {
 
   // ---- Variants (priced options) ------------------------------------------
 
-  @Roles(Role.ADMIN)
+  @Permission('services')
   @Post(':id/variants')
   @ApiOperation({ summary: 'Add a priced option to a service (admin)' })
   async addVariant(
@@ -109,7 +108,7 @@ export class ServicesController {
     return variant;
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('services')
   @Patch('variants/:variantId')
   @ApiOperation({ summary: 'Update a service option (admin)' })
   async updateVariant(
@@ -128,7 +127,7 @@ export class ServicesController {
     return variant;
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('services')
   @Delete('variants/:variantId')
   @ApiOperation({ summary: 'Deactivate a service option (soft)' })
   async deactivateVariant(
@@ -145,7 +144,7 @@ export class ServicesController {
     return variant;
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('services')
   @Delete('variants/:variantId/permanent')
   @ApiOperation({ summary: 'Permanently delete a service option (admin)' })
   async removeVariant(
@@ -162,7 +161,7 @@ export class ServicesController {
     return result;
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('services')
   @Delete(':id')
   async deactivate(
     @Param('id', ParseUUIDPipe) id: string,
@@ -178,7 +177,7 @@ export class ServicesController {
     return service;
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('services')
   @Patch(':id/reactivate')
   @ApiOperation({ summary: 'Reactivate a deactivated service (admin)' })
   async reactivate(
@@ -195,7 +194,7 @@ export class ServicesController {
     return service;
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('services')
   @Delete(':id/permanent')
   @ApiOperation({ summary: 'Permanently delete a service (admin)' })
   async remove(

@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { AdminRoute, ProtectedRoute } from '@/components/RouteGuards';
+import { AdminRoute, PermissionRoute, ProtectedRoute } from '@/components/RouteGuards';
 import { useAuth } from '@/providers/AuthProvider';
 
 import LoginPage from '@/pages/LoginPage';
@@ -51,9 +51,9 @@ export default function App() {
         <Route
           path="/purchases"
           element={
-            <AdminRoute>
+            <PermissionRoute permission="purchases">
               <PurchasesPage />
-            </AdminRoute>
+            </PermissionRoute>
           }
         />
         <Route

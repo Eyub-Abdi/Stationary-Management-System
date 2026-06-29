@@ -37,7 +37,20 @@ export class AuthService {
     email: string,
     password: string,
     ctx: RequestContext,
-  ): Promise<TokenPair & { user: Pick<User, 'id' | 'email' | 'fullName' | 'role'> }> {
+  ): Promise<
+    TokenPair & {
+      user: Pick<
+        User,
+        | 'id'
+        | 'email'
+        | 'fullName'
+        | 'role'
+        | 'canManageProducts'
+        | 'canManageServices'
+        | 'canManagePurchases'
+      >;
+    }
+  > {
     const user = await this.users.findByEmailWithHash(email);
     // Always run a verification to keep timing uniform against enumeration.
     const ok =
@@ -67,6 +80,9 @@ export class AuthService {
         email: user.email,
         fullName: user.fullName,
         role: user.role,
+        canManageProducts: user.canManageProducts,
+        canManageServices: user.canManageServices,
+        canManagePurchases: user.canManagePurchases,
       },
     };
   }

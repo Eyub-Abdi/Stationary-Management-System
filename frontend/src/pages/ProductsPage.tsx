@@ -36,7 +36,8 @@ import { cn, currency, imageSrc, num } from '@/lib/utils';
 import type { Product, ProductStatus } from '@/types';
 
 export default function ProductsPage() {
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
+  const canManage = can('products');
   const toast = useToast();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -109,7 +110,7 @@ export default function ProductsPage() {
         title="Products"
         description="Manage your stationery catalog, pricing, and stock thresholds."
         actions={
-          isAdmin && (
+          canManage && (
             <>
               <Button variant="outline" icon="category" onClick={() => setCatManagerOpen(true)}>
                 Categories
@@ -184,7 +185,7 @@ export default function ProductsPage() {
             icon="inventory_2"
             title="No products found"
             description="Try adjusting your filters, or add your first product."
-            action={isAdmin && <Button icon="add" onClick={openCreate}>Add Product</Button>}
+            action={canManage && <Button icon="add" onClick={openCreate}>Add Product</Button>}
           />
         ) : (
           <>
@@ -197,7 +198,7 @@ export default function ProductsPage() {
                 <TH align="right">Selling</TH>
                 <TH align="center">Stock</TH>
                 <TH align="center">Status</TH>
-                {isAdmin && <TH align="right">Actions</TH>}
+                {canManage && <TH align="right">Actions</TH>}
               </THead>
               <TBody>
                 {data!.data.map((p) => {
@@ -242,7 +243,7 @@ export default function ProductsPage() {
                           {p.status === 'ACTIVE' ? 'Active' : 'Inactive'}
                         </Badge>
                       </TD>
-                      {isAdmin && (
+                      {canManage && (
                         <TD align="right">
                           <Dropdown
                             actions={[

@@ -9,20 +9,19 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import { IDEMPOTENCY_HEADER } from '../../common/constants';
 import {
   AuthenticatedUser,
   CurrentUser,
 } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { Permission } from '../../common/decorators/permission.decorator';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { PurchaseQueryDto } from './dto/purchase-query.dto';
 import { PurchasesService } from './purchases.service';
 
 @ApiTags('Purchases')
 @ApiBearerAuth()
-@Roles(Role.ADMIN)
+@Permission('purchases')
 @Controller('purchases')
 export class PurchasesController {
   constructor(private readonly purchases: PurchasesService) {}

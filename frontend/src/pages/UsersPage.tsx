@@ -3,11 +3,13 @@ import {
   Badge,
   Button,
   Card,
+  Checkbox,
   ConfirmDialog,
   Dropdown,
   EmptyState,
   ErrorState,
   Field,
+  Icon,
   Input,
   LoadingState,
   Modal,
@@ -199,6 +201,11 @@ function UserFormModal({ open, onClose, user }: { open: boolean; onClose: () => 
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('STAFF');
   const [password, setPassword] = useState('');
+  const [perms, setPerms] = useState({
+    canManageProducts: false,
+    canManageServices: false,
+    canManagePurchases: false,
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -207,23 +214,39 @@ function UserFormModal({ open, onClose, user }: { open: boolean; onClose: () => 
       setFullName(user.fullName);
       setEmail(user.email);
       setRole(user.role);
+      setPerms({
+        canManageProducts: user.canManageProducts,
+        canManageServices: user.canManageServices,
+        canManagePurchases: user.canManagePurchases,
+      });
     } else {
       setFullName('');
       setEmail('');
       setRole('STAFF');
+      setPerms({ canManageProducts: false, canManageServices: false, canManagePurchases: false });
     }
   }, [open, user]);
+
+  // Admins implicitly have everything; only send grants for staff.
+  const grants = role === 'STAFF' ? perms : {
+    canManageProducts: false,
+    canManageServices: false,
+    canManagePurchases: false,
+  };
 
   const submit = async () => {
     if (!fullName.trim()) return toast.error('Full name is required');
     if (!email.trim()) return toast.error('Email is required');
     try {
       if (isEdit) {
-        await update.mutateAsync({ id: user!.id, input: { fullName: fullName.trim(), email: email.trim(), role } });
+        await update.mutateAsync({
+          id: user!.id,
+          input: { fullName: fullName.trim(), email: email.trim(), role, ...grants },
+        });
         toast.success('User updated', fullName);
       } else {
         if (password.length < 8) return toast.error('Password must be at least 8 characters');
-        await create.mutateAsync({ fullName: fullName.trim(), email: email.trim(), role, password });
+        await create.mutateAsync({ fullName: fullName.trim(), email: email.trim(), role, password, ...grants });
         toast.success('User created', fullName);
       }
       onClose();
@@ -258,6 +281,39 @@ function UserFormModal({ open, onClose, user }: { open: boolean; onClose: () => 
             ))}
           </Select>
         </Field>
+        {role === 'STAFF' ? (
+          <div className="rounded-xl border border-outline-variant p-4">
+            <p className="text-label-caps uppercase tracking-wide text-on-surface-variant">Permissions</p>
+            <p className="mt-0.5 text-[12px] text-on-surface-variant">
+              Staff can sell and view by default. Grant extra management rights below.
+            </p>
+            <div className="mt-3 space-y-2">
+              <Checkbox
+                id="perm-products"
+                label="Manage products (add/edit products & categories)"
+                checked={perms.canManageProducts}
+                onChange={(e) => setPerms((p) => ({ ...p, canManageProducts: e.target.checked }))}
+              />
+              <Checkbox
+                id="perm-services"
+                label="Manage services (add/edit services)"
+                checked={perms.canManageServices}
+                onChange={(e) => setPerms((p) => ({ ...p, canManageServices: e.target.checked }))}
+              />
+              <Checkbox
+                id="perm-purchases"
+                label="Manage purchases (record stock & manage units)"
+                checked={perms.canManagePurchases}
+                onChange={(e) => setPerms((p) => ({ ...p, canManagePurchases: e.target.checked }))}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="flex gap-2 rounded-xl bg-surface-container-low p-3 text-[13px] text-on-surface-variant">
+            <Icon name="info" size={16} className="mt-0.5 shrink-0" />
+            <span>Administrators have full access to everything.</span>
+          </div>
+        )}
         {!isEdit && (
           <Field label="Temporary password" required hint="Min 8 chars with upper, lower and a number/symbol">
             <Input type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Str0ng!Pass" />

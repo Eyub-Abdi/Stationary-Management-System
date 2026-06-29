@@ -20,7 +20,6 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import {
   productImageMulterOptions,
   productImageUrl,
@@ -29,7 +28,7 @@ import {
   AuthenticatedUser,
   CurrentUser,
 } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { Permission } from '../../common/decorators/permission.decorator';
 import { AuditService } from '../audit/audit.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { CreateVariantDto } from './dto/create-variant.dto';
@@ -64,7 +63,7 @@ export class ProductsController {
     return this.products.findOne(id);
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('products')
   @Post()
   @ApiOperation({ summary: 'Create a product with one or more variants (admin)' })
   async create(
@@ -82,7 +81,7 @@ export class ProductsController {
     return product;
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('products')
   @Patch(':id')
   @ApiOperation({ summary: 'Update a product (admin). Does not affect history.' })
   async update(
@@ -103,7 +102,7 @@ export class ProductsController {
 
   // ---- Variants -----------------------------------------------------------
 
-  @Roles(Role.ADMIN)
+  @Permission('products')
   @Post(':id/variants')
   @ApiOperation({ summary: 'Add a variant to a product (admin)' })
   async addVariant(
@@ -122,7 +121,7 @@ export class ProductsController {
     return variant;
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('products')
   @Patch('variants/:variantId')
   @ApiOperation({ summary: 'Update a variant (admin). Does not affect history.' })
   async updateVariant(
@@ -141,7 +140,7 @@ export class ProductsController {
     return variant;
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('products')
   @Delete('variants/:variantId')
   @ApiOperation({ summary: 'Deactivate a variant (soft, preserves history)' })
   async deactivateVariant(
@@ -158,7 +157,7 @@ export class ProductsController {
     return variant;
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('products')
   @Delete('variants/:variantId/permanent')
   @ApiOperation({ summary: 'Permanently delete a variant (admin, only if never transacted)' })
   async removeVariant(
@@ -175,7 +174,7 @@ export class ProductsController {
     return result;
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('products')
   @Post(':id/image')
   @ApiOperation({ summary: 'Upload/replace a product image (admin)' })
   @ApiConsumes('multipart/form-data')
@@ -206,7 +205,7 @@ export class ProductsController {
     return product;
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('products')
   @Delete(':id')
   @ApiOperation({ summary: 'Deactivate a product (soft, preserves history)' })
   async deactivate(
@@ -223,7 +222,7 @@ export class ProductsController {
     return product;
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('products')
   @Delete(':id/permanent')
   @ApiOperation({
     summary: 'Permanently delete a product (admin, only if never transacted)',

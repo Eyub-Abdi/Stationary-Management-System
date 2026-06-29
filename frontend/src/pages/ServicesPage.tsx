@@ -46,7 +46,8 @@ function servicePriceLabel(s: Service): string {
 }
 
 export default function ServicesPage() {
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
+  const canManage = can('services');
   const toast = useToast();
   const [search, setSearch] = useState('');
   const [formOpen, setFormOpen] = useState(false);
@@ -57,7 +58,7 @@ export default function ServicesPage() {
   const { data, isLoading, isError, refetch, error } = useServices({
     search: search || undefined,
     limit: 100,
-    includeInactive: isAdmin,
+    includeInactive: canManage,
   });
   const del = useDeleteService();
   const reactivate = useReactivateService();
@@ -102,7 +103,7 @@ export default function ServicesPage() {
         title="Services"
         description="Printing, photocopying, scanning and lamination — set pricing per service."
         actions={
-          isAdmin && (
+          canManage && (
             <Button
               icon="add"
               onClick={() => {
@@ -134,7 +135,7 @@ export default function ServicesPage() {
             icon="print"
             title="No services configured"
             description="Add your printing and copying services to start selling them at the POS."
-            action={isAdmin && <Button icon="add" onClick={() => setFormOpen(true)}>Add Service</Button>}
+            action={canManage && <Button icon="add" onClick={() => setFormOpen(true)}>Add Service</Button>}
           />
         </Card>
       ) : (
@@ -145,7 +146,7 @@ export default function ServicesPage() {
                 <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-fixed text-on-primary-fixed">
                   <Icon name={s.icon ?? DEFAULT_SERVICE_ICON} size={22} />
                 </span>
-                {isAdmin && (
+                {canManage && (
                   <Dropdown
                     actions={[
                       {

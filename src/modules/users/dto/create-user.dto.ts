@@ -1,9 +1,11 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import {
+  IsBoolean,
   IsEmail,
   IsEnum,
   IsNotEmpty,
+  IsOptional,
   IsString,
   Matches,
   MaxLength,
@@ -37,4 +39,19 @@ export class CreateUserDto {
   @ApiProperty({ enum: Role, default: Role.STAFF })
   @IsEnum(Role)
   role: Role = Role.STAFF;
+
+  @ApiPropertyOptional({ default: false, description: 'STAFF only: may create/edit products & categories.' })
+  @IsOptional()
+  @IsBoolean()
+  canManageProducts?: boolean;
+
+  @ApiPropertyOptional({ default: false, description: 'STAFF only: may create/edit services.' })
+  @IsOptional()
+  @IsBoolean()
+  canManageServices?: boolean;
+
+  @ApiPropertyOptional({ default: false, description: 'STAFF only: may record purchases & manage units.' })
+  @IsOptional()
+  @IsBoolean()
+  canManagePurchases?: boolean;
 }

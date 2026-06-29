@@ -53,6 +53,9 @@ export interface User {
   fullName: string;
   role: Role;
   isActive: boolean;
+  canManageProducts: boolean;
+  canManageServices: boolean;
+  canManagePurchases: boolean;
   lastLoginAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -63,6 +66,9 @@ export interface AuthUser {
   email: string;
   fullName: string;
   role: Role;
+  canManageProducts: boolean;
+  canManageServices: boolean;
+  canManagePurchases: boolean;
 }
 
 export interface TokenPair {

@@ -9,8 +9,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { Permission } from '../../common/decorators/permission.decorator';
 import { CategoriesService } from './categories.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 
@@ -31,20 +30,20 @@ export class CategoriesController {
     return this.categories.findOne(id);
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('products')
   @Post()
   @ApiOperation({ summary: 'Create a category (admin)' })
   create(@Body() dto: CreateCategoryDto) {
     return this.categories.create(dto);
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('products')
   @Patch(':id')
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateCategoryDto) {
     return this.categories.update(id, dto);
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('products')
   @Delete(':id')
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.categories.remove(id);

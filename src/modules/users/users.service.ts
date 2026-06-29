@@ -20,6 +20,9 @@ const SAFE_SELECT = {
   fullName: true,
   role: true,
   isActive: true,
+  canManageProducts: true,
+  canManageServices: true,
+  canManagePurchases: true,
   lastLoginAt: true,
   createdAt: true,
   updatedAt: true,
@@ -43,6 +46,9 @@ export class UsersService {
         fullName: dto.fullName,
         role: dto.role,
         passwordHash,
+        canManageProducts: dto.canManageProducts ?? false,
+        canManageServices: dto.canManageServices ?? false,
+        canManagePurchases: dto.canManagePurchases ?? false,
       },
       select: SAFE_SELECT,
     });
@@ -98,6 +104,15 @@ export class UsersService {
         ...(dto.fullName !== undefined ? { fullName: dto.fullName } : {}),
         ...(dto.role ? { role: dto.role } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        ...(dto.canManageProducts !== undefined
+          ? { canManageProducts: dto.canManageProducts }
+          : {}),
+        ...(dto.canManageServices !== undefined
+          ? { canManageServices: dto.canManageServices }
+          : {}),
+        ...(dto.canManagePurchases !== undefined
+          ? { canManagePurchases: dto.canManagePurchases }
+          : {}),
       },
       select: SAFE_SELECT,
     });

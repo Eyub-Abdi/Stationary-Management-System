@@ -118,6 +118,10 @@ model User {
   fullName     String
   role         Role     @default(STAFF)
   isActive     Boolean  @default(true)
+  // Per-staff grants (admins always have full access regardless of these).
+  canManageProducts  Boolean @default(false)
+  canManageServices  Boolean @default(false)
+  canManagePurchases Boolean @default(false)
   lastLoginAt  DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

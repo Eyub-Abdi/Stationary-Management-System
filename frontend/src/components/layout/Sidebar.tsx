@@ -12,9 +12,9 @@ export function Sidebar({
   mobileOpen: boolean;
   onClose: () => void;
 }) {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const { data: settings } = useAppSettings();
-  const items = visibleNav(user?.role);
+  const items = visibleNav(user?.role, can);
 
   return (
     <>

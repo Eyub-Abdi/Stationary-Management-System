@@ -9,8 +9,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { Permission } from '../../common/decorators/permission.decorator';
 import { CreateUnitDto, UpdateUnitDto } from './dto/unit.dto';
 import { UnitsService } from './units.service';
 
@@ -31,20 +30,20 @@ export class UnitsController {
     return this.units.findOne(id);
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('purchases')
   @Post()
   @ApiOperation({ summary: 'Create a unit (admin)' })
   create(@Body() dto: CreateUnitDto) {
     return this.units.create(dto);
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('purchases')
   @Patch(':id')
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUnitDto) {
     return this.units.update(id, dto);
   }
 
-  @Roles(Role.ADMIN)
+  @Permission('purchases')
   @Delete(':id')
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.units.remove(id);

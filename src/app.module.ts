@@ -8,6 +8,7 @@ import { ValidationPipe } from '@nestjs/common';
 import configuration from './config/configuration';
 import { validateEnv } from './config/env.validation';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { PermissionsGuard } from './common/guards/permissions.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { PrismaModule } from './prisma/prisma.module';
@@ -106,6 +107,8 @@ import { UsersModule } from './modules/users/users.module';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     // Global RBAC — enforced when @Roles() is present.
     { provide: APP_GUARD, useClass: RolesGuard },
+    // Grantable staff permissions — enforced when @Permission() is present.
+    { provide: APP_GUARD, useClass: PermissionsGuard },
     // Global rate limiting.
     { provide: APP_GUARD, useClass: ThrottlerGuard },
 
