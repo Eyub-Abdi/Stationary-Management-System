@@ -129,11 +129,15 @@ function createDesktopShortcutWindows() {
     );
     if (!desktop || !existsSync(desktop)) return;
     const file = join(desktop, 'STMS.url');
-    writeFileSync(
-      file,
-      ['[InternetShortcut]', 'URL=http://localhost:3000', 'IconIndex=0', ''].join('\r\n'),
-      'utf8',
-    );
+    const ico = join(ROOT, 'assets', 'STMS.ico');
+    const lines = [
+      '[InternetShortcut]',
+      'URL=http://localhost:3000',
+      ...(existsSync(ico) ? [`IconFile=${ico}`] : []),
+      'IconIndex=0',
+      '',
+    ];
+    writeFileSync(file, lines.join('\r\n'), 'utf8');
     console.log(`\n✓ Desktop icon created: ${file}`);
   } catch {
     /* best-effort */

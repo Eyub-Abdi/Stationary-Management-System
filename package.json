@@ -14,6 +14,7 @@
     "pull": "node scripts/setup.mjs pull",
     "service:install": "node scripts/service.mjs install",
     "service:uninstall": "node scripts/service.mjs uninstall",
+    "service:shortcut": "node scripts/service.mjs shortcut",
     "service:start": "node scripts/service.mjs start",
     "service:stop": "node scripts/service.mjs stop",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",

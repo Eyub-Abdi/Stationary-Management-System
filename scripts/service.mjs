@@ -36,8 +36,8 @@ if (process.platform !== 'win32') {
   console.error('✗ The Windows Service installer only runs on Windows.');
   process.exit(1);
 }
-if (!['install', 'uninstall', 'start', 'stop'].includes(MODE)) {
-  console.error(`Unknown mode "${MODE}". Use install | uninstall | start | stop.`);
+if (!['install', 'uninstall', 'start', 'stop', 'shortcut'].includes(MODE)) {
+  console.error(`Unknown mode "${MODE}". Use install | uninstall | start | stop | shortcut.`);
   process.exit(1);
 }
 
@@ -86,14 +86,22 @@ function desktopDir() {
   }
 }
 
-/** Drop a double-clickable desktop icon that opens the app in the browser. */
+/** Drop a double-clickable desktop icon that opens the app in the browser,
+ * using the bundled STMS.ico when present (else the default browser icon). */
 function createDesktopShortcut() {
   const dir = desktopDir();
   if (!existsSync(dir)) return;
   const file = join(dir, 'STMS.url');
-  // .url internet shortcut → opens the default browser at the app URL.
-  writeFileSync(file, ['[InternetShortcut]', `URL=${APP_URL}`, 'IconIndex=0', ''].join('\r\n'), 'utf8');
-  console.log(`✓ Desktop icon created: ${file}`);
+  const ico = join(ROOT, 'assets', 'STMS.ico');
+  const lines = [
+    '[InternetShortcut]',
+    `URL=${APP_URL}`,
+    ...(existsSync(ico) ? [`IconFile=${ico}`] : []),
+    'IconIndex=0',
+    '',
+  ];
+  writeFileSync(file, lines.join('\r\n'), 'utf8');
+  console.log(`✓ Desktop icon created: ${file}${existsSync(ico) ? ' (STMS icon)' : ''}`);
 }
 
 /** Remove the per-user Startup launcher (Settings > Run on startup) so the
@@ -129,6 +137,13 @@ function requireAdmin() {
     );
     process.exit(1);
   }
+}
+
+// Just (re)create the desktop icon — no admin, no service needed. Handy after
+// `npm run pull` to refresh the icon without touching the service.
+if (MODE === 'shortcut') {
+  createDesktopShortcut();
+  process.exit(0);
 }
 
 if ((MODE === 'install' || MODE === 'uninstall' || MODE === 'start' || MODE === 'stop')) {
