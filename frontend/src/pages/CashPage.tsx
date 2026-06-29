@@ -85,7 +85,7 @@ export default function CashPage() {
         </Card>
       )}
 
-      {isAdmin && (
+      {isAdmin ? (
         <>
           <Tabs
             value={tab}
@@ -97,6 +97,11 @@ export default function CashPage() {
           />
           {tab === 'sessions' ? <SessionsTable onResume={setActiveId} /> : <VariancesTable />}
         </>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <h3 className="text-h3 font-semibold text-on-surface">My sessions</h3>
+          <SessionsTable onResume={setActiveId} />
+        </div>
       )}
 
       <OpenSessionModal open={openModal} onClose={() => setOpenModal(false)} onOpened={setActiveId} />

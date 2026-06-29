@@ -55,10 +55,9 @@ export class CashController {
   }
 
   @Get()
-  @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'List cash sessions (admin)' })
-  findAll(@Query() query: CashSessionQueryDto) {
-    return this.cash.findAll(query);
+  @ApiOperation({ summary: 'List cash sessions — your own; admins see everyone’s' })
+  findAll(@Query() query: CashSessionQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.cash.findAll(query, user.id, user.role === Role.ADMIN);
   }
 
   @Get('variances')
@@ -77,8 +76,8 @@ export class CashController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Session summary with live cash breakdown' })
-  summary(@Param('id', ParseUUIDPipe) id: string) {
-    return this.cash.summary(id);
+  @ApiOperation({ summary: 'Session summary with live cash breakdown (own; admins any)' })
+  summary(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.cash.summary(id, user.id, user.role === Role.ADMIN);
   }
 }

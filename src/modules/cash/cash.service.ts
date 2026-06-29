@@ -176,8 +176,9 @@ export class CashService {
     });
   }
 
-  /** Live summary for an open or closed session. */
-  async summary(sessionId: string) {
+  /** Live summary for an open or closed session. Users may only view their own
+   * sessions; admins may view anyone's. */
+  async summary(sessionId: string, userId: string, isAdmin: boolean) {
     const session = await this.prisma.cashSession.findUnique({
       where: { id: sessionId },
       include: {
@@ -186,14 +187,19 @@ export class CashService {
       },
     });
     if (!session) throw new NotFoundException('Cash session not found');
+    if (!isAdmin && session.userId !== userId) {
+      throw new ForbiddenException('Not your cash session');
+    }
     const breakdown = await this.computeBreakdown(this.prisma, sessionId);
     return { ...session, breakdown };
   }
 
-  async findAll(query: CashSessionQueryDto) {
-    const where: Prisma.CashSessionWhereInput = query.status
-      ? { status: query.status }
-      : {};
+  /** Lists sessions: a user sees only their own; an admin sees everyone's. */
+  async findAll(query: CashSessionQueryDto, userId: string, isAdmin: boolean) {
+    const where: Prisma.CashSessionWhereInput = {
+      ...(query.status ? { status: query.status } : {}),
+      ...(isAdmin ? {} : { userId }),
+    };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.cashSession.findMany({
         where,
