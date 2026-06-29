@@ -41,6 +41,29 @@ if (!['install', 'uninstall', 'start', 'stop'].includes(MODE)) {
   process.exit(1);
 }
 
+/**
+ * The service wrapper (winsw) runs on .NET Framework 2.0/3.5 or 4.x. Windows 10
+ * and 11 ship .NET 4.8 by default, so this normally passes — but on a stripped
+ * install it can be missing, which makes the service install yet never start.
+ * Warn early with a clear fix instead of a cryptic failure.
+ */
+function checkDotNet() {
+  const winDir = process.env.WINDIR || 'C:\\Windows';
+  const frameworkDirs = ['Framework64', 'Framework'];
+  const versions = ['v4.0.30319', 'v2.0.50727'];
+  const found = frameworkDirs.some((arch) =>
+    versions.some((v) => existsSync(join(winDir, 'Microsoft.NET', arch, v))),
+  );
+  if (!found) {
+    console.warn(
+      '\n⚠ .NET Framework was not detected. The Windows service needs .NET Framework 4.x\n' +
+        '  (or 3.5). Windows 10/11 include it by default; if this is a stripped install,\n' +
+        '  enable ".NET Framework 4.8" via Settings > Apps > Optional features (or Windows\n' +
+        '  Features), then run this again. Continuing anyway…',
+    );
+  }
+}
+
 /** True when running elevated (installing/removing a service needs admin). */
 function isAdmin() {
   try {
@@ -119,6 +142,7 @@ if (MODE === 'install') {
     console.error(`✗ Build not found at ${BUILT_SERVER}. Run "npm run build:all" first.`);
     process.exit(1);
   }
+  checkDotNet();
   svc.on('alreadyinstalled', () => {
     console.log('· Service already installed — starting it.');
     svc.start();
