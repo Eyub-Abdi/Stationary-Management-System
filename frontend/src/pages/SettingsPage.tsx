@@ -14,7 +14,7 @@ import {
 import { useTheme } from '@/providers/ThemeProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/providers/ToastProvider';
-import { useDownloadBackup, useRestoreBackup, useRunLocalBackup } from '@/hooks/useBackup';
+import { useRestoreBackup, useRunLocalBackup } from '@/hooks/useBackup';
 import { useSetStartup, useStartupStatus } from '@/hooks/useSystem';
 import { useAppSettings, useUpdateAppSettings } from '@/hooks/useAppSettings';
 import { extractMessage } from '@/lib/api';
@@ -359,7 +359,7 @@ function AutoBackupSection() {
               <Icon name="info" size={16} className="mt-0.5 shrink-0" />
               <span>
                 These on-disk backups stay on this computer. For safety against disk failure or theft,
-                still download a copy to a USB drive or cloud now and then (below).
+                copy the backup files from that folder to a USB drive or cloud now and then.
               </span>
             </div>
           </div>
@@ -474,20 +474,10 @@ function StartupSection() {
 
 function BackupRestoreSection() {
   const toast = useToast();
-  const download = useDownloadBackup();
   const restore = useRestoreBackup();
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [confirmText, setConfirmText] = useState('');
-
-  const onBackup = async () => {
-    try {
-      const name = await download.mutateAsync();
-      toast.success('Backup downloaded', `${name} saved to your downloads.`);
-    } catch (e) {
-      toast.error('Backup failed', extractMessage(e));
-    }
-  };
 
   const canRestore = !!file && confirmText.trim().toUpperCase() === RESTORE_PHRASE && !restore.isPending;
 
@@ -503,28 +493,7 @@ function BackupRestoreSection() {
   };
 
   return (
-    <div className="grid grid-cols-1 gap-gutter lg:grid-cols-2">
-      {/* Backup */}
-      <Card>
-        <CardHeader title="Backup" subtitle="Download a full copy of your database" />
-        <CardBody>
-          <p className="text-body-sm text-on-surface-variant">
-            Creates a complete snapshot of all your data — products, sales, purchases, customers,
-            cash and more — as a single <span className="font-mono-data">.dump</span> file. Keep it
-            somewhere safe (USB drive or cloud); that downloaded file <em>is</em> your backup.
-          </p>
-          <div className="mt-4">
-            <Button icon="download" onClick={onBackup} loading={download.isPending}>
-              Download backup
-            </Button>
-          </div>
-          <div className="mt-4 flex gap-2 rounded-xl bg-surface-container-low p-3 text-[13px] text-on-surface-variant">
-            <Icon name="schedule" size={16} className="mt-0.5 shrink-0" />
-            <span>Tip: download a backup at the end of each business day.</span>
-          </div>
-        </CardBody>
-      </Card>
-
+    <div className="grid grid-cols-1 gap-gutter">
       {/* Restore */}
       <Card className="border border-error/40">
         <CardHeader title="Restore" subtitle="Replace everything with a backup file" />
