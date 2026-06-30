@@ -97,16 +97,14 @@ export class SalesService {
         if (dup) return dup;
       }
 
-      // A sale must be attributed to the staff member's OPEN cash session.
-      const session = await tx.cashSession.findFirst({
-        where: { userId, status: 'OPEN' },
-        orderBy: { openedAt: 'desc' },
-      });
-      if (!session) {
-        throw new BadRequestException(
-          'No open cash session. Open a cash session before recording sales.',
-        );
-      }
+      // A sale is attributed to the exact OPEN session the cashier named, not
+      // "whatever session they happen to have open" — so a stale/foreign
+      // session can't silently absorb the sale.
+      const session = await this.resolveOpenSession(
+        tx,
+        dto.cashSessionId,
+        userId,
+      );
 
       // Validate the debtor for credit sales (credit-limit check happens once
       // the payable amount is known, below).
@@ -426,15 +424,11 @@ export class SalesService {
         throw new ConflictException('Cannot return a voided sale');
       }
 
-      const session = await tx.cashSession.findFirst({
-        where: { userId, status: 'OPEN' },
-        orderBy: { openedAt: 'desc' },
-      });
-      if (!session) {
-        throw new BadRequestException(
-          'No open cash session. Open one before processing a refund.',
-        );
-      }
+      const session = await this.resolveOpenSession(
+        tx,
+        dto.cashSessionId,
+        userId,
+      );
 
       const byId = new Map(sale.items.map((i) => [i.id, i]));
       // Reject duplicate line ids in one request.
@@ -627,6 +621,35 @@ export class SalesService {
   }
 
   // ---- internals ----------------------------------------------------------
+
+  /**
+   * Resolves the cash session a sale/refund is attributed to. The caller must
+   * name a session that (a) exists, (b) belongs to them, and (c) is still OPEN.
+   * This prevents recording money against a session the operator doesn't have
+   * actively selected — e.g. a lingering open session from a prior shift, or
+   * another cashier's till.
+   */
+  private async resolveOpenSession(
+    tx: Prisma.TransactionClient,
+    cashSessionId: string,
+    userId: string,
+  ) {
+    const session = await tx.cashSession.findUnique({
+      where: { id: cashSessionId },
+      select: { id: true, userId: true, status: true },
+    });
+    if (!session || session.userId !== userId) {
+      throw new BadRequestException(
+        'No open cash session. Open a cash session before recording sales.',
+      );
+    }
+    if (session.status !== 'OPEN') {
+      throw new BadRequestException(
+        'Your cash session is closed. Open a new session before recording sales.',
+      );
+    }
+    return session;
+  }
 
   /** Validates each line and computes prices from current catalog snapshots. */
   private async computeLines(

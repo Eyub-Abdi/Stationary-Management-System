@@ -42,7 +42,9 @@ describe('SalesService', () => {
           return Promise.resolve({ id: 's1', ...data });
         }),
       },
-      cashSession: { findFirst: jest.fn().mockResolvedValue({ id: 'sess1' }) },
+      cashSession: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'sess1', userId: 'user1', status: 'OPEN' }),
+      },
       customer: {
         findUnique: jest.fn().mockResolvedValue({
           id: 'c1',
@@ -100,6 +102,7 @@ describe('SalesService', () => {
 
   describe('create', () => {
     const cashLine = (over: Partial<CreateSaleDto> = {}): CreateSaleDto => ({
+      cashSessionId: 'sess1',
       items: [{ itemType: 'PRODUCT', productId: 'p1', quantity: 2 }],
       cashReceived: 30000,
       ...over,
@@ -184,6 +187,7 @@ describe('SalesService', () => {
       const { service, calls } = build();
       await service.create(
         {
+          cashSessionId: 'sess1',
           items: [{ itemType: 'PRODUCT', productId: 'p1', quantity: 2, sellUnit: SellUnit.BULK }],
           cashReceived: 300000,
         },
@@ -244,7 +248,9 @@ describe('SalesService', () => {
             return Promise.resolve({});
           }),
         },
-        cashSession: { findFirst: jest.fn().mockResolvedValue({ id: 'sess1' }) },
+        cashSession: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'sess1', userId: 'user1', status: 'OPEN' }),
+        },
         saleReturn: {
           create: jest.fn().mockResolvedValue({ id: 'r1', returnNumber: 'RET-1' }),
           update: jest.fn().mockImplementation(({ data }) => {
@@ -284,7 +290,7 @@ describe('SalesService', () => {
       const { service, calls, customers } = buildReturn();
       await service.returnSale(
         's1',
-        { items: [{ saleItemId: 'si1', quantity: 2 }], reason: 'damaged goods' },
+        { cashSessionId: 'sess1', items: [{ saleItemId: 'si1', quantity: 2 }], reason: 'damaged goods' },
         'user1',
       );
 

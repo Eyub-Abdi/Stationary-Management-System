@@ -65,6 +65,13 @@ export class SaleItemInputDto {
 }
 
 export class CreateSaleDto {
+  @ApiProperty({
+    description:
+      'The cashier’s OPEN cash session this sale is rung into. Must belong to the seller and be open; the sale is attributed to it for reconciliation.',
+  })
+  @IsUUID()
+  cashSessionId!: string;
+
   @ApiProperty({ type: [SaleItemInputDto] })
   @IsArray()
   @ArrayMinSize(1)

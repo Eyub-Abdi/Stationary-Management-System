@@ -26,6 +26,13 @@ export class ReturnLineDto {
 }
 
 export class ReturnSaleDto {
+  @ApiProperty({
+    description:
+      'The cashier’s OPEN cash session the refund is paid from. Must belong to the operator and be open.',
+  })
+  @IsUUID()
+  cashSessionId!: string;
+
   @ApiProperty({ type: [ReturnLineDto] })
   @IsArray()
   @ArrayMinSize(1)

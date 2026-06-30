@@ -101,7 +101,7 @@ describeDb('Money flow (integration)', () => {
 
   it('rings a cash sale: draws stock FIFO, books COGS and change', async () => {
     const sale = await sales.create(
-      { items: [{ itemType: 'PRODUCT', productId, quantity: 10 }], cashReceived: 12000 },
+      { cashSessionId: sessionId, items: [{ itemType: 'PRODUCT', productId, quantity: 10 }], cashReceived: 12000 },
       userId,
     );
     expect(sale.total.toString()).toBe('10000');
@@ -119,6 +119,7 @@ describeDb('Money flow (integration)', () => {
 
     const sale = await sales.create(
       {
+        cashSessionId: sessionId,
         items: [{ itemType: 'PRODUCT', productId, quantity: 5 }],
         paymentMethod: 'CREDIT',
         customerId: customer.id,
@@ -146,6 +147,7 @@ describeDb('Money flow (integration)', () => {
     await expect(
       sales.create(
         {
+          cashSessionId: sessionId,
           items: [{ itemType: 'PRODUCT', productId, quantity: 5 }], // 5000 > 1000
           paymentMethod: 'CREDIT',
           customerId: customer.id,

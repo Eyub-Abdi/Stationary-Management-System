@@ -106,19 +106,43 @@ function lineTotal(l: CartLine): number {
   return Math.max(0, gross - l.discount);
 }
 
+/**
+ * The in-progress sale, persisted to localStorage so navigating away and back
+ * doesn't wipe the cart. Cleared once the sale is completed or the cart emptied.
+ * The cash tendered is intentionally not persisted — it's entered at payment.
+ */
+const POS_DRAFT_KEY = 'sp.posDraft';
+interface PosDraft {
+  cart?: CartLine[];
+  orderDiscount?: string;
+  payment?: PaymentMethod;
+  customerId?: string;
+  notes?: string;
+}
+function loadPosDraft(): PosDraft {
+  try {
+    const raw = localStorage.getItem(POS_DRAFT_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === 'object' && Array.isArray(parsed.cart) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 export default function PosPage() {
   const toast = useToast();
   const { session } = useActiveCashSession();
   const createSale = useCreateSale();
 
+  const [draft] = useState(loadPosDraft);
   const [tab, setTab] = useState<'products' | 'services'>('products');
   const [search, setSearch] = useState('');
-  const [cart, setCart] = useState<CartLine[]>([]);
-  const [orderDiscount, setOrderDiscount] = useState('');
-  const [payment, setPayment] = useState<PaymentMethod>('CASH');
-  const [customerId, setCustomerId] = useState('');
+  const [cart, setCart] = useState<CartLine[]>(draft.cart ?? []);
+  const [orderDiscount, setOrderDiscount] = useState(draft.orderDiscount ?? '');
+  const [payment, setPayment] = useState<PaymentMethod>(draft.payment ?? 'CASH');
+  const [customerId, setCustomerId] = useState(draft.customerId ?? '');
   const [cashReceived, setCashReceived] = useState('');
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(draft.notes ?? '');
   const [receipt, setReceipt] = useState<Sale | null>(null);
   const [variantPick, setVariantPick] = useState<Product | null>(null);
   const [serviceVariantPick, setServiceVariantPick] = useState<Service | null>(null);
@@ -130,6 +154,19 @@ export default function PosPage() {
   useEffect(() => {
     localStorage.setItem('pos-view', view);
   }, [view]);
+
+  // Keep the in-progress sale on disk so it survives navigation; an empty cart
+  // clears the draft entirely.
+  useEffect(() => {
+    if (cart.length === 0) {
+      localStorage.removeItem(POS_DRAFT_KEY);
+      return;
+    }
+    localStorage.setItem(
+      POS_DRAFT_KEY,
+      JSON.stringify({ cart, orderDiscount, payment, customerId, notes }),
+    );
+  }, [cart, orderDiscount, payment, customerId, notes]);
 
   const products = useProducts({ status: 'ACTIVE', limit: 50, search: tab === 'products' ? search || undefined : undefined });
   const services = useServices({ status: 'ACTIVE', limit: 50, search: tab === 'services' ? search || undefined : undefined });
@@ -267,6 +304,10 @@ export default function PosPage() {
 
   const complete = async () => {
     if (cart.length === 0) return;
+    if (!session) {
+      toast.error('No open cash session', 'Open a cash session before recording sales.');
+      return;
+    }
     if (payment === 'CASH' && received < total) {
       toast.error('Insufficient cash', 'Cash received is less than the total due.');
       return;
@@ -293,6 +334,7 @@ export default function PosPage() {
     try {
       const sale = await createSale.mutateAsync({
         input: {
+          cashSessionId: session.id,
           items,
           paymentMethod: payment,
           customerId: payment === 'CREDIT' ? customerId : undefined,
@@ -312,6 +354,7 @@ export default function PosPage() {
   const list = tab === 'products' ? products : services;
   const completeDisabled =
     cart.length === 0 ||
+    !session ||
     (payment === 'CASH' && received < total) ||
     (payment === 'CREDIT' && !customerId);
 

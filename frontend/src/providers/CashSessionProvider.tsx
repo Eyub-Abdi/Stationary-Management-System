@@ -16,7 +16,7 @@ interface CashSessionCtx {
 const Ctx = createContext<CashSessionCtx | null>(null);
 
 export function CashSessionProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isAdmin } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [activeId, setActiveIdState] = useState<string | null>(() => localStorage.getItem(KEY));
 
   const setActiveId = (id: string | null) => {
@@ -25,22 +25,26 @@ export function CashSessionProvider({ children }: { children: React.ReactNode })
     else localStorage.removeItem(KEY);
   };
 
-  // Admins can discover an existing open session on login.
+  // Re-attach to one's own open session on login, so the UI's notion of the
+  // active session always matches what the backend will attribute sales to.
+  // Staff get only their own sessions from this endpoint; for an admin (who
+  // sees everyone's) we pick the one that belongs to them.
   useEffect(() => {
-    if (!isAuthenticated || activeId || !isAdmin) return;
+    if (!isAuthenticated || activeId || !user) return;
     let cancelled = false;
     api
-      .get('/cash-sessions', { params: { status: 'OPEN', limit: 1 } })
+      .get('/cash-sessions', { params: { status: 'OPEN', limit: 20 } })
       .then((res) => {
         const list = (res.data?.data ?? []) as CashSession[];
-        if (!cancelled && list[0]) setActiveId(list[0].id);
+        const mine = list.find((s) => s.userId === user.id);
+        if (!cancelled && mine) setActiveId(mine.id);
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, isAdmin]);
+  }, [isAuthenticated, user?.id]);
 
   const { data: session, isLoading, error } = useCashSessionSummary(activeId);
 
