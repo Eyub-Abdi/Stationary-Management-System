@@ -135,6 +135,16 @@ export interface ServiceVariant {
   unitPrice: string;
   isDefault: boolean;
   status: ServiceStatus;
+  /** Product this option consumes per sale (e.g. A4 paper); null = none. */
+  consumesVariantId: string | null;
+  consumesQty: number;
+  consumesVariant?: {
+    id: string;
+    label: string;
+    sku: string;
+    currentStock: number;
+    product: { name: string; baseUnit: string };
+  } | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -10,10 +10,12 @@ import {
   ArrayMinSize,
   IsArray,
   IsEnum,
+  IsInt,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   Min,
   ValidateNested,
@@ -37,6 +39,23 @@ export class CreateServiceVariantDto {
   @IsOptional()
   @IsEnum(ServiceStatus)
   status?: ServiceStatus;
+
+  @ApiPropertyOptional({
+    description: 'Product variant this option consumes per sale (e.g. A4 paper). Null = none.',
+  })
+  @IsOptional()
+  @IsUUID()
+  consumesVariantId?: string | null;
+
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'Units of the product used per sold unit (per page for PER_PAGE, else per job).',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  consumesQty?: number;
 }
 
 export class UpdateServiceVariantDto extends PartialType(CreateServiceVariantDto) {}

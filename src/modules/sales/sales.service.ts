@@ -36,6 +36,10 @@ interface ComputedLine {
   discount: Decimal;
   lineGross: Decimal;
   lineTotal: Decimal;
+  // For a service that consumes a product (e.g. paper): the product to draw down.
+  consumedVariantId?: string;
+  consumedProductId?: string;
+  consumedQty?: number;
 }
 
 const SALE_INCLUDE = {
@@ -221,6 +225,28 @@ export class SalesService {
             referenceType: 'SALE',
             referenceId: sale.id,
           });
+        } else if (line.consumedVariantId && line.consumedQty && line.consumedQty > 0) {
+          // A service that consumes a product (e.g. paper). Warn-but-allow:
+          // consume what's in stock (COGS) and let stock go negative if short.
+          const fifo = await this.inventory.consumeFifoTx(
+            tx,
+            line.consumedVariantId,
+            line.consumedQty,
+            { allowShortfall: true },
+          );
+          lineCogs = fifo.totalCost;
+          allocations = fifo.allocations;
+
+          await this.inventory.applyMovementTx(tx, {
+            variantId: line.consumedVariantId,
+            productId: line.consumedProductId!,
+            type: 'SALE',
+            quantity: -line.consumedQty,
+            userId,
+            referenceType: 'SALE',
+            referenceId: sale.id,
+            allowNegative: true,
+          });
         }
 
         const saleItem = await tx.saleItem.create({
@@ -240,6 +266,9 @@ export class SalesService {
             discount: toPrisma(line.discount),
             lineTotal: toPrisma(line.lineTotal),
             lineCogs: toPrisma(lineCogs),
+            consumedVariantId: line.consumedVariantId,
+            consumedProductId: line.consumedProductId,
+            consumedQty: line.consumedQty ?? 0,
           },
         });
 
@@ -315,7 +344,15 @@ export class SalesService {
       }
 
       for (const item of sale.items) {
-        if (item.itemType !== 'PRODUCT' || !item.productId || !item.variantId) continue;
+        // Products draw from their own variant; services may have consumed a
+        // product (e.g. paper). Both restore the same way.
+        const restoreVariantId =
+          item.itemType === 'PRODUCT' ? item.variantId : item.consumedVariantId;
+        const restoreProductId =
+          item.itemType === 'PRODUCT' ? item.productId : item.consumedProductId;
+        const restoreQty =
+          item.itemType === 'PRODUCT' ? item.quantity * item.unitSize : item.consumedQty;
+        if (!restoreVariantId || !restoreProductId || restoreQty <= 0) continue;
 
         await this.inventory.restoreFifoTx(
           tx,
@@ -323,14 +360,16 @@ export class SalesService {
         );
 
         await this.inventory.applyMovementTx(tx, {
-          variantId: item.variantId,
-          productId: item.productId,
+          variantId: restoreVariantId,
+          productId: restoreProductId,
           type: 'RETURN',
-          quantity: item.quantity * item.unitSize,
+          quantity: restoreQty,
           userId,
           referenceType: 'SALE_VOID',
           referenceId: sale.id,
           notes: reason,
+          // Restoring stock only adds; never block it if the balance is still negative.
+          allowNegative: true,
         });
       }
 
@@ -656,7 +695,7 @@ export class SalesService {
         }
         const serviceVariant = await tx.serviceVariant.findUnique({
           where: { id: item.serviceVariantId },
-          include: { service: true },
+          include: { service: true, consumesVariant: { select: { id: true, productId: true } } },
         });
         if (!serviceVariant) throw new NotFoundException(`Service option ${item.serviceVariantId} not found`);
         const service = serviceVariant.service;
@@ -684,6 +723,13 @@ export class SalesService {
         }
         this.assertDiscount(discount, lineGross, displayName);
 
+        // If the option consumes a product (e.g. paper), draw it down per sale:
+        // consumesQty × pages (per-page) or × 1 (fixed), × quantity.
+        const consumesVariant = serviceVariant.consumesVariant;
+        const consumedQty = consumesVariant
+          ? serviceVariant.consumesQty * (pages ?? 1) * item.quantity
+          : 0;
+
         lines.push({
           itemType: 'SERVICE',
           serviceId: service.id,
@@ -695,6 +741,13 @@ export class SalesService {
           unitSize: 1,
           basePieces: 0,
           pages,
+          ...(consumesVariant && consumedQty > 0
+            ? {
+                consumedVariantId: consumesVariant.id,
+                consumedProductId: consumesVariant.productId,
+                consumedQty,
+              }
+            : {}),
           discount,
           lineGross,
           lineTotal: sub(lineGross, discount),

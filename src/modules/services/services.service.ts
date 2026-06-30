@@ -14,7 +14,20 @@ import {
 } from './dto/service.dto';
 
 const SERVICE_INCLUDE = {
-  variants: { orderBy: { createdAt: 'asc' } },
+  variants: {
+    orderBy: { createdAt: 'asc' },
+    include: {
+      consumesVariant: {
+        select: {
+          id: true,
+          label: true,
+          sku: true,
+          currentStock: true,
+          product: { select: { name: true, baseUnit: true } },
+        },
+      },
+    },
+  },
 } satisfies Prisma.ServiceInclude;
 
 @Injectable()
@@ -34,6 +47,8 @@ export class ServicesService {
             unitPrice: toPrisma(v.unitPrice),
             status: v.status,
             isDefault: i === 0,
+            consumesVariantId: v.consumesVariantId ?? null,
+            consumesQty: v.consumesQty ?? 1,
           })),
         },
       },
@@ -86,6 +101,8 @@ export class ServicesService {
         label: dto.label.trim(),
         unitPrice: toPrisma(dto.unitPrice),
         status: dto.status,
+        consumesVariantId: dto.consumesVariantId ?? null,
+        consumesQty: dto.consumesQty ?? 1,
       },
     });
   }
@@ -99,6 +116,10 @@ export class ServicesService {
         ...(dto.label !== undefined ? { label: dto.label.trim() } : {}),
         ...(dto.unitPrice !== undefined ? { unitPrice: toPrisma(dto.unitPrice) } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
+        ...(dto.consumesVariantId !== undefined
+          ? { consumesVariantId: dto.consumesVariantId || null }
+          : {}),
+        ...(dto.consumesQty !== undefined ? { consumesQty: dto.consumesQty } : {}),
       },
     });
   }

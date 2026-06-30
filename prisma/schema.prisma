@@ -259,6 +259,8 @@ model ProductVariant {
   inventoryBatches   InventoryBatch[]
   inventoryMovements InventoryMovement[]
   adjustments        InventoryAdjustment[]
+  // Service options that consume this product (e.g. printing uses this paper).
+  consumedByServices ServiceVariant[]    @relation("ServiceConsumes")
 
   @@index([productId])
   @@index([status])
@@ -297,11 +299,16 @@ model ServiceVariant {
   unitPrice Decimal       @db.Decimal(14, 2)
   isDefault Boolean       @default(false)
   status    ServiceStatus @default(ACTIVE)
+  // Optional product this option consumes per sale (e.g. A4 paper). Null = none.
+  consumesVariantId String? @db.Uuid
+  // Units of that product used per sold unit (per page for PER_PAGE, else per job).
+  consumesQty       Int     @default(1)
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
-  service   Service    @relation(fields: [serviceId], references: [id])
-  saleItems SaleItem[]
+  service         Service         @relation(fields: [serviceId], references: [id])
+  consumesVariant ProductVariant? @relation("ServiceConsumes", fields: [consumesVariantId], references: [id], onDelete: SetNull)
+  saleItems       SaleItem[]
 
   @@index([serviceId])
   @@index([status])
@@ -580,8 +587,14 @@ model SaleItem {
   pages             Int? // for PER_PAGE services
   discount          Decimal  @db.Decimal(14, 2) @default(0)
   lineTotal         Decimal  @db.Decimal(14, 2)
-  // COGS for product lines (FIFO). 0 for services.
+  // COGS for product lines (FIFO). For services that consume a product, holds
+  // that product's FIFO cost too.
   lineCogs          Decimal  @db.Decimal(14, 2) @default(0)
+  // For a service line that consumed a product (e.g. paper): snapshot of the
+  // consumed variant/product and base-unit quantity, so a void can restore it.
+  consumedVariantId String?  @db.Uuid
+  consumedProductId String?  @db.Uuid
+  consumedQty       Int      @default(0)
   // Units already returned across all partial returns of this line.
   returnedQuantity  Int      @default(0)
 

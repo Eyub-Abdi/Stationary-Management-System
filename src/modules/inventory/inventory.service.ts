@@ -28,6 +28,8 @@ interface MovementInput {
   referenceId?: string | null;
   unitCost?: Decimal | null;
   notes?: string | null;
+  /** Allow stock to go below zero (warn-but-allow consumables, e.g. paper). */
+  allowNegative?: boolean;
 }
 
 /**
@@ -55,7 +57,7 @@ export class InventoryService {
     }
     const beforeQty = locked[0].currentStock;
     const afterQty = beforeQty + input.quantity;
-    if (afterQty < 0) {
+    if (afterQty < 0 && !input.allowNegative) {
       throw new ConflictException(
         `Insufficient stock: have ${beforeQty}, attempted to remove ${-input.quantity}`,
       );
@@ -126,6 +128,7 @@ export class InventoryService {
     tx: Prisma.TransactionClient,
     variantId: string,
     quantity: number,
+    options: { allowShortfall?: boolean } = {},
   ): Promise<FifoResult> {
     if (quantity <= 0) {
       throw new ConflictException('Quantity to consume must be positive');
@@ -161,7 +164,9 @@ export class InventoryService {
       });
     }
 
-    if (remaining > 0) {
+    // Shortfall: by default block; for "warn but allow" consumables, proceed and
+    // let the denormalized stock go negative (COGS only covers what existed).
+    if (remaining > 0 && !options.allowShortfall) {
       throw new ConflictException(
         `Insufficient inventory batches to fulfill ${quantity} units (short by ${remaining})`,
       );

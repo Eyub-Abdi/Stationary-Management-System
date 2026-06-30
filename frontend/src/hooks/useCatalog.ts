@@ -108,6 +108,9 @@ export interface ServiceVariantInput {
   label: string;
   unitPrice: number;
   status?: ServiceStatus;
+  /** Product variant this option consumes per sale (null = none). */
+  consumesVariantId?: string | null;
+  consumesQty?: number;
 }
 
 /** Service-level fields (the priced options live in variants). */

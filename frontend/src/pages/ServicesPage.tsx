@@ -31,6 +31,7 @@ import {
   type ServiceInput,
   type ServiceVariantInput,
 } from '@/hooks/useCatalog';
+import { useProducts } from '@/hooks/useProducts';
 import { DEFAULT_SERVICE_ICON, PRICING_TYPE_OPTIONS } from '@/lib/constants';
 import { extractMessage } from '@/lib/api';
 import { currency, num } from '@/lib/utils';
@@ -240,10 +241,18 @@ interface OptionRow {
   id?: string;
   label: string;
   unitPrice: string;
+  consumesVariantId: string;
+  consumesQty: string;
 }
 
 let optSeq = 0;
-const newOpt = (label = ''): OptionRow => ({ key: `o${optSeq++}`, label, unitPrice: '' });
+const newOpt = (label = ''): OptionRow => ({
+  key: `o${optSeq++}`,
+  label,
+  unitPrice: '',
+  consumesVariantId: '',
+  consumesQty: '1',
+});
 
 function ServiceFormModal({
   open,
@@ -260,6 +269,18 @@ function ServiceFormModal({
   const addVariant = useAddServiceVariant();
   const updateVariant = useUpdateServiceVariant();
   const deactivateVariant = useDeactivateServiceVariant();
+  const { data: products } = useProducts({ status: 'ACTIVE', limit: 100 });
+  // Flat list of sellable product variants this service option can consume (paper, etc.).
+  const consumableOptions = (products?.data ?? []).flatMap((p) =>
+    p.variants
+      .filter((v) => v.status === 'ACTIVE')
+      .map((v) => ({
+        id: v.id,
+        label:
+          (v.label && v.label !== 'Default' ? `${p.name} — ${v.label}` : p.name) +
+          ` (${v.currentStock} ${p.baseUnit})`,
+      })),
+  );
   const isEdit = !!service;
   const saving =
     create.isPending ||
@@ -295,6 +316,8 @@ function ServiceFormModal({
           id: v.id,
           label: v.label,
           unitPrice: num(v.unitPrice).toString(),
+          consumesVariantId: v.consumesVariantId ?? '',
+          consumesQty: (v.consumesQty ?? 1).toString(),
         })),
       );
     } else {
@@ -332,6 +355,8 @@ function ServiceFormModal({
     const toInput = (o: OptionRow): ServiceVariantInput => ({
       label: o.label.trim(),
       unitPrice: num(o.unitPrice),
+      consumesVariantId: o.consumesVariantId || null,
+      consumesQty: o.consumesVariantId ? Math.max(1, parseInt(o.consumesQty || '1', 10)) : 1,
     });
     try {
       if (isEdit) {
@@ -402,33 +427,64 @@ function ServiceFormModal({
           {errors.options && <p className="mt-2 text-[12px] text-error">{errors.options}</p>}
           <div className="mt-3 space-y-2">
             {options.map((o) => (
-              <div key={o.key} className="flex items-center gap-2">
-                <Input
-                  value={o.label}
-                  onChange={(e) => setOpt(o.key, { label: e.target.value })}
-                  invalid={!!errors[`label-${o.key}`]}
-                  placeholder="A4"
-                  className="flex-1"
-                />
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={o.unitPrice}
-                  onChange={(e) => setOpt(o.key, { unitPrice: e.target.value })}
-                  invalid={!!errors[`price-${o.key}`]}
-                  placeholder="Price"
-                  className="w-32"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeRow(o)}
-                  disabled={options.length <= 1}
-                  title="Remove option"
-                  className="flex items-center justify-center rounded-lg px-2 py-2 text-on-surface-variant transition-colors hover:text-error disabled:cursor-not-allowed disabled:opacity-30"
-                >
-                  <Icon name="close" size={18} />
-                </button>
+              <div key={o.key} className="space-y-2 rounded-lg border border-outline-variant p-2">
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={o.label}
+                    onChange={(e) => setOpt(o.key, { label: e.target.value })}
+                    invalid={!!errors[`label-${o.key}`]}
+                    placeholder="A4"
+                    className="flex-1"
+                  />
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={o.unitPrice}
+                    onChange={(e) => setOpt(o.key, { unitPrice: e.target.value })}
+                    invalid={!!errors[`price-${o.key}`]}
+                    placeholder="Price"
+                    className="w-32"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeRow(o)}
+                    disabled={options.length <= 1}
+                    title="Remove option"
+                    className="flex items-center justify-center rounded-lg px-2 py-2 text-on-surface-variant transition-colors hover:text-error disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    <Icon name="close" size={18} />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 text-[12px] text-on-surface-variant">Uses</span>
+                  <Select
+                    value={o.consumesVariantId}
+                    onChange={(e) => setOpt(o.key, { consumesVariantId: e.target.value })}
+                    className="flex-1"
+                  >
+                    <option value="">No product (e.g. scanning)</option>
+                    {consumableOptions.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </Select>
+                  {o.consumesVariantId && (
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="number"
+                        min="1"
+                        value={o.consumesQty}
+                        onChange={(e) => setOpt(o.key, { consumesQty: e.target.value })}
+                        className="w-16"
+                      />
+                      <span className="shrink-0 text-[12px] text-on-surface-variant">
+                        / {form.pricingType === 'PER_PAGE' ? 'page' : 'job'}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
