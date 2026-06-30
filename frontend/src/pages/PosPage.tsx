@@ -13,6 +13,7 @@ import {
   Select,
 } from '@/components/ui';
 import { useToast } from '@/providers/ToastProvider';
+import { useAuth } from '@/providers/AuthProvider';
 import { useActiveCashSession } from '@/providers/CashSessionProvider';
 import { useProducts } from '@/hooks/useProducts';
 import { useServices } from '@/hooks/useCatalog';
@@ -110,8 +111,12 @@ function lineTotal(l: CartLine): number {
  * The in-progress sale, persisted to localStorage so navigating away and back
  * doesn't wipe the cart. Cleared once the sale is completed or the cart emptied.
  * The cash tendered is intentionally not persisted — it's entered at payment.
+ *
+ * The key is scoped per user so a shared device never carries one cashier's
+ * cart into another's session.
  */
-const POS_DRAFT_KEY = 'sp.posDraft';
+const POS_DRAFT_PREFIX = 'sp.posDraft';
+const posDraftKey = (userId: string) => `${POS_DRAFT_PREFIX}:${userId}`;
 interface PosDraft {
   cart?: CartLine[];
   orderDiscount?: string;
@@ -119,9 +124,11 @@ interface PosDraft {
   customerId?: string;
   notes?: string;
 }
-function loadPosDraft(): PosDraft {
+function loadPosDraft(key: string): PosDraft {
   try {
-    const raw = localStorage.getItem(POS_DRAFT_KEY);
+    // Discard any pre-scoping draft so it can't leak between users.
+    localStorage.removeItem(POS_DRAFT_PREFIX);
+    const raw = localStorage.getItem(key);
     const parsed = raw ? JSON.parse(raw) : null;
     return parsed && typeof parsed === 'object' && Array.isArray(parsed.cart) ? parsed : {};
   } catch {
@@ -131,10 +138,12 @@ function loadPosDraft(): PosDraft {
 
 export default function PosPage() {
   const toast = useToast();
+  const { user } = useAuth();
   const { session } = useActiveCashSession();
   const createSale = useCreateSale();
 
-  const [draft] = useState(loadPosDraft);
+  const draftKey = posDraftKey(user?.id ?? 'anon');
+  const [draft] = useState(() => loadPosDraft(draftKey));
   const [tab, setTab] = useState<'products' | 'services'>('products');
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<CartLine[]>(draft.cart ?? []);
@@ -159,14 +168,14 @@ export default function PosPage() {
   // clears the draft entirely.
   useEffect(() => {
     if (cart.length === 0) {
-      localStorage.removeItem(POS_DRAFT_KEY);
+      localStorage.removeItem(draftKey);
       return;
     }
     localStorage.setItem(
-      POS_DRAFT_KEY,
+      draftKey,
       JSON.stringify({ cart, orderDiscount, payment, customerId, notes }),
     );
-  }, [cart, orderDiscount, payment, customerId, notes]);
+  }, [cart, orderDiscount, payment, customerId, notes, draftKey]);
 
   const products = useProducts({ status: 'ACTIVE', limit: 50, search: tab === 'products' ? search || undefined : undefined });
   const services = useServices({ status: 'ACTIVE', limit: 50, search: tab === 'services' ? search || undefined : undefined });
