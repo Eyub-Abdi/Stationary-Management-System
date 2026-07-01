@@ -39,7 +39,7 @@ export function ConfirmDialog({
         </div>
         <h3 className="text-h3 font-semibold text-on-surface">{title}</h3>
         <p className="mt-1.5 text-body-sm text-on-surface-variant">{message}</p>
-        <div className="mt-6 flex w-full gap-3">
+        <div className="mt-6 grid w-full grid-cols-2 gap-3">
           <Button variant="outline" fullWidth onClick={onClose} disabled={loading}>
             {cancelLabel}
           </Button>

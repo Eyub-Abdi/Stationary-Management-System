@@ -102,6 +102,7 @@ export default function PurchasesPage() {
             <Table>
               <THead>
                 <TH>Purchase #</TH>
+                <TH>Product</TH>
                 <TH>Supplier</TH>
                 <TH>Date</TH>
                 <TH>Payment</TH>
@@ -110,9 +111,25 @@ export default function PurchasesPage() {
                 <TH align="right">Action</TH>
               </THead>
               <TBody>
-                {data!.data.map((p) => (
+                {data!.data.map((p) => {
+                  const items = p.items ?? [];
+                  const first = items[0];
+                  const extra = items.length - 1;
+                  return (
                   <TR key={p.id} onClick={() => setDetailsId(p.id)}>
                     <TD className="font-mono-data text-primary">{p.purchaseNumber}</TD>
+                    <TD>
+                      {first ? (
+                        <span>
+                          {first.productNameSnapshot}
+                          {extra > 0 && (
+                            <span className="text-on-surface-variant"> +{extra} more</span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-on-surface-variant">—</span>
+                      )}
+                    </TD>
                     <TD>{p.supplier?.name ?? 'Walk-in / Direct'}</TD>
                     <TD>{formatDate(p.purchaseDate)}</TD>
                     <TD>
@@ -132,7 +149,8 @@ export default function PurchasesPage() {
                       <Icon name="chevron_right" size={20} className="text-on-surface-variant" />
                     </TD>
                   </TR>
-                ))}
+                  );
+                })}
               </TBody>
             </Table>
             <Pagination meta={data!.meta} onPage={setPage} />

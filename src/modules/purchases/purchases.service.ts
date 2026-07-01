@@ -257,7 +257,10 @@ export class PurchasesService {
     const [data, total] = await this.prisma.$transaction([
       this.prisma.purchase.findMany({
         where,
-        include: { supplier: true, _count: { select: { items: true } } },
+        include: {
+          supplier: true,
+          items: { select: { productNameSnapshot: true } },
+        },
         orderBy: { purchaseDate: 'desc' },
         skip: query.skip,
         take: query.limit,
