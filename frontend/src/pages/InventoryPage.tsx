@@ -3,6 +3,7 @@ import {
   Badge,
   Button,
   Card,
+  Combobox,
   EmptyState,
   ErrorState,
   Field,
@@ -276,6 +277,7 @@ function AdjustStockModal({ open, onClose }: { open: boolean; onClose: () => voi
       .map((v) => ({
         variantId: v.id,
         currentStock: v.currentStock,
+        buyingPrice: num(v.buyingPrice),
         label:
           v.label && v.label !== 'Default' ? `${p.name} — ${v.label}` : p.name,
       })),
@@ -332,12 +334,20 @@ function AdjustStockModal({ open, onClose }: { open: boolean; onClose: () => voi
     >
       <div className="space-y-4">
         <Field label="Product / variant" required>
-          <Select value={variantId} onChange={(e) => setVariantId(e.target.value)}>
-            <option value="">Select variant…</option>
-            {variantOptions.map((o) => (
-              <option key={o.variantId} value={o.variantId}>{o.label} — {o.currentStock} in stock</option>
-            ))}
-          </Select>
+          <Combobox
+            value={variantId}
+            onChange={(id) => {
+              setVariantId(id);
+              // Prefill the unit cost with the variant's reference buying price.
+              const opt = variantOptions.find((o) => o.variantId === id);
+              setUnitCost(opt && opt.buyingPrice > 0 ? String(opt.buyingPrice) : '');
+            }}
+            options={variantOptions.map((o) => ({
+              value: o.variantId,
+              label: `${o.label} — ${o.currentStock} in stock`,
+            }))}
+            placeholder="Type to search a product…"
+          />
         </Field>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Direction">

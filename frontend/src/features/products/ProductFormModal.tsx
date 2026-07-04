@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Field, Icon, Input, Modal, Select } from '@/components/ui';
+import { Button, Combobox, Field, Icon, Input, Modal, Select } from '@/components/ui';
 import { useToast } from '@/providers/ToastProvider';
 import {
   useAddVariant,
@@ -295,18 +295,16 @@ export function ProductFormModal({
                 </div>
               ) : (
                 <div className="flex gap-2">
-                  <Select
+                  <Combobox
                     className="flex-1"
                     value={form.categoryId}
-                    onChange={(e) => set('categoryId', e.target.value)}
-                  >
-                    <option value="">Uncategorized</option>
-                    {categoryOptions.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </Select>
+                    onChange={(id) => set('categoryId', id)}
+                    options={[
+                      { value: '', label: 'Uncategorized' },
+                      ...categoryOptions.map((c) => ({ value: c.id, label: c.name })),
+                    ]}
+                    placeholder="Search a category…"
+                  />
                   <Button type="button" variant="outline" icon="add" onClick={() => setAddingCategory(true)}>
                     New
                   </Button>

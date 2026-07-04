@@ -4,6 +4,7 @@ import {
   Breadcrumbs,
   Button,
   Card,
+  Combobox,
   Field,
   Icon,
   Input,
@@ -203,14 +204,15 @@ export default function CreatePurchasePage() {
       <Card className="space-y-5 p-4 sm:p-5">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Supplier" required={payment === 'CREDIT'}>
-            <Select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-              <option value="">Direct / Walk-in</option>
-              {suppliers?.data.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </Select>
+            <Combobox
+              value={supplierId}
+              onChange={setSupplierId}
+              options={[
+                { value: '', label: 'Direct / Walk-in' },
+                ...(suppliers?.data ?? []).map((s) => ({ value: s.id, label: s.name })),
+              ]}
+              placeholder="Search a supplier…"
+            />
           </Field>
           <Field label="Purchase date" required>
             <Input type="date" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} />
@@ -260,14 +262,14 @@ export default function CreatePurchasePage() {
               <Card key={card.key} className="p-3 sm:p-4">
                 <div className="flex flex-wrap items-end gap-2">
                   <Field label="Product" className="min-w-[220px] flex-1">
-                    <Select value={card.productId} onChange={(e) => pickProduct(card.key, e.target.value)}>
-                      <option value="">Select product…</option>
-                      {productOptions.map((p) => (
-                        <option key={p.id} value={p.id} disabled={taken.has(p.id)}>
-                          {p.name} ({p.sku})
-                        </option>
-                      ))}
-                    </Select>
+                    <Combobox
+                      value={card.productId}
+                      onChange={(id) => pickProduct(card.key, id)}
+                      options={productOptions
+                        .filter((p) => !taken.has(p.id))
+                        .map((p) => ({ value: p.id, label: `${p.name} (${p.sku})` }))}
+                      placeholder="Search a product…"
+                    />
                   </Field>
                   <button
                     onClick={() => removeRow(card.key)}

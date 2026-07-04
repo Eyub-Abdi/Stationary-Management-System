@@ -169,6 +169,8 @@ export interface Supplier {
   address: string | null;
   isActive: boolean;
   balance: string;
+  /** Most recent credit purchase date; null if none. Present in list rows. */
+  lastCreditPurchaseAt?: string | null;
   createdAt: string;
   updatedAt: string;
   payments?: SupplierPayment[];

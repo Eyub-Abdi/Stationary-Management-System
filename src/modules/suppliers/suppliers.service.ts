@@ -38,10 +38,24 @@ export class SuppliersService {
         orderBy: { name: 'asc' },
         skip: query.skip,
         take: query.limit,
+        include: {
+          // Newest credit purchase, to surface "last bought on credit" in the list.
+          purchases: {
+            where: { paymentMethod: 'CREDIT' },
+            orderBy: { purchaseDate: 'desc' },
+            take: 1,
+            select: { purchaseDate: true },
+          },
+        },
       }),
       this.prisma.supplier.count({ where }),
     ]);
-    return paginate(data, total, query.page, query.limit);
+    // Flatten the single-row purchases include into a plain lastCreditPurchaseAt field.
+    const rows = data.map(({ purchases, ...s }) => ({
+      ...s,
+      lastCreditPurchaseAt: purchases[0]?.purchaseDate ?? null,
+    }));
+    return paginate(rows, total, query.page, query.limit);
   }
 
   /**

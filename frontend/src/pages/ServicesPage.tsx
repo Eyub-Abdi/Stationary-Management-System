@@ -3,6 +3,7 @@ import {
   Badge,
   Button,
   Card,
+  Combobox,
   ConfirmDialog,
   Dropdown,
   EmptyState,
@@ -458,18 +459,16 @@ function ServiceFormModal({
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="shrink-0 text-[12px] text-on-surface-variant">Uses</span>
-                  <Select
+                  <Combobox
                     value={o.consumesVariantId}
-                    onChange={(e) => setOpt(o.key, { consumesVariantId: e.target.value })}
+                    onChange={(id) => setOpt(o.key, { consumesVariantId: id })}
                     className="flex-1"
-                  >
-                    <option value="">No product (e.g. scanning)</option>
-                    {consumableOptions.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </Select>
+                    options={[
+                      { value: '', label: 'No product (e.g. scanning)' },
+                      ...consumableOptions.map((c) => ({ value: c.id, label: c.label })),
+                    ]}
+                    placeholder="Search a product…"
+                  />
                   {o.consumesVariantId && (
                     <div className="flex items-center gap-1">
                       <Input

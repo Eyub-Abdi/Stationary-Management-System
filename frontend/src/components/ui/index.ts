@@ -4,6 +4,8 @@ export { Button } from './Button';
 export type { ButtonProps } from './Button';
 export { Card, CardHeader, CardBody } from './Card';
 export { Field, Label, Input, Textarea, Select, Checkbox } from './Field';
+export { Combobox } from './Combobox';
+export type { ComboOption } from './Combobox';
 export { Badge } from './Badge';
 export { Avatar } from './Avatar';
 export { Modal } from './Modal';

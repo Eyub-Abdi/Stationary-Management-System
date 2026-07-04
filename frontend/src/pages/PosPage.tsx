@@ -7,11 +7,11 @@ import {
   EmptyState,
   Icon,
   LoadingState,
+  Combobox,
   Modal,
   Popover,
   SearchInput,
   SegmentedControl,
-  Select,
 } from '@/components/ui';
 import { useToast } from '@/providers/ToastProvider';
 import { useAuth } from '@/providers/AuthProvider';
@@ -642,15 +642,18 @@ export default function PosPage() {
                       + Add new
                     </button>
                   </div>
-                  <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-                    <option value="">Select customer…</option>
-                    {customers.data?.data.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                        {c.phone ? ` · ${c.phone}` : ''}
-                      </option>
-                    ))}
-                  </Select>
+                  <Combobox
+                    value={customerId}
+                    onChange={setCustomerId}
+                    options={[
+                      { value: '', label: 'Select customer…' },
+                      ...(customers.data?.data ?? []).map((c) => ({
+                        value: c.id,
+                        label: c.phone ? `${c.name} · ${c.phone}` : c.name,
+                      })),
+                    ]}
+                    placeholder="Search a customer…"
+                  />
                 </div>
               )}
 
