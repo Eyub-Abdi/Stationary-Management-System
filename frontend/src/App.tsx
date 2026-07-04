@@ -9,6 +9,8 @@ import PosPage from '@/pages/PosPage';
 import SalesPage from '@/pages/SalesPage';
 import SaleDetailPage from '@/pages/SaleDetailPage';
 import ProductsPage from '@/pages/ProductsPage';
+import ProductDetailPage from '@/pages/ProductDetailPage';
+import ProductFormPage from '@/pages/ProductFormPage';
 import ServicesPage from '@/pages/ServicesPage';
 import InventoryPage from '@/pages/InventoryPage';
 import PurchasesPage from '@/pages/PurchasesPage';
@@ -53,6 +55,23 @@ export default function App() {
         <Route path="/sales" element={<SalesPage />} />
         <Route path="/sales/:id" element={<SaleDetailPage />} />
         <Route path="/products" element={<ProductsPage />} />
+        <Route
+          path="/products/new"
+          element={
+            <PermissionRoute permission="products">
+              <ProductFormPage />
+            </PermissionRoute>
+          }
+        />
+        <Route path="/products/:id" element={<ProductDetailPage />} />
+        <Route
+          path="/products/:id/edit"
+          element={
+            <PermissionRoute permission="products">
+              <ProductFormPage />
+            </PermissionRoute>
+          }
+        />
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/customers" element={<CustomersPage />} />

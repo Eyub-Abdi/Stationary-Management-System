@@ -70,6 +70,7 @@ export function Dropdown({
   return (
     <div ref={triggerRef} className="relative inline-block">
       <button
+        type="button"
         onClick={(e) => {
           e.stopPropagation();
           setOpen((o) => !o);
@@ -91,6 +92,7 @@ export function Dropdown({
             {actions.map((a, i) => (
               <button
                 key={i}
+                type="button"
                 disabled={a.disabled}
                 onClick={(e) => {
                   e.stopPropagation();

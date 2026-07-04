@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Badge,
   Button,
@@ -20,7 +21,6 @@ import {
   TR,
   Table,
 } from '@/components/ui';
-import { ProductFormModal } from '@/features/products/ProductFormModal';
 import { CategoryManagerModal } from '@/features/products/CategoryManagerModal';
 import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/providers/ToastProvider';
@@ -36,6 +36,7 @@ import { cn, currency, imageSrc, num } from '@/lib/utils';
 import type { Product, ProductStatus } from '@/types';
 
 export default function ProductsPage() {
+  const navigate = useNavigate();
   const { can } = useAuth();
   const canManage = can('products');
   const toast = useToast();
@@ -44,8 +45,6 @@ export default function ProductsPage() {
   const [status, setStatus] = useState<ProductStatus | ''>('');
   const [categoryId, setCategoryId] = useState('');
   const [lowStock, setLowStock] = useState(false);
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState<Product | null>(null);
   const [removing, setRemoving] = useState<Product | null>(null);
   const [catManagerOpen, setCatManagerOpen] = useState(false);
@@ -64,14 +63,8 @@ export default function ProductsPage() {
   const update = useUpdateProduct();
   const remove = useRemoveProduct();
 
-  const openCreate = () => {
-    setEditing(null);
-    setFormOpen(true);
-  };
-  const openEdit = (p: Product) => {
-    setEditing(p);
-    setFormOpen(true);
-  };
+  const openCreate = () => navigate('/products/new');
+  const openEdit = (p: Product) => navigate(`/products/${p.id}/edit`);
 
   const confirmDelete = async () => {
     if (!deleting) return;
@@ -208,7 +201,7 @@ export default function ProductsPage() {
                   );
                   const multi = p.variants.length > 1;
                   return (
-                    <TR key={p.id}>
+                    <TR key={p.id} onClick={() => navigate(`/products/${p.id}`)}>
                       <TD>
                         <div className="flex items-center gap-3">
                           <ProductThumb product={p} />
@@ -245,6 +238,7 @@ export default function ProductsPage() {
                       </TD>
                       {canManage && (
                         <TD align="right">
+                          <div className="inline-flex" onClick={(e) => e.stopPropagation()}>
                           <Dropdown
                             actions={[
                               { label: 'Edit product', icon: 'edit', onClick: () => openEdit(p) },
@@ -268,6 +262,7 @@ export default function ProductsPage() {
                               },
                             ]}
                           />
+                          </div>
                         </TD>
                       )}
                     </TR>
@@ -279,13 +274,6 @@ export default function ProductsPage() {
           </>
         )}
       </Card>
-
-      <ProductFormModal
-        open={formOpen}
-        onClose={() => setFormOpen(false)}
-        product={editing}
-        categories={categories ?? []}
-      />
 
       <CategoryManagerModal open={catManagerOpen} onClose={() => setCatManagerOpen(false)} />
 

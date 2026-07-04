@@ -92,7 +92,10 @@ export function useAddVariant() {
   return useMutation({
     mutationFn: ({ productId, input }: { productId: string; input: VariantInput }) =>
       unwrap<ProductVariant>(api.post(`/products/${productId}/variants`, input)),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
+    onSuccess: (_d, { productId }) => {
+      qc.invalidateQueries({ queryKey: ['products'] });
+      qc.invalidateQueries({ queryKey: qk.product(productId) });
+    },
   });
 }
 
@@ -101,7 +104,11 @@ export function useUpdateVariant() {
   return useMutation({
     mutationFn: ({ variantId, input }: { variantId: string; input: Partial<VariantInput> }) =>
       unwrap<ProductVariant>(api.patch(`/products/variants/${variantId}`, input)),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
+    // No productId here, so refresh any open single-product view broadly.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['products'] });
+      qc.invalidateQueries({ queryKey: ['product'] });
+    },
   });
 }
 
@@ -110,7 +117,23 @@ export function useDeactivateVariant() {
   return useMutation({
     mutationFn: (variantId: string) =>
       unwrap<ProductVariant>(api.delete(`/products/variants/${variantId}`)),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['products'] });
+      qc.invalidateQueries({ queryKey: ['product'] });
+    },
+  });
+}
+
+/** Permanently deletes a single variant (only allowed when it has no history). */
+export function useRemoveVariant() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (variantId: string) =>
+      api.delete(`/products/variants/${variantId}/permanent`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['products'] });
+      qc.invalidateQueries({ queryKey: ['product'] });
+    },
   });
 }
 
@@ -118,7 +141,10 @@ export function useDeleteProduct() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.delete(`/products/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
+    onSuccess: (_d, id) => {
+      qc.invalidateQueries({ queryKey: ['products'] });
+      qc.invalidateQueries({ queryKey: qk.product(id) });
+    },
   });
 }
 
