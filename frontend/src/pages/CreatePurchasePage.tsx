@@ -32,7 +32,9 @@ interface DraftLine {
   packName: string;
   packSize: string;
   quantity: string;
-  unitCost: string;
+  /** Total amount paid for this line (qty of the received unit). Cost per piece
+   * is derived from it, so the user never has to divide by hand. */
+  totalCost: string;
   sellingPrice: string;
   wholesalePrice: string;
   hadPrice: boolean;
@@ -63,7 +65,7 @@ const linesFromProduct = (p: Product): DraftLine[] =>
       packName: '',
       packSize: '',
       quantity: '',
-      unitCost: '',
+      totalCost: '',
       sellingPrice: num(v.sellingPrice) > 0 ? num(v.sellingPrice).toString() : '',
       wholesalePrice: v.wholesalePrice && num(v.wholesalePrice) > 0 ? num(v.wholesalePrice).toString() : '',
       hadPrice: num(v.sellingPrice) > 0,
@@ -73,6 +75,18 @@ const linesFromProduct = (p: Product): DraftLine[] =>
 function incomingBase(line: DraftLine): number {
   const qty = num(line.quantity);
   return line.sellUnit === 'BULK' ? qty * num(line.packSize) : qty;
+}
+
+/** Cost per single base unit (piece), derived from the total the user paid. */
+function costPerBase(line: DraftLine): number {
+  const pieces = incomingBase(line);
+  return pieces > 0 ? num(line.totalCost) / pieces : 0;
+}
+
+/** Cost per received unit (pack or piece) — what the purchase API stores. */
+function costPerReceivedUnit(line: DraftLine): number {
+  const qty = num(line.quantity);
+  return qty > 0 ? num(line.totalCost) / qty : 0;
 }
 
 export default function CreatePurchasePage() {
@@ -119,16 +133,16 @@ export default function CreatePurchasePage() {
   };
 
   const allLines = cards.flatMap((c) => c.lines.map((l) => ({ card: c, line: l })));
-  const total = allLines.reduce((a, { line }) => a + num(line.quantity) * num(line.unitCost), 0);
+  const total = allLines.reduce((a, { line }) => a + num(line.totalCost), 0);
   const paid = payment === 'CASH' ? total : num(amountPaid);
   const owing = Math.max(0, total - paid);
 
   const submit = async () => {
     const valid = allLines.filter(
-      ({ line }) => line.variantId && num(line.quantity) > 0 && num(line.unitCost) >= 0,
+      ({ line }) => line.variantId && num(line.quantity) > 0 && num(line.totalCost) >= 0,
     );
     if (valid.length === 0) {
-      toast.error('Add at least one item', 'Pick a product, then enter quantity and unit cost.');
+      toast.error('Add at least one item', 'Pick a product, then enter quantity and the total cost.');
       return;
     }
     if (payment === 'CREDIT' && !supplierId) {
@@ -164,7 +178,8 @@ export default function CreatePurchasePage() {
       ...(line.sellUnit === 'BULK'
         ? { unitSize: parseInt(line.packSize, 10), unitLabel: line.packName.trim() || 'pack' }
         : {}),
-      unitCost: num(line.unitCost),
+      // Backend stores cost per received unit; derive it from the total paid.
+      unitCost: Math.round(costPerReceivedUnit(line) * 100) / 100,
       sellingPrice: line.sellingPrice.trim() === '' ? undefined : num(line.sellingPrice),
       wholesalePrice: line.wholesalePrice.trim() === '' ? undefined : num(line.wholesalePrice),
     }));
@@ -201,53 +216,39 @@ export default function CreatePurchasePage() {
         />
       </div>
 
-      <Card className="space-y-5 p-4 sm:p-5">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Supplier" required={payment === 'CREDIT'}>
-            <Combobox
-              value={supplierId}
-              onChange={setSupplierId}
-              options={[
-                { value: '', label: 'Direct / Walk-in' },
-                ...(suppliers?.data ?? []).map((s) => ({ value: s.id, label: s.name })),
-              ]}
-              placeholder="Search a supplier…"
-            />
-          </Field>
-          <Field label="Purchase date" required>
-            <Input type="date" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} />
-          </Field>
+      {/* 1 · Who & when */}
+      <section>
+        <div className="mb-2 flex items-center gap-2">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[12px] font-bold text-on-primary">1</span>
+          <span className="text-label-caps uppercase tracking-wide text-on-surface-variant">Supplier &amp; date</span>
         </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Payment">
-            <SegmentedControl
-              value={payment}
-              onChange={(v) => setPayment(v)}
-              items={[
-                { value: 'CASH', label: 'Cash (paid in full)' },
-                { value: 'CREDIT', label: 'Credit (owe supplier)' },
-              ]}
-            />
-          </Field>
-          {payment === 'CREDIT' && (
-            <Field label="Amount paid now" hint={`Owing: ${currency(owing)}`}>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={amountPaid}
-                placeholder="0"
-                onChange={(e) => setAmountPaid(e.target.value)}
+        <Card className="p-4 sm:p-5">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Supplier" required={payment === 'CREDIT'} hint="Who you bought the stock from">
+              <Combobox
+                value={supplierId}
+                onChange={setSupplierId}
+                options={[
+                  { value: '', label: 'Direct / Walk-in' },
+                  ...(suppliers?.data ?? []).map((s) => ({ value: s.id, label: s.name })),
+                ]}
+                placeholder="Search a supplier…"
               />
             </Field>
-          )}
-        </div>
-      </Card>
+            <Field label="Purchase date" required>
+              <Input type="date" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} />
+            </Field>
+          </div>
+        </Card>
+      </section>
 
-      <div>
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-label-caps uppercase tracking-wide text-on-surface-variant">Products received</span>
+      {/* 2 · What was received */}
+      <section>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[12px] font-bold text-on-primary">2</span>
+            <span className="text-label-caps uppercase tracking-wide text-on-surface-variant">Products received</span>
+          </div>
           <Button size="sm" variant="ghost" icon="add" onClick={addRow}>
             Add product
           </Button>
@@ -297,11 +298,44 @@ export default function CreatePurchasePage() {
             );
           })}
         </div>
-      </div>
+      </section>
 
-      <Field label="Notes">
-        <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes…" />
-      </Field>
+      {/* 3 · How it was paid */}
+      <section>
+        <div className="mb-2 flex items-center gap-2">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[12px] font-bold text-on-primary">3</span>
+          <span className="text-label-caps uppercase tracking-wide text-on-surface-variant">Payment &amp; notes</span>
+        </div>
+        <Card className="space-y-4 p-4 sm:p-5">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Payment">
+              <SegmentedControl
+                value={payment}
+                onChange={(v) => setPayment(v)}
+                items={[
+                  { value: 'CASH', label: 'Cash (paid in full)' },
+                  { value: 'CREDIT', label: 'Credit (owe supplier)' },
+                ]}
+              />
+            </Field>
+            {payment === 'CREDIT' && (
+              <Field label="Amount paid now" hint={`Owing: ${currency(owing)}`}>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={amountPaid}
+                  placeholder="0"
+                  onChange={(e) => setAmountPaid(e.target.value)}
+                />
+              </Field>
+            )}
+          </div>
+          <Field label="Notes">
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes…" />
+          </Field>
+        </Card>
+      </section>
 
       {/* Sticky action bar — offset to clear the sidebar on desktop */}
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-outline-variant bg-surface-container-lowest/95 backdrop-blur lg:left-64">
@@ -339,6 +373,8 @@ function VariantLine({
   const costUnit = isPack ? line.packName.trim() || 'pack' : line.baseUnit;
   const incoming = incomingBase(line);
   const newStock = line.currentStock + incoming;
+  const perBase = costPerBase(line);
+  const perUnit = costPerReceivedUnit(line);
 
   return (
     <div className="rounded-xl border border-outline-variant p-3">
@@ -392,14 +428,14 @@ function VariantLine({
             onChange={(e) => onChange({ quantity: e.target.value })}
           />
         </Field>
-        <Field label={`Cost / ${costUnit}`} className="w-32">
+        <Field label="Total cost" hint={`for ${line.quantity || 0} ${costUnit}`} className="w-32">
           <Input
             type="number"
             min="0"
             step="0.01"
-            value={line.unitCost}
-            placeholder="Cost"
-            onChange={(e) => onChange({ unitCost: e.target.value })}
+            value={line.totalCost}
+            placeholder="Amount paid"
+            onChange={(e) => onChange({ totalCost: e.target.value })}
           />
         </Field>
         <Field label={`Retail / ${line.baseUnit}`} className="w-32">
@@ -425,10 +461,11 @@ function VariantLine({
           />
         </Field>
         <div className="mb-1.5 ml-auto text-right">
-          <p className="text-[11px] uppercase tracking-wide text-on-surface-variant">Line total</p>
-          <p className="font-mono-data text-body-sm font-semibold">
-            {currency(num(line.quantity) * num(line.unitCost))}
-          </p>
+          <p className="text-[11px] uppercase tracking-wide text-on-surface-variant">Cost / {line.baseUnit}</p>
+          <p className="font-mono-data text-body-sm font-bold text-primary">{currency(perBase)}</p>
+          {isPack && perUnit > 0 && (
+            <p className="text-[11px] text-on-surface-variant">{currency(perUnit)} / {costUnit}</p>
+          )}
         </div>
       </div>
     </div>
