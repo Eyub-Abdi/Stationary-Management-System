@@ -4,8 +4,6 @@ import {
   Badge,
   Button,
   Card,
-  ConfirmDialog,
-  Dropdown,
   EmptyState,
   ErrorState,
   Icon,
@@ -23,13 +21,7 @@ import {
 } from '@/components/ui';
 import { CategoryManagerModal } from '@/features/products/CategoryManagerModal';
 import { useAuth } from '@/providers/AuthProvider';
-import { useToast } from '@/providers/ToastProvider';
-import {
-  useDeleteProduct,
-  useProducts,
-  useRemoveProduct,
-  useUpdateProduct,
-} from '@/hooks/useProducts';
+import { useProducts } from '@/hooks/useProducts';
 import { useCategories } from '@/hooks/useCatalog';
 import { extractMessage } from '@/lib/api';
 import { cn, currency, imageSrc, num } from '@/lib/utils';
@@ -39,14 +31,11 @@ export default function ProductsPage() {
   const navigate = useNavigate();
   const { can } = useAuth();
   const canManage = can('products');
-  const toast = useToast();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<ProductStatus | ''>('');
   const [categoryId, setCategoryId] = useState('');
   const [lowStock, setLowStock] = useState(false);
-  const [deleting, setDeleting] = useState<Product | null>(null);
-  const [removing, setRemoving] = useState<Product | null>(null);
   const [catManagerOpen, setCatManagerOpen] = useState(false);
 
   const filters = {
@@ -59,43 +48,8 @@ export default function ProductsPage() {
   };
   const { data, isLoading, isError, refetch, error } = useProducts(filters);
   const { data: categories } = useCategories();
-  const del = useDeleteProduct();
-  const update = useUpdateProduct();
-  const remove = useRemoveProduct();
 
   const openCreate = () => navigate('/products/new');
-  const openEdit = (p: Product) => navigate(`/products/${p.id}/edit`);
-
-  const confirmDelete = async () => {
-    if (!deleting) return;
-    try {
-      await del.mutateAsync(deleting.id);
-      toast.success('Product deactivated', `${deleting.name} is now inactive.`);
-      setDeleting(null);
-    } catch (e) {
-      toast.error('Failed to deactivate', extractMessage(e));
-    }
-  };
-
-  const handleReactivate = async (p: Product) => {
-    try {
-      await update.mutateAsync({ id: p.id, input: { status: 'ACTIVE' } });
-      toast.success('Product reactivated', `${p.name} is now active.`);
-    } catch (e) {
-      toast.error('Failed to reactivate', extractMessage(e));
-    }
-  };
-
-  const confirmRemove = async () => {
-    if (!removing) return;
-    try {
-      await remove.mutateAsync(removing.id);
-      toast.success('Product deleted', `${removing.name} was permanently removed.`);
-      setRemoving(null);
-    } catch (e) {
-      toast.error('Failed to delete', extractMessage(e));
-    }
-  };
 
   return (
     <div className="flex flex-col gap-gutter">
@@ -191,7 +145,6 @@ export default function ProductsPage() {
                 <TH align="right">Selling</TH>
                 <TH align="center">Stock</TH>
                 <TH align="center">Status</TH>
-                {canManage && <TH align="right">Actions</TH>}
               </THead>
               <TBody>
                 {data!.data.map((p) => {
@@ -236,35 +189,6 @@ export default function ProductsPage() {
                           {p.status === 'ACTIVE' ? 'Active' : 'Inactive'}
                         </Badge>
                       </TD>
-                      {canManage && (
-                        <TD align="right">
-                          <div className="inline-flex" onClick={(e) => e.stopPropagation()}>
-                          <Dropdown
-                            actions={[
-                              { label: 'Edit product', icon: 'edit', onClick: () => openEdit(p) },
-                              p.status === 'ACTIVE'
-                                ? {
-                                    label: 'Deactivate',
-                                    icon: 'block',
-                                    danger: true,
-                                    onClick: () => setDeleting(p),
-                                  }
-                                : {
-                                    label: 'Reactivate',
-                                    icon: 'restart_alt',
-                                    onClick: () => handleReactivate(p),
-                                  },
-                              {
-                                label: 'Delete permanently',
-                                icon: 'delete',
-                                danger: true,
-                                onClick: () => setRemoving(p),
-                              },
-                            ]}
-                          />
-                          </div>
-                        </TD>
-                      )}
                     </TR>
                   );
                 })}
@@ -276,28 +200,6 @@ export default function ProductsPage() {
       </Card>
 
       <CategoryManagerModal open={catManagerOpen} onClose={() => setCatManagerOpen(false)} />
-
-      <ConfirmDialog
-        open={!!deleting}
-        onClose={() => setDeleting(null)}
-        onConfirm={confirmDelete}
-        loading={del.isPending}
-        title="Deactivate product?"
-        message={`"${deleting?.name}" will be hidden from POS and catalog but its history is preserved.`}
-        confirmLabel="Deactivate"
-        icon="block"
-      />
-
-      <ConfirmDialog
-        open={!!removing}
-        onClose={() => setRemoving(null)}
-        onConfirm={confirmRemove}
-        loading={remove.isPending}
-        title="Delete product permanently?"
-        message={`"${removing?.name}" will be permanently deleted. This cannot be undone. Products with any sales, purchases or stock history can't be deleted — deactivate them instead.`}
-        confirmLabel="Delete"
-        icon="delete"
-      />
     </div>
   );
 }
