@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Button,
   Card,
@@ -31,9 +32,9 @@ import { currency, endOfToday, formatDate, num, startOfMonth } from '@/lib/utils
 import type { Expense } from '@/types';
 
 export default function OfficePurchasesPage() {
+  const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
-  const [details, setDetails] = useState<Expense | null>(null);
 
   const { data, isLoading, isError, refetch, error } = useOfficePurchases({ page, limit: 12 });
 
@@ -105,7 +106,7 @@ export default function OfficePurchasesPage() {
               </THead>
               <TBody>
                 {data!.data.map((e) => (
-                  <TR key={e.id} onClick={() => setDetails(e)}>
+                  <TR key={e.id} onClick={() => navigate(`/office-purchases/${e.id}`)}>
                     <TD>{formatDate(e.expenseDate)}</TD>
                     <TD>{e.supplierName || '—'}</TD>
                     <TD className="max-w-xs truncate text-on-surface-variant">
@@ -125,7 +126,6 @@ export default function OfficePurchasesPage() {
       </Card>
 
       <CreateOfficePurchaseModal open={createOpen} onClose={() => setCreateOpen(false)} />
-      <OfficePurchaseDetailsModal expense={details} onClose={() => setDetails(null)} />
     </div>
   );
 }
@@ -295,50 +295,3 @@ function CreateOfficePurchaseModal({ open, onClose }: { open: boolean; onClose: 
   );
 }
 
-function OfficePurchaseDetailsModal({ expense, onClose }: { expense: Expense | null; onClose: () => void }) {
-  const items = useMemo(() => expense?.items ?? [], [expense]);
-  if (!expense) return null;
-  return (
-    <Modal open={!!expense} onClose={onClose} size="lg" title="Office Purchase" subtitle={formatDate(expense.expenseDate)}>
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-          <Meta label="Supplier" value={expense.supplierName || '—'} />
-          <Meta label="Recorded by" value={expense.user?.fullName ?? '—'} />
-          <Meta label="Total" value={currency(expense.amount)} />
-        </div>
-        <Card className="overflow-hidden">
-          <Table>
-            <THead>
-              <TH>Item</TH>
-              <TH align="center">Qty</TH>
-              <TH align="right">Unit Cost</TH>
-              <TH align="right">Line Total</TH>
-            </THead>
-            <TBody>
-              {items.map((i) => (
-                <TR key={i.id}>
-                  <TD>{i.name}</TD>
-                  <TD align="center" className="font-mono-data">{i.quantity}</TD>
-                  <TD align="right" className="font-mono-data">{currency(i.unitCost)}</TD>
-                  <TD align="right" className="font-mono-data font-semibold">{currency(i.lineTotal)}</TD>
-                </TR>
-              ))}
-            </TBody>
-          </Table>
-        </Card>
-        {expense.description && (
-          <p className="text-body-sm text-on-surface-variant">{expense.description}</p>
-        )}
-      </div>
-    </Modal>
-  );
-}
-
-function Meta({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-[11px] uppercase tracking-wide text-on-surface-variant">{label}</p>
-      <p className="mt-0.5 font-medium text-on-surface">{value}</p>
-    </div>
-  );
-}

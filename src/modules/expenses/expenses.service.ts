@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ExpenseCategory, Prisma } from '@prisma/client';
 import { paginate } from '../../common/dto/pagination.dto';
 import { add, money, mul, toPrisma } from '../../common/utils/money';
@@ -147,6 +147,15 @@ export class ExpensesService {
       this.prisma.expense.count({ where }),
     ]);
     return paginate(data, total, query.page, query.limit);
+  }
+
+  async findOneOfficePurchase(id: string) {
+    const expense = await this.prisma.expense.findFirst({
+      where: { id, category: ExpenseCategory.OFFICE_SUPPLIES },
+      include: { items: true, user: { select: { fullName: true } } },
+    });
+    if (!expense) throw new NotFoundException('Office purchase not found');
+    return expense;
   }
 
   async findAll(query: ExpenseQueryDto, isAdmin: boolean) {

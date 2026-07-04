@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import {
@@ -48,5 +48,12 @@ export class ExpensesController {
   @ApiOperation({ summary: 'List office/internal-use purchases with their line items.' })
   findOfficePurchases(@Query() query: OfficePurchaseQueryDto) {
     return this.expenses.findOfficePurchases(query);
+  }
+
+  @Get('office/:id')
+  @Permission('officePurchases')
+  @ApiOperation({ summary: 'Fetch a single office/internal-use purchase with its line items.' })
+  findOfficePurchase(@Param('id') id: string) {
+    return this.expenses.findOneOfficePurchase(id);
   }
 }

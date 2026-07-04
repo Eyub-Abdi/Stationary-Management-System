@@ -79,6 +79,14 @@ export function useOfficePurchases(filters: OfficePurchaseFilters) {
   });
 }
 
+export function useOfficePurchase(id: string | undefined) {
+  return useQuery({
+    queryKey: qk.officePurchase(id ?? ''),
+    enabled: !!id,
+    queryFn: async () => unwrap<Expense>(api.get(`/expenses/office/${id}`)),
+  });
+}
+
 export function useCreateOfficePurchase() {
   const qc = useQueryClient();
   return useMutation({

@@ -34,6 +34,8 @@ export class SettingsService {
     if (dto.businessName !== undefined) data.businessName = dto.businessName.trim();
     if (dto.branchName !== undefined) data.branchName = dto.branchName.trim();
     if (dto.autoBackupEnabled !== undefined) data.autoBackupEnabled = dto.autoBackupEnabled;
+    // `backupTime` widened until the Prisma client is regenerated to include it.
+    if (dto.backupTime !== undefined) (data as { backupTime?: string }).backupTime = dto.backupTime;
     if (dto.backupDir !== undefined) data.backupDir = dto.backupDir.trim() || null;
     return this.prisma.appSetting.upsert({
       where: { id: SETTINGS_ID },

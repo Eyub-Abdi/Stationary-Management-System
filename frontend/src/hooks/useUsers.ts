@@ -16,6 +16,14 @@ export function useUsers(filters: { page?: number; limit?: number; search?: stri
   });
 }
 
+export function useUser(id: string | undefined) {
+  return useQuery({
+    queryKey: qk.user(id ?? ''),
+    enabled: !!id,
+    queryFn: () => unwrap<User>(api.get(`/users/${id}`)),
+  });
+}
+
 export interface CreateUserInput {
   email: string;
   fullName: string;
@@ -48,7 +56,10 @@ export function useUpdateUser() {
         permissions?: string[];
       };
     }) => unwrap<User>(api.patch(`/users/${id}`, input)),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
+    onSuccess: (_d, { id }) => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      qc.invalidateQueries({ queryKey: qk.user(id) });
+    },
   });
 }
 
@@ -57,7 +68,10 @@ export function useToggleUserActive() {
   return useMutation({
     mutationFn: ({ id, active }: { id: string; active: boolean }) =>
       unwrap<User>(api.patch(`/users/${id}/${active ? 'activate' : 'deactivate'}`)),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
+    onSuccess: (_d, { id }) => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      qc.invalidateQueries({ queryKey: qk.user(id) });
+    },
   });
 }
 

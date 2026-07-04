@@ -8,6 +8,7 @@ import {
   Icon,
   LoadingState,
   Modal,
+  Popover,
   SearchInput,
   SegmentedControl,
   Select,
@@ -153,8 +154,8 @@ export default function PosPage() {
   const [cashReceived, setCashReceived] = useState('');
   const [notes, setNotes] = useState(draft.notes ?? '');
   const [receipt, setReceipt] = useState<Sale | null>(null);
-  const [variantPick, setVariantPick] = useState<Product | null>(null);
-  const [serviceVariantPick, setServiceVariantPick] = useState<Service | null>(null);
+  const [variantPick, setVariantPick] = useState<{ product: Product; anchor: HTMLElement } | null>(null);
+  const [serviceVariantPick, setServiceVariantPick] = useState<{ service: Service; anchor: HTMLElement } | null>(null);
   const [serviceCat, setServiceCat] = useState<string>('all');
   const [custModalOpen, setCustModalOpen] = useState(false);
   const [view, setView] = useState<'grid' | 'list'>(
@@ -195,14 +196,14 @@ export default function PosPage() {
 
   // Tapping a product: pick a variant when there's more than one; then dual-unit
   // items ask "pieces or pack?"; single-unit items add straight away.
-  const addProduct = (p: Product) => {
+  const addProduct = (p: Product, anchor: HTMLElement) => {
     const vs = activeVariants(p);
     if (vs.length === 0) {
       toast.warning('No variants', 'This product has no active variants to sell.');
       return;
     }
     if (vs.length > 1) {
-      setVariantPick(p);
+      setVariantPick({ product: p, anchor });
       return;
     }
     pickVariant(p, vs[0]);
@@ -255,14 +256,14 @@ export default function PosPage() {
   };
 
   // Tapping a service: pick an option (e.g. A4/A3) when there's more than one.
-  const addService = (s: Service) => {
+  const addService = (s: Service, anchor: HTMLElement) => {
     const vs = activeServiceVariants(s);
     if (vs.length === 0) {
       toast.warning('No options', 'This service has no active options to sell.');
       return;
     }
     if (vs.length > 1) {
-      setServiceVariantPick(s);
+      setServiceVariantPick({ service: s, anchor });
       return;
     }
     addServiceVariant(s, vs[0]);
@@ -433,13 +434,13 @@ export default function PosPage() {
                 ) : view === 'grid' ? (
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
                     {products.data!.data.map((p) => (
-                      <ProductTile key={p.id} product={p} onAdd={() => addProduct(p)} />
+                      <ProductTile key={p.id} product={p} onAdd={(a) => addProduct(p, a)} />
                     ))}
                   </div>
                 ) : (
                   <ul className="flex flex-col gap-2">
                     {products.data!.data.map((p) => (
-                      <ProductRow key={p.id} product={p} onAdd={() => addProduct(p)} />
+                      <ProductRow key={p.id} product={p} onAdd={(a) => addProduct(p, a)} />
                     ))}
                   </ul>
                 )
@@ -468,7 +469,7 @@ export default function PosPage() {
                           key={s.id}
                           service={s}
                           label={activeGroup ? serviceSubLabel(s) : s.name}
-                          onAdd={() => addService(s)}
+                          onAdd={(a) => addService(s, a)}
                         />
                       ))}
                     </div>
@@ -479,7 +480,7 @@ export default function PosPage() {
                           key={s.id}
                           service={s}
                           label={activeGroup ? serviceSubLabel(s) : s.name}
-                          onAdd={() => addService(s)}
+                          onAdd={(a) => addService(s, a)}
                         />
                       ))}
                     </ul>
@@ -692,24 +693,79 @@ export default function PosPage() {
       </div>
 
       <ReceiptModal sale={receipt} onClose={() => setReceipt(null)} />
-      <VariantPickModal
-        product={variantPick}
-        onPick={(v) => {
-          const p = variantPick;
-          setVariantPick(null);
-          if (p) pickVariant(p, v);
-        }}
+
+      <Popover
+        anchor={variantPick?.anchor ?? null}
+        open={!!variantPick}
         onClose={() => setVariantPick(null)}
-      />
-      <ServiceVariantPickModal
-        service={serviceVariantPick}
-        onPick={(v) => {
-          const s = serviceVariantPick;
-          setServiceVariantPick(null);
-          if (s) addServiceVariant(s, v);
-        }}
+        width={variantPick && activeVariants(variantPick.product).length > 4 ? 348 : 280}
+      >
+        {variantPick && (
+          <>
+            <p className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-on-surface-variant">
+              {variantPick.product.name} · pick a variant
+            </p>
+            <div className={cn('grid gap-2', activeVariants(variantPick.product).length > 4 ? 'grid-cols-3' : 'grid-cols-2')}>
+              {activeVariants(variantPick.product).map((v) => {
+                const out = v.currentStock <= 0;
+                return (
+                  <button
+                    key={v.id}
+                    disabled={out}
+                    onClick={() => {
+                      const p = variantPick.product;
+                      setVariantPick(null);
+                      pickVariant(p, v);
+                    }}
+                    className="flex flex-col items-center gap-0.5 rounded-lg border border-outline-variant bg-surface-container-lowest p-2.5 transition-all hover:-translate-y-0.5 hover:border-secondary hover:shadow-sm disabled:opacity-50"
+                  >
+                    <span className="text-body-sm font-semibold text-on-surface">{v.label}</span>
+                    <span className="font-mono-data text-[13px] font-bold text-primary">{currency(v.sellingPrice)}</span>
+                    <span className={cn('text-[11px]', out ? 'text-error' : 'text-on-surface-variant')}>
+                      {v.currentStock} in stock
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </Popover>
+
+      <Popover
+        anchor={serviceVariantPick?.anchor ?? null}
+        open={!!serviceVariantPick}
         onClose={() => setServiceVariantPick(null)}
-      />
+        width={serviceVariantPick && activeServiceVariants(serviceVariantPick.service).length > 4 ? 348 : 280}
+      >
+        {serviceVariantPick && (
+          <>
+            <p className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-on-surface-variant">
+              {serviceVariantPick.service.name} · pick an option
+            </p>
+            <div className={cn('grid gap-2', activeServiceVariants(serviceVariantPick.service).length > 4 ? 'grid-cols-3' : 'grid-cols-2')}>
+              {activeServiceVariants(serviceVariantPick.service).map((v) => (
+                <button
+                  key={v.id}
+                  onClick={() => {
+                    const s = serviceVariantPick.service;
+                    setServiceVariantPick(null);
+                    addServiceVariant(s, v);
+                  }}
+                  className="flex flex-col items-center gap-0.5 rounded-lg border border-outline-variant bg-surface-container-lowest p-2.5 transition-all hover:-translate-y-0.5 hover:border-secondary hover:shadow-sm"
+                >
+                  <Icon name="description" size={22} className="text-secondary" />
+                  <span className="text-body-sm font-semibold text-on-surface">{v.label}</span>
+                  <span className="font-mono-data text-[13px] font-bold text-primary">{currency(v.unitPrice)}</span>
+                  <span className="text-[11px] text-on-surface-variant">
+                    {serviceVariantPick.service.pricingType === 'PER_PAGE' ? 'per page' : 'fixed'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </Popover>
       <CustomerFormModal
         open={custModalOpen}
         onClose={() => setCustModalOpen(false)}
@@ -721,75 +777,6 @@ export default function PosPage() {
 }
 
 /** Asks which variant of a multi-variant product is being sold. */
-function VariantPickModal({
-  product,
-  onPick,
-  onClose,
-}: {
-  product: Product | null;
-  onPick: (variant: ProductVariant) => void;
-  onClose: () => void;
-}) {
-  if (!product) return null;
-  const vs = activeVariants(product);
-  return (
-    <Modal open={!!product} onClose={onClose} size="sm" title={product.name} subtitle="Pick a variant">
-      <div className="grid grid-cols-2 gap-3">
-        {vs.map((v) => {
-          const out = v.currentStock <= 0;
-          return (
-            <button
-              key={v.id}
-              onClick={() => onPick(v)}
-              disabled={out}
-              className="flex flex-col items-center gap-1 rounded-xl border border-outline-variant bg-surface-container-lowest p-4 transition-all hover:-translate-y-0.5 hover:border-secondary hover:shadow-md disabled:opacity-50"
-            >
-              <span className="text-body-sm font-semibold text-on-surface">{v.label}</span>
-              <span className="font-mono-data text-[13px] font-bold text-primary">{currency(v.sellingPrice)}</span>
-              <span className={cn('text-[11px]', out ? 'text-error' : 'text-on-surface-variant')}>
-                {v.currentStock} in stock
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </Modal>
-  );
-}
-
-/** Asks which option (e.g. A4/A3) of a multi-option service is being sold. */
-function ServiceVariantPickModal({
-  service,
-  onPick,
-  onClose,
-}: {
-  service: Service | null;
-  onPick: (variant: ServiceVariant) => void;
-  onClose: () => void;
-}) {
-  if (!service) return null;
-  const vs = activeServiceVariants(service);
-  const per = service.pricingType === 'PER_PAGE';
-  return (
-    <Modal open={!!service} onClose={onClose} size="sm" title={service.name} subtitle="Pick an option">
-      <div className="grid grid-cols-2 gap-3">
-        {vs.map((v) => (
-          <button
-            key={v.id}
-            onClick={() => onPick(v)}
-            className="flex flex-col items-center gap-1 rounded-xl border border-outline-variant bg-surface-container-lowest p-4 transition-all hover:-translate-y-0.5 hover:border-secondary hover:shadow-md"
-          >
-            <Icon name="description" size={24} className="text-secondary" />
-            <span className="text-body-sm font-semibold text-on-surface">{v.label}</span>
-            <span className="font-mono-data text-[13px] font-bold text-primary">{currency(v.unitPrice)}</span>
-            <span className="text-[11px] text-on-surface-variant">{per ? 'per page' : 'fixed'}</span>
-          </button>
-        ))}
-      </div>
-    </Modal>
-  );
-}
-
 /** Human label for the unit a line is transacted in. */
 function unitWord(l: CartLine): string {
   return l.perPage ? 'page' : l.baseUnit;
@@ -874,7 +861,7 @@ function QtyStepper({
   );
 }
 
-function ProductTile({ product, onAdd }: { product: Product; onAdd: () => void }) {
+function ProductTile({ product, onAdd }: { product: Product; onAdd: (anchor: HTMLElement) => void }) {
   const stock = totalStock(product);
   const out = stock <= 0;
   const src = imageSrc(product.imageUrl);
@@ -882,7 +869,7 @@ function ProductTile({ product, onAdd }: { product: Product; onAdd: () => void }
   const price = minSellingPrice(product);
   return (
     <button
-      onClick={onAdd}
+      onClick={(e) => onAdd(e.currentTarget)}
       disabled={out}
       className={cn(
         'group flex flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest text-left transition-all hover:-translate-y-0.5 hover:border-secondary hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50',
@@ -913,7 +900,7 @@ function ProductTile({ product, onAdd }: { product: Product; onAdd: () => void }
   );
 }
 
-function ProductRow({ product, onAdd }: { product: Product; onAdd: () => void }) {
+function ProductRow({ product, onAdd }: { product: Product; onAdd: (anchor: HTMLElement) => void }) {
   const stock = totalStock(product);
   const out = stock <= 0;
   const src = imageSrc(product.imageUrl);
@@ -922,7 +909,7 @@ function ProductRow({ product, onAdd }: { product: Product; onAdd: () => void })
   return (
     <li>
       <button
-        onClick={onAdd}
+        onClick={(e) => onAdd(e.currentTarget)}
         disabled={out}
         className="flex w-full items-center gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-2.5 text-left transition-all hover:border-secondary hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
       >
@@ -976,13 +963,13 @@ function ServiceChip({
   );
 }
 
-function ServiceRow({ service, label, onAdd }: { service: Service; label: string; onAdd: () => void }) {
+function ServiceRow({ service, label, onAdd }: { service: Service; label: string; onAdd: (anchor: HTMLElement) => void }) {
   const multi = activeServiceVariants(service).length > 1;
   const price = minServicePrice(service);
   return (
     <li>
       <button
-        onClick={onAdd}
+        onClick={(e) => onAdd(e.currentTarget)}
         className="flex w-full items-center gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-2.5 text-left transition-all hover:border-secondary hover:shadow-sm"
       >
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary-fixed text-on-primary-fixed">
@@ -1007,12 +994,12 @@ function ServiceRow({ service, label, onAdd }: { service: Service; label: string
   );
 }
 
-function ServiceTile({ service, label, onAdd }: { service: Service; label: string; onAdd: () => void }) {
+function ServiceTile({ service, label, onAdd }: { service: Service; label: string; onAdd: (anchor: HTMLElement) => void }) {
   const multi = activeServiceVariants(service).length > 1;
   const price = minServicePrice(service);
   return (
     <button
-      onClick={onAdd}
+      onClick={(e) => onAdd(e.currentTarget)}
       className="group flex flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest p-3 text-left transition-all hover:-translate-y-0.5 hover:border-secondary hover:shadow-md"
     >
       <div className="flex items-center justify-between">

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Card,
   EmptyState,
@@ -9,6 +10,7 @@ import {
   Pagination,
   Select,
 } from '@/components/ui';
+import { docPath, type DocKind } from '@/components/DocLink';
 import { useAuditLogs } from '@/hooks/useAudit';
 import { extractMessage } from '@/lib/api';
 import { cn, currency, formatDateTime, humanize, initials, num } from '@/lib/utils';
@@ -260,11 +262,16 @@ export default function ActivityLogsPage() {
   );
 }
 
+/** Maps an audit entity to the detail view it can deep-link into, if any. */
+const DOC_KIND: Record<string, DocKind> = { Sale: 'sale', Purchase: 'purchase' };
+
 function TimelineRow({ log }: { log: AuditLog }) {
   const { title, detail, icon, color } = describe(log);
   const person = log.user;
   const name = person?.fullName ?? 'System';
   const isSystem = !person;
+  const kind = DOC_KIND[log.entityType];
+  const to = kind && log.entityId ? docPath(kind, log.entityId) : null;
 
   return (
     <li className="relative flex gap-4 pb-6 last:pb-0">
@@ -277,7 +284,24 @@ function TimelineRow({ log }: { log: AuditLog }) {
         <Icon name={icon} size={20} />
       </span>
       <div className="min-w-0 flex-1 pt-1">
-        <p className="font-semibold text-on-surface">{title}</p>
+        <p className="flex items-center gap-1.5 font-semibold text-on-surface">
+          {to ? (
+            <Link to={to} className="hover:text-primary hover:underline underline-offset-2">
+              {title}
+            </Link>
+          ) : (
+            title
+          )}
+          {to && (
+            <Link
+              to={to}
+              title="Open details"
+              className="text-on-surface-variant hover:text-primary"
+            >
+              <Icon name="open_in_new" size={15} />
+            </Link>
+          )}
+        </p>
         {detail && <p className="mt-0.5 text-body-sm text-on-surface-variant">{detail}</p>}
 
         {/* Who did it */}

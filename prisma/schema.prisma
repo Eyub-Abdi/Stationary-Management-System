@@ -880,6 +880,8 @@ model AppSetting {
   branchName   String   @default("Main Branch")
   // Automatic database backups to local disk (drive D on Windows by default).
   autoBackupEnabled Boolean  @default(false)
+  // Local time of day (HH:mm, 24h) the daily backup should run.
+  backupTime        String   @default("22:00")
   // Optional custom folder; null = OS default (D:\STMS-Backups on Windows).
   backupDir         String?
   lastBackupAt      DateTime?

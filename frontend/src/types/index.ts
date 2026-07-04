@@ -183,10 +183,16 @@ export interface Customer {
   isActive: boolean;
   balance: string;
   creditLimit: string | null;
+  /** Most recent completed credit sale date; null if none. Present in list rows. */
+  lastCreditSaleAt?: string | null;
   createdAt: string;
   updatedAt: string;
   sales?: Array<
-    Pick<Sale, 'id' | 'invoiceNumber' | 'total' | 'amountPaid' | 'amountDue' | 'status' | 'createdAt'>
+    Pick<Sale, 'id' | 'invoiceNumber' | 'total' | 'amountPaid' | 'amountDue' | 'status' | 'createdAt'> & {
+      user?: { fullName: string } | null;
+      /** Repayments applied to this specific invoice (newest first). */
+      paymentAllocations?: SalePaymentAllocation[];
+    }
   >;
   payments?: CustomerPayment[];
 }
@@ -202,6 +208,17 @@ export interface AgingRow {
   days61to90: string;
   days90plus: string;
   oldestInvoice: string | null;
+}
+
+/** One repayment's slice applied to a single invoice. */
+export interface SalePaymentAllocation {
+  id: string;
+  amount: string;
+  createdAt: string;
+  payment?: {
+    notes: string | null;
+    user?: { fullName: string } | null;
+  } | null;
 }
 
 export interface CustomerPayment {

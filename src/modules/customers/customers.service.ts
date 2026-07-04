@@ -98,10 +98,24 @@ export class CustomersService {
         orderBy: { name: 'asc' },
         skip: query.skip,
         take: query.limit,
+        include: {
+          // Newest completed credit sale, to surface "last sold on credit" in the list.
+          sales: {
+            where: { paymentMethod: 'CREDIT', status: 'COMPLETED' },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: { createdAt: true },
+          },
+        },
       }),
       this.prisma.customer.count({ where }),
     ]);
-    return paginate(data, total, query.page, query.limit);
+    // Flatten the single-row sales include into a plain lastCreditSaleAt field.
+    const rows = data.map(({ sales, ...c }) => ({
+      ...c,
+      lastCreditSaleAt: sales[0]?.createdAt ?? null,
+    }));
+    return paginate(rows, total, query.page, query.limit);
   }
 
   async findOne(id: string) {
@@ -120,6 +134,22 @@ export class CustomersService {
             amountDue: true,
             status: true,
             createdAt: true,
+            user: { select: { fullName: true } },
+            // Repayments applied to this specific invoice (newest first).
+            paymentAllocations: {
+              orderBy: { createdAt: 'desc' },
+              select: {
+                id: true,
+                amount: true,
+                createdAt: true,
+                payment: {
+                  select: {
+                    notes: true,
+                    user: { select: { fullName: true } },
+                  },
+                },
+              },
+            },
           },
         },
         payments: {

@@ -19,6 +19,7 @@ import {
   Table,
 } from '@/components/ui';
 import { AreaTrendChart, DonutChart } from '@/components/charts/Charts';
+import { DocLink } from '@/components/DocLink';
 import { useAuth } from '@/providers/AuthProvider';
 import { useActiveCashSession } from '@/providers/CashSessionProvider';
 import { useSales } from '@/hooks/useSales';
@@ -258,7 +259,9 @@ export default function DashboardPage() {
               <TBody>
                 {recentSales.data!.data.map((s) => (
                   <TR key={s.id}>
-                    <TD className="font-mono-data text-primary">{s.invoiceNumber}</TD>
+                    <TD>
+                      <DocLink kind="sale" id={s.id}>{s.invoiceNumber}</DocLink>
+                    </TD>
                     <TD>
                       <div className="flex items-center gap-2.5">
                         <Avatar name={s.user?.fullName ?? '—'} size="xs" />

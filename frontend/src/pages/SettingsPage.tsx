@@ -238,9 +238,13 @@ function AutoBackupSection() {
   const update = useUpdateAppSettings();
   const runBackup = useRunLocalBackup();
   const [dir, setDir] = useState('');
+  const [time, setTime] = useState('22:00');
 
   useEffect(() => {
-    if (settings) setDir(settings.backupDir ?? '');
+    if (settings) {
+      setDir(settings.backupDir ?? '');
+      setTime(settings.backupTime ?? '22:00');
+    }
   }, [settings]);
 
   const enabled = !!settings?.autoBackupEnabled;
@@ -267,6 +271,15 @@ function AutoBackupSection() {
     }
   };
 
+  const saveTime = async () => {
+    try {
+      await update.mutateAsync({ backupTime: time });
+      toast.success('Saved', `Daily backup will run at ${time}.`);
+    } catch (e) {
+      toast.error('Could not save time', extractMessage(e));
+    }
+  };
+
   const backupNow = async () => {
     try {
       const r = await runBackup.mutateAsync();
@@ -277,6 +290,7 @@ function AutoBackupSection() {
   };
 
   const dirDirty = !!settings && dir.trim() !== (settings.backupDir ?? '');
+  const timeDirty = !!settings && time !== (settings.backupTime ?? '22:00');
 
   return (
     <Card>
@@ -298,7 +312,7 @@ function AutoBackupSection() {
                 </span>
                 <div>
                   <p className="text-body-sm font-semibold text-on-surface">
-                    {enabled ? 'On — backs up once a day' : 'Off'}
+                    {enabled ? `On — daily at ${settings.backupTime}` : 'Off'}
                   </p>
                   <p className="text-[12px] text-on-surface-variant">
                     Saved to <span className="font-mono-data">{settings.effectiveBackupDir}</span>
@@ -341,6 +355,23 @@ function AutoBackupSection() {
                 Back up now
               </Button>
             </div>
+
+            <Field
+              label="Backup time"
+              hint="When the daily backup runs. If the computer is off then, it backs up as soon as it's next turned on."
+            >
+              <div className="flex gap-2">
+                <Input
+                  type="time"
+                  value={time}
+                  onChange={(e) => setTime(e.target.value)}
+                  className="w-40 font-mono-data"
+                />
+                <Button variant="outline" icon="check" onClick={saveTime} loading={update.isPending} disabled={!timeDirty}>
+                  Save
+                </Button>
+              </div>
+            </Field>
 
             <Field label="Backup folder" hint="Leave blank to use the default (drive D on Windows)">
               <div className="flex gap-2">

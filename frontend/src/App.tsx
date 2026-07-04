@@ -7,19 +7,26 @@ import LoginPage from '@/pages/LoginPage';
 import DashboardPage from '@/pages/DashboardPage';
 import PosPage from '@/pages/PosPage';
 import SalesPage from '@/pages/SalesPage';
+import SaleDetailPage from '@/pages/SaleDetailPage';
 import ProductsPage from '@/pages/ProductsPage';
 import ServicesPage from '@/pages/ServicesPage';
 import InventoryPage from '@/pages/InventoryPage';
 import PurchasesPage from '@/pages/PurchasesPage';
+import CreatePurchasePage from '@/pages/CreatePurchasePage';
+import PurchaseDetailPage from '@/pages/PurchaseDetailPage';
 import CustomersPage from '@/pages/CustomersPage';
+import CustomerDetailPage from '@/pages/CustomerDetailPage';
 import SuppliersPage from '@/pages/SuppliersPage';
+import SupplierDetailPage from '@/pages/SupplierDetailPage';
 import ExpensesPage from '@/pages/ExpensesPage';
 import OfficePurchasesPage from '@/pages/OfficePurchasesPage';
+import OfficePurchaseDetailPage from '@/pages/OfficePurchaseDetailPage';
 import CashPage from '@/pages/CashPage';
 import ReportsPage from '@/pages/ReportsPage';
 import ProfitPage from '@/pages/ProfitPage';
 import MovementPage from '@/pages/MovementPage';
 import UsersPage from '@/pages/UsersPage';
+import UserDetailPage from '@/pages/UserDetailPage';
 import ActivityLogsPage from '@/pages/ActivityLogsPage';
 import SettingsPage from '@/pages/SettingsPage';
 import NotFoundPage from '@/pages/NotFoundPage';
@@ -44,15 +51,33 @@ export default function App() {
         <Route index element={<DashboardPage />} />
         <Route path="/pos" element={<PosPage />} />
         <Route path="/sales" element={<SalesPage />} />
+        <Route path="/sales/:id" element={<SaleDetailPage />} />
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/customers" element={<CustomersPage />} />
+        <Route path="/customers/:id" element={<CustomerDetailPage />} />
         <Route
           path="/purchases"
           element={
             <PermissionRoute permission="purchases">
               <PurchasesPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/purchases/new"
+          element={
+            <PermissionRoute permission="purchases">
+              <CreatePurchasePage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/purchases/:id"
+          element={
+            <PermissionRoute permission="purchases">
+              <PurchaseDetailPage />
             </PermissionRoute>
           }
         />
@@ -64,12 +89,28 @@ export default function App() {
             </PermissionRoute>
           }
         />
+        <Route
+          path="/suppliers/:id"
+          element={
+            <PermissionRoute permission="suppliers">
+              <SupplierDetailPage />
+            </PermissionRoute>
+          }
+        />
         <Route path="/expenses" element={<ExpensesPage />} />
         <Route
           path="/office-purchases"
           element={
             <PermissionRoute permission="officePurchases">
               <OfficePurchasesPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/office-purchases/:id"
+          element={
+            <PermissionRoute permission="officePurchases">
+              <OfficePurchaseDetailPage />
             </PermissionRoute>
           }
         />
@@ -103,6 +144,14 @@ export default function App() {
           element={
             <PermissionRoute permission="users">
               <UsersPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/users/:id"
+          element={
+            <PermissionRoute permission="users">
+              <UserDetailPage />
             </PermissionRoute>
           }
         />

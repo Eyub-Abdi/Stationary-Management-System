@@ -6,6 +6,8 @@ export interface AppSettings {
   businessName: string;
   branchName: string;
   autoBackupEnabled: boolean;
+  /** Local time of day (HH:mm) the daily backup runs. */
+  backupTime: string;
   backupDir: string | null;
   lastBackupAt: string | null;
   lastBackupStatus: string | null;
@@ -20,6 +22,7 @@ export interface UpdateAppSettingsInput {
   businessName?: string;
   branchName?: string;
   autoBackupEnabled?: boolean;
+  backupTime?: string;
   backupDir?: string;
 }
 
