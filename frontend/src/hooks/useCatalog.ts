@@ -104,13 +104,20 @@ export interface ServiceFilters {
   includeInactive?: boolean;
 }
 
+/** One bill-of-materials line: a product the option consumes. */
+export interface ServiceComponentInput {
+  variantId: string;
+  /** Whole base units consumed per page (perPage) or per job. */
+  qty?: number;
+  perPage?: boolean;
+}
+
 export interface ServiceVariantInput {
   label: string;
   unitPrice: number;
   status?: ServiceStatus;
-  /** Product variant this option consumes per sale (null = none). */
-  consumesVariantId?: string | null;
-  consumesQty?: number;
+  /** Products this option consumes (its bill of materials). Empty = none. */
+  components?: ServiceComponentInput[];
 }
 
 /** Service-level fields (the priced options live in variants). */
@@ -128,6 +135,14 @@ export function useServices(filters: ServiceFilters = {}) {
       const res = await api.get<Paginated<Service>>('/services', { params: clean({ ...filters }) });
       return res.data;
     },
+  });
+}
+
+export function useService(id?: string) {
+  return useQuery({
+    queryKey: qk.service(id ?? ''),
+    queryFn: () => unwrap<Service>(api.get(`/services/${id}`)),
+    enabled: !!id,
   });
 }
 

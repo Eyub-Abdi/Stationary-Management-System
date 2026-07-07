@@ -259,8 +259,10 @@ model ProductVariant {
   inventoryBatches   InventoryBatch[]
   inventoryMovements InventoryMovement[]
   adjustments        InventoryAdjustment[]
-  // Service options that consume this product (e.g. printing uses this paper).
-  consumedByServices ServiceVariant[]    @relation("ServiceConsumes")
+  // Service option components that consume this product (e.g. printing uses this paper).
+  serviceComponents  ServiceComponent[]
+  // Per-sale-line consumption snapshots that drew this product down.
+  saleConsumptions   SaleItemConsumption[]
 
   @@index([productId])
   @@index([status])
@@ -292,6 +294,7 @@ model Service {
 
 // A priced option of a service, e.g. "A4" / "A3". Holds the price; the parent
 // service holds the pricing model (per page vs fixed). Snapshotted at sale time.
+// The products it consumes (its bill of materials) live in ServiceComponent.
 model ServiceVariant {
   id        String        @id @default(uuid()) @db.Uuid
   serviceId String        @db.Uuid
@@ -299,20 +302,36 @@ model ServiceVariant {
   unitPrice Decimal       @db.Decimal(14, 2)
   isDefault Boolean       @default(false)
   status    ServiceStatus @default(ACTIVE)
-  // Optional product this option consumes per sale (e.g. A4 paper). Null = none.
-  consumesVariantId String? @db.Uuid
-  // Units of that product used per sold unit (per page for PER_PAGE, else per job).
-  consumesQty       Int     @default(1)
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
-  service         Service         @relation(fields: [serviceId], references: [id])
-  consumesVariant ProductVariant? @relation("ServiceConsumes", fields: [consumesVariantId], references: [id], onDelete: SetNull)
-  saleItems       SaleItem[]
+  service    Service            @relation(fields: [serviceId], references: [id])
+  components ServiceComponent[]
+  saleItems  SaleItem[]
 
   @@index([serviceId])
   @@index([status])
   @@map("service_variants")
+}
+
+// One line of a service option's bill of materials: a product the option
+// consumes and how much. qty is a whole count of BASE units (pieces); fractional
+// consumption is modelled by the product's unitSize yield, not fractional stock.
+model ServiceComponent {
+  id               String  @id @default(uuid()) @db.Uuid
+  serviceVariantId String  @db.Uuid
+  variantId        String  @db.Uuid
+  // Base units consumed per page (perPage=true) or per job (perPage=false).
+  qty              Int     @default(1)
+  perPage          Boolean @default(true)
+  createdAt        DateTime @default(now())
+
+  serviceVariant ServiceVariant @relation(fields: [serviceVariantId], references: [id], onDelete: Cascade)
+  variant        ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@index([serviceVariantId])
+  @@index([variantId])
+  @@map("service_components")
 }
 
 // ----------------------------------------------------------------------------
@@ -587,14 +606,9 @@ model SaleItem {
   pages             Int? // for PER_PAGE services
   discount          Decimal  @db.Decimal(14, 2) @default(0)
   lineTotal         Decimal  @db.Decimal(14, 2)
-  // COGS for product lines (FIFO). For services that consume a product, holds
-  // that product's FIFO cost too.
+  // COGS for product lines (FIFO). For services that consume products, holds
+  // the sum of those products' FIFO cost too.
   lineCogs          Decimal  @db.Decimal(14, 2) @default(0)
-  // For a service line that consumed a product (e.g. paper): snapshot of the
-  // consumed variant/product and base-unit quantity, so a void can restore it.
-  consumedVariantId String?  @db.Uuid
-  consumedProductId String?  @db.Uuid
-  consumedQty       Int      @default(0)
   // Units already returned across all partial returns of this line.
   returnedQuantity  Int      @default(0)
 
@@ -604,6 +618,9 @@ model SaleItem {
   service        Service?        @relation(fields: [serviceId], references: [id])
   serviceVariant ServiceVariant? @relation(fields: [serviceVariantId], references: [id])
   allocations    CogsAllocation[]
+  // For service lines: snapshot of each product consumed, so a void can restore
+  // every product this line drew down (a service may consume several products).
+  consumptions   SaleItemConsumption[]
   returnItems    SaleReturnItem[]
 
   @@index([saleId])
@@ -619,6 +636,9 @@ model CogsAllocation {
   id               String  @id @default(uuid()) @db.Uuid
   saleItemId       String  @db.Uuid
   batchId          String  @db.Uuid
+  // For service-line allocations: which consumed product (SaleItemConsumption)
+  // this allocation belongs to. Null for plain product lines.
+  saleItemConsumptionId String? @db.Uuid
   quantity         Int
   unitCost         Decimal @db.Decimal(14, 2)
   cost             Decimal @db.Decimal(14, 2) // quantity * unitCost
@@ -627,10 +647,33 @@ model CogsAllocation {
 
   saleItem SaleItem       @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
   batch    InventoryBatch @relation(fields: [batchId], references: [id])
+  consumption SaleItemConsumption? @relation(fields: [saleItemConsumptionId], references: [id], onDelete: Cascade)
 
   @@index([saleItemId])
   @@index([batchId])
+  @@index([saleItemConsumptionId])
   @@map("cogs_allocations")
+}
+
+// Snapshot of one product a service line consumed (paper, lamination film, …).
+// A single service line can have several — one per product in the option's BOM.
+// Holds the base-unit quantity and FIFO cost drawn, so a void restores it exactly.
+model SaleItemConsumption {
+  id         String  @id @default(uuid()) @db.Uuid
+  saleItemId String  @db.Uuid
+  variantId  String  @db.Uuid
+  productId  String  @db.Uuid
+  qty        Int // base units consumed
+  cogs       Decimal @db.Decimal(14, 2) @default(0)
+  createdAt  DateTime @default(now())
+
+  saleItem    SaleItem         @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
+  variant     ProductVariant   @relation(fields: [variantId], references: [id])
+  allocations CogsAllocation[]
+
+  @@index([saleItemId])
+  @@index([variantId])
+  @@map("sale_item_consumptions")
 }
 
 // ----------------------------------------------------------------------------

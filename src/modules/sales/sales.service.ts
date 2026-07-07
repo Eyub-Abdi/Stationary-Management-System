@@ -36,10 +36,9 @@ interface ComputedLine {
   discount: Decimal;
   lineGross: Decimal;
   lineTotal: Decimal;
-  // For a service that consumes a product (e.g. paper): the product to draw down.
-  consumedVariantId?: string;
-  consumedProductId?: string;
-  consumedQty?: number;
+  // For a service line: the products it consumes (its bill of materials), each a
+  // whole base-unit quantity to draw down FIFO.
+  consumptions: { variantId: string; productId: string; qty: number }[];
 }
 
 const SALE_INCLUDE = {
@@ -203,7 +202,8 @@ export class SalesService {
 
       for (const line of lines) {
         let lineCogs = money(0);
-        let allocations: { batchId: string; quantity: number; unitCost: Decimal; cost: Decimal }[] = [];
+        // Product-line FIFO draws from the sold variant itself.
+        let productAllocations: { batchId: string; quantity: number; unitCost: Decimal; cost: Decimal }[] = [];
 
         if (line.itemType === 'PRODUCT') {
           const fifo = await this.inventory.consumeFifoTx(
@@ -212,7 +212,7 @@ export class SalesService {
             line.basePieces,
           );
           lineCogs = fifo.totalCost;
-          allocations = fifo.allocations;
+          productAllocations = fifo.allocations;
 
           await this.inventory.applyMovementTx(tx, {
             variantId: line.variantId!,
@@ -222,28 +222,6 @@ export class SalesService {
             userId,
             referenceType: 'SALE',
             referenceId: sale.id,
-          });
-        } else if (line.consumedVariantId && line.consumedQty && line.consumedQty > 0) {
-          // A service that consumes a product (e.g. paper). Warn-but-allow:
-          // consume what's in stock (COGS) and let stock go negative if short.
-          const fifo = await this.inventory.consumeFifoTx(
-            tx,
-            line.consumedVariantId,
-            line.consumedQty,
-            { allowShortfall: true },
-          );
-          lineCogs = fifo.totalCost;
-          allocations = fifo.allocations;
-
-          await this.inventory.applyMovementTx(tx, {
-            variantId: line.consumedVariantId,
-            productId: line.consumedProductId!,
-            type: 'SALE',
-            quantity: -line.consumedQty,
-            userId,
-            referenceType: 'SALE',
-            referenceId: sale.id,
-            allowNegative: true,
           });
         }
 
@@ -263,14 +241,12 @@ export class SalesService {
             pages: line.pages,
             discount: toPrisma(line.discount),
             lineTotal: toPrisma(line.lineTotal),
+            // Filled below (services accumulate cost across consumed products).
             lineCogs: toPrisma(lineCogs),
-            consumedVariantId: line.consumedVariantId,
-            consumedProductId: line.consumedProductId,
-            consumedQty: line.consumedQty ?? 0,
           },
         });
 
-        for (const a of allocations) {
+        for (const a of productAllocations) {
           await tx.cogsAllocation.create({
             data: {
               saleItemId: saleItem.id,
@@ -279,6 +255,55 @@ export class SalesService {
               unitCost: toPrisma(a.unitCost),
               cost: toPrisma(a.cost),
             },
+          });
+        }
+
+        // A service line draws down every product in its bill of materials.
+        // Warn-but-allow: consume what's in stock (for COGS) and let stock go
+        // negative if short, snapshotting each product so a void can restore it.
+        for (const c of line.consumptions) {
+          const fifo = await this.inventory.consumeFifoTx(tx, c.variantId, c.qty, {
+            allowShortfall: true,
+          });
+          const consumption = await tx.saleItemConsumption.create({
+            data: {
+              saleItemId: saleItem.id,
+              variantId: c.variantId,
+              productId: c.productId,
+              qty: c.qty,
+              cogs: toPrisma(fifo.totalCost),
+            },
+          });
+          for (const a of fifo.allocations) {
+            await tx.cogsAllocation.create({
+              data: {
+                saleItemId: saleItem.id,
+                saleItemConsumptionId: consumption.id,
+                batchId: a.batchId,
+                quantity: a.quantity,
+                unitCost: toPrisma(a.unitCost),
+                cost: toPrisma(a.cost),
+              },
+            });
+          }
+          await this.inventory.applyMovementTx(tx, {
+            variantId: c.variantId,
+            productId: c.productId,
+            type: 'SALE',
+            quantity: -c.qty,
+            userId,
+            referenceType: 'SALE',
+            referenceId: sale.id,
+            allowNegative: true,
+          });
+          lineCogs = add(lineCogs, fifo.totalCost);
+        }
+
+        // Persist the final line COGS once all consumed products are tallied.
+        if (line.consumptions.length > 0) {
+          await tx.saleItem.update({
+            where: { id: saleItem.id },
+            data: { lineCogs: toPrisma(lineCogs) },
           });
         }
 
@@ -329,7 +354,10 @@ export class SalesService {
     return this.prisma.runSerializable(async (tx) => {
       const sale = await tx.sale.findUnique({
         where: { id },
-        include: { items: { include: { allocations: true } }, _count: { select: { returns: true } } },
+        include: {
+          items: { include: { allocations: true, consumptions: true } },
+          _count: { select: { returns: true } },
+        },
       });
       if (!sale) throw new NotFoundException('Sale not found');
       if (sale.status === 'VOIDED') {
@@ -342,33 +370,47 @@ export class SalesService {
       }
 
       for (const item of sale.items) {
-        // Products draw from their own variant; services may have consumed a
-        // product (e.g. paper). Both restore the same way.
-        const restoreVariantId =
-          item.itemType === 'PRODUCT' ? item.variantId : item.consumedVariantId;
-        const restoreProductId =
-          item.itemType === 'PRODUCT' ? item.productId : item.consumedProductId;
-        const restoreQty =
-          item.itemType === 'PRODUCT' ? item.quantity * item.unitSize : item.consumedQty;
-        if (!restoreVariantId || !restoreProductId || restoreQty <= 0) continue;
+        // Every allocation on the line (product line, or one per consumed product
+        // on a service line) is restored to its batch — batches self-identify.
+        if (item.allocations.length > 0) {
+          await this.inventory.restoreFifoTx(
+            tx,
+            item.allocations.map((a) => ({ batchId: a.batchId, quantity: a.quantity })),
+          );
+        }
 
-        await this.inventory.restoreFifoTx(
-          tx,
-          item.allocations.map((a) => ({ batchId: a.batchId, quantity: a.quantity })),
-        );
-
-        await this.inventory.applyMovementTx(tx, {
-          variantId: restoreVariantId,
-          productId: restoreProductId,
-          type: 'RETURN',
-          quantity: restoreQty,
-          userId,
-          referenceType: 'SALE_VOID',
-          referenceId: sale.id,
-          notes: reason,
-          // Restoring stock only adds; never block it if the balance is still negative.
-          allowNegative: true,
-        });
+        if (item.itemType === 'PRODUCT') {
+          const restoreQty = item.quantity * item.unitSize;
+          if (!item.variantId || !item.productId || restoreQty <= 0) continue;
+          await this.inventory.applyMovementTx(tx, {
+            variantId: item.variantId,
+            productId: item.productId,
+            type: 'RETURN',
+            quantity: restoreQty,
+            userId,
+            referenceType: 'SALE_VOID',
+            referenceId: sale.id,
+            notes: reason,
+            // Restoring stock only adds; never block it if the balance is still negative.
+            allowNegative: true,
+          });
+        } else {
+          // Service line: return each consumed product to stock.
+          for (const c of item.consumptions) {
+            if (c.qty <= 0) continue;
+            await this.inventory.applyMovementTx(tx, {
+              variantId: c.variantId,
+              productId: c.productId,
+              type: 'RETURN',
+              quantity: c.qty,
+              userId,
+              referenceType: 'SALE_VOID',
+              referenceId: sale.id,
+              notes: reason,
+              allowNegative: true,
+            });
+          }
+        }
       }
 
       // Unwind the receivable created by a credit sale (clamp at 0).
@@ -711,6 +753,7 @@ export class SalesService {
           discount,
           lineGross,
           lineTotal: sub(lineGross, discount),
+          consumptions: [],
         });
       } else {
         if (!item.serviceVariantId) {
@@ -718,7 +761,12 @@ export class SalesService {
         }
         const serviceVariant = await tx.serviceVariant.findUnique({
           where: { id: item.serviceVariantId },
-          include: { service: true, consumesVariant: { select: { id: true, productId: true } } },
+          include: {
+            service: true,
+            components: {
+              include: { variant: { select: { id: true, productId: true } } },
+            },
+          },
         });
         if (!serviceVariant) throw new NotFoundException(`Service option ${item.serviceVariantId} not found`);
         const service = serviceVariant.service;
@@ -746,12 +794,15 @@ export class SalesService {
         }
         this.assertDiscount(discount, lineGross, displayName);
 
-        // If the option consumes a product (e.g. paper), draw it down per sale:
-        // consumesQty × pages (per-page) or × 1 (fixed), × quantity.
-        const consumesVariant = serviceVariant.consumesVariant;
-        const consumedQty = consumesVariant
-          ? serviceVariant.consumesQty * (pages ?? 1) * item.quantity
-          : 0;
+        // Draw down every product in the option's bill of materials:
+        // qty × pages (perPage) or × 1 (per job), × quantity sold.
+        const consumptions = serviceVariant.components
+          .map((c) => ({
+            variantId: c.variant.id,
+            productId: c.variant.productId,
+            qty: c.qty * (c.perPage ? (pages ?? 1) : 1) * item.quantity,
+          }))
+          .filter((c) => c.qty > 0);
 
         lines.push({
           itemType: 'SERVICE',
@@ -764,13 +815,7 @@ export class SalesService {
           unitSize: 1,
           basePieces: 0,
           pages,
-          ...(consumesVariant && consumedQty > 0
-            ? {
-                consumedVariantId: consumesVariant.id,
-                consumedProductId: consumesVariant.productId,
-                consumedQty,
-              }
-            : {}),
+          consumptions,
           discount,
           lineGross,
           lineTotal: sub(lineGross, discount),

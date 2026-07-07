@@ -12,6 +12,7 @@ import ProductsPage from '@/pages/ProductsPage';
 import ProductDetailPage from '@/pages/ProductDetailPage';
 import ProductFormPage from '@/pages/ProductFormPage';
 import ServicesPage from '@/pages/ServicesPage';
+import ServiceFormPage from '@/pages/ServiceFormPage';
 import InventoryPage from '@/pages/InventoryPage';
 import PurchasesPage from '@/pages/PurchasesPage';
 import CreatePurchasePage from '@/pages/CreatePurchasePage';
@@ -73,6 +74,22 @@ export default function App() {
           }
         />
         <Route path="/services" element={<ServicesPage />} />
+        <Route
+          path="/services/new"
+          element={
+            <PermissionRoute permission="services">
+              <ServiceFormPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/services/:id/edit"
+          element={
+            <PermissionRoute permission="services">
+              <ServiceFormPage />
+            </PermissionRoute>
+          }
+        />
         <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/customers/:id" element={<CustomerDetailPage />} />

@@ -9,6 +9,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -20,6 +21,31 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+
+/** One product a service option consumes (a bill-of-materials line). */
+export class ServiceComponentDto {
+  @ApiProperty({ description: 'Product variant consumed (e.g. A4 paper).' })
+  @IsUUID()
+  variantId!: string;
+
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'Whole base units consumed per page (perPage) or per job. Model fractions via the product unitSize.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  qty?: number;
+
+  @ApiPropertyOptional({
+    default: true,
+    description: 'true = consumed per page; false = flat per job (e.g. a binding comb).',
+  })
+  @IsOptional()
+  @IsBoolean()
+  perPage?: boolean;
+}
 
 /** A priced option of a service, e.g. "A4" / "A3". */
 export class CreateServiceVariantDto {
@@ -41,21 +67,14 @@ export class CreateServiceVariantDto {
   status?: ServiceStatus;
 
   @ApiPropertyOptional({
-    description: 'Product variant this option consumes per sale (e.g. A4 paper). Null = none.',
+    type: [ServiceComponentDto],
+    description: 'Products this option consumes (its bill of materials). Empty = none (e.g. scanning).',
   })
   @IsOptional()
-  @IsUUID()
-  consumesVariantId?: string | null;
-
-  @ApiPropertyOptional({
-    example: 1,
-    description: 'Units of the product used per sold unit (per page for PER_PAGE, else per job).',
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  consumesQty?: number;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ServiceComponentDto)
+  components?: ServiceComponentDto[];
 }
 
 export class UpdateServiceVariantDto extends PartialType(CreateServiceVariantDto) {}

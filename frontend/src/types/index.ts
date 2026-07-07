@@ -127,6 +127,22 @@ export interface Product {
   updatedAt: string;
 }
 
+// One product a service option consumes (a bill-of-materials line).
+export interface ServiceComponent {
+  id: string;
+  variantId: string;
+  /** Whole base units consumed per page (perPage) or per job. */
+  qty: number;
+  perPage: boolean;
+  variant?: {
+    id: string;
+    label: string;
+    sku: string;
+    currentStock: number;
+    product: { name: string; baseUnit: string };
+  };
+}
+
 // A priced option of a service, e.g. "A4" / "A3".
 export interface ServiceVariant {
   id: string;
@@ -135,16 +151,8 @@ export interface ServiceVariant {
   unitPrice: string;
   isDefault: boolean;
   status: ServiceStatus;
-  /** Product this option consumes per sale (e.g. A4 paper); null = none. */
-  consumesVariantId: string | null;
-  consumesQty: number;
-  consumesVariant?: {
-    id: string;
-    label: string;
-    sku: string;
-    currentStock: number;
-    product: { name: string; baseUnit: string };
-  } | null;
+  /** Products this option consumes (its bill of materials). Empty = none. */
+  components: ServiceComponent[];
   createdAt: string;
   updatedAt: string;
 }

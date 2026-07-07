@@ -9,6 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   CreateServiceDto,
   CreateServiceVariantDto,
+  ServiceComponentDto,
   UpdateServiceDto,
   UpdateServiceVariantDto,
 } from './dto/service.dto';
@@ -17,18 +18,32 @@ const SERVICE_INCLUDE = {
   variants: {
     orderBy: { createdAt: 'asc' },
     include: {
-      consumesVariant: {
-        select: {
-          id: true,
-          label: true,
-          sku: true,
-          currentStock: true,
-          product: { select: { name: true, baseUnit: true } },
+      components: {
+        orderBy: { createdAt: 'asc' },
+        include: {
+          variant: {
+            select: {
+              id: true,
+              label: true,
+              sku: true,
+              currentStock: true,
+              product: { select: { name: true, baseUnit: true } },
+            },
+          },
         },
       },
     },
   },
 } satisfies Prisma.ServiceInclude;
+
+/** Maps component DTOs to nested-create rows (defaults applied). */
+function toComponentCreate(components?: ServiceComponentDto[]) {
+  return (components ?? []).map((c) => ({
+    variantId: c.variantId,
+    qty: c.qty ?? 1,
+    perPage: c.perPage ?? true,
+  }));
+}
 
 @Injectable()
 export class ServicesService {
@@ -47,8 +62,7 @@ export class ServicesService {
             unitPrice: toPrisma(v.unitPrice),
             status: v.status,
             isDefault: i === 0,
-            consumesVariantId: v.consumesVariantId ?? null,
-            consumesQty: v.consumesQty ?? 1,
+            components: { create: toComponentCreate(v.components) },
           })),
         },
       },
@@ -101,8 +115,7 @@ export class ServicesService {
         label: dto.label.trim(),
         unitPrice: toPrisma(dto.unitPrice),
         status: dto.status,
-        consumesVariantId: dto.consumesVariantId ?? null,
-        consumesQty: dto.consumesQty ?? 1,
+        components: { create: toComponentCreate(dto.components) },
       },
     });
   }
@@ -110,16 +123,21 @@ export class ServicesService {
   async updateVariant(variantId: string, dto: UpdateServiceVariantDto) {
     const variant = await this.prisma.serviceVariant.findUnique({ where: { id: variantId } });
     if (!variant) throw new NotFoundException('Service option not found');
+    // Replace the whole bill of materials when components are supplied.
     return this.prisma.serviceVariant.update({
       where: { id: variantId },
       data: {
         ...(dto.label !== undefined ? { label: dto.label.trim() } : {}),
         ...(dto.unitPrice !== undefined ? { unitPrice: toPrisma(dto.unitPrice) } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
-        ...(dto.consumesVariantId !== undefined
-          ? { consumesVariantId: dto.consumesVariantId || null }
+        ...(dto.components !== undefined
+          ? {
+              components: {
+                deleteMany: {},
+                create: toComponentCreate(dto.components),
+              },
+            }
           : {}),
-        ...(dto.consumesQty !== undefined ? { consumesQty: dto.consumesQty } : {}),
       },
     });
   }
