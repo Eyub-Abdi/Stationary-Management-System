@@ -247,9 +247,14 @@ export class PurchasesService {
     });
   }
 
-  async findAll(query: PaginationQueryDto & { supplierId?: string }) {
+  async findAll(
+    query: PaginationQueryDto & { supplierId?: string; from?: Date; to?: Date },
+  ) {
     const where: Prisma.PurchaseWhereInput = {
       ...(query.supplierId ? { supplierId: query.supplierId } : {}),
+      ...(query.from || query.to
+        ? { purchaseDate: { gte: query.from, lte: query.to } }
+        : {}),
       ...(query.search
         ? { purchaseNumber: { contains: query.search, mode: 'insensitive' } }
         : {}),
@@ -268,6 +273,36 @@ export class PurchasesService {
       this.prisma.purchase.count({ where }),
     ]);
     return paginate(data, total, query.page, query.limit);
+  }
+
+  /** Per-day purchase totals (count + total cost) for the daily-totals view. */
+  async daily(query: { from?: Date; to?: Date }) {
+    const range =
+      query.from && query.to
+        ? Prisma.sql`WHERE "purchaseDate" BETWEEN ${query.from} AND ${query.to}`
+        : query.from
+          ? Prisma.sql`WHERE "purchaseDate" >= ${query.from}`
+          : query.to
+            ? Prisma.sql`WHERE "purchaseDate" <= ${query.to}`
+            : Prisma.empty;
+
+    const rows = await this.prisma.$queryRaw<
+      { period: Date; total: string; count: bigint }[]
+    >(Prisma.sql`
+      SELECT date_trunc('day', "purchaseDate") AS period,
+             COALESCE(SUM("totalCost"), 0)::text AS total,
+             COUNT(*)                            AS count
+      FROM purchases
+      ${range}
+      GROUP BY period
+      ORDER BY period DESC;
+    `);
+
+    return rows.map((r) => ({
+      period: r.period,
+      total: r.total,
+      count: Number(r.count),
+    }));
   }
 
   async findOne(id: string) {

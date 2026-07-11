@@ -31,6 +31,12 @@ export class ExpensesController {
     return this.expenses.findAll(query, user.role === Role.ADMIN);
   }
 
+  @Get('daily')
+  @ApiOperation({ summary: 'Per-day expense totals (count + total) for a date range' })
+  daily(@Query() query: ExpenseQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.expenses.daily(query, user.role === Role.ADMIN);
+  }
+
   @Post('office')
   @Permission('officePurchases')
   @ApiOperation({

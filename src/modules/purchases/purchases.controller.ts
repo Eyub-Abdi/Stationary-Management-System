@@ -47,6 +47,12 @@ export class PurchasesController {
     return this.purchases.findAll(query);
   }
 
+  @Get('daily')
+  @ApiOperation({ summary: 'Per-day purchase totals (count + total cost) for a date range' })
+  daily(@Query() query: PurchaseQueryDto) {
+    return this.purchases.daily(query);
+  }
+
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.purchases.findOne(id);

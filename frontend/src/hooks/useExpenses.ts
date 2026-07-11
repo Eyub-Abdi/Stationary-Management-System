@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { qk } from './keys';
-import type { Expense, ExpenseCategory, Paginated } from '@/types';
+import type { DailyTotalPoint, Expense, ExpenseCategory, Paginated } from '@/types';
 
 const clean = (p: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined && v !== '' && v !== null));
@@ -30,6 +30,15 @@ export function useExpenses(filters: ExpenseFilters, enabled = true) {
       const res = await api.get<Paginated<Expense>>('/expenses', { params: clean({ ...filters }) });
       return res.data;
     },
+  });
+}
+
+export function useExpensesDaily(range: { from?: string; to?: string }, enabled = true) {
+  return useQuery({
+    queryKey: qk.expensesDaily(range),
+    enabled,
+    queryFn: () =>
+      unwrap<DailyTotalPoint[]>(api.get('/expenses/daily', { params: clean({ ...range }) })),
   });
 }
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Button,
   Card,
@@ -12,6 +13,7 @@ import {
   PageHeader,
   Pagination,
   SearchInput,
+  SegmentedControl,
   Select,
   StatCard,
   TBody,
@@ -24,11 +26,14 @@ import {
 } from '@/components/ui';
 import { useToast } from '@/providers/ToastProvider';
 import { useAuth } from '@/providers/AuthProvider';
-import { useCreateExpense, useExpenses } from '@/hooks/useExpenses';
+import { useCreateExpense, useExpenses, useExpensesDaily } from '@/hooks/useExpenses';
 import { EXPENSE_CATEGORY_ICON, EXPENSE_CATEGORY_OPTIONS, PETTY_CASH_CATEGORIES } from '@/lib/constants';
 import { extractMessage } from '@/lib/api';
 import { currency, endOfToday, formatDate, humanize, num, startOfMonth } from '@/lib/utils';
+import { rangeFor, toDateInput, type RangeKey } from '@/lib/dateRange';
 import type { ExpenseCategory } from '@/types';
+
+type ViewKey = 'list' | 'daily';
 
 // Staff get petty cash only; fixed overheads (rent, salary, electricity, internet)
 // are management-only.
@@ -39,17 +44,49 @@ const visibleCategoryOptions = (isAdmin: boolean) =>
 
 export default function ExpensesPage() {
   const { isAdmin } = useAuth();
+  const [searchParams] = useSearchParams();
+  const initialDate = searchParams.get('date') ?? '';
+
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<ExpenseCategory | ''>('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [rangeKey, setRangeKey] = useState<RangeKey>(initialDate ? 'custom' : 'all');
+  const [customFrom, setCustomFrom] = useState(initialDate);
+  const [customTo, setCustomTo] = useState(initialDate);
+  const [view, setView] = useState<ViewKey>(() =>
+    initialDate ? 'list' : localStorage.getItem('expenses-view') === 'daily' ? 'daily' : 'list',
+  );
+  useEffect(() => {
+    localStorage.setItem('expenses-view', view);
+  }, [view]);
 
+  const range = rangeFor(rangeKey, customFrom, customTo);
   const { data, isLoading, isError, refetch, error } = useExpenses({
     page,
     limit: 12,
     search: search || undefined,
     category: category || undefined,
+    ...range,
   });
+
+  const daily = useExpensesDaily(range, view === 'daily');
+  const dailyRows = daily.data ?? [];
+  const dailyTotal = dailyRows.reduce((a, r) => a + num(r.total), 0);
+  const dailyCount = dailyRows.reduce((a, r) => a + r.count, 0);
+
+  // Drill into a single day: filter the expenses list to that date.
+  const openDay = (period: string) => {
+    const day = toDateInput(period);
+    if (!day) return;
+    setCustomFrom(day);
+    setCustomTo(day);
+    setRangeKey('custom');
+    setSearch('');
+    setCategory('');
+    setPage(1);
+    setView('list');
+  };
 
   const monthExpenses = useExpenses({ from: startOfMonth(), to: endOfToday(), limit: 100 });
   const monthTotal = (monthExpenses.data?.data ?? []).reduce((a, e) => a + num(e.amount), 0);
@@ -98,22 +135,109 @@ export default function ExpensesPage() {
       </div>
 
       <Card>
-        <div className="flex flex-col gap-3 border-b border-outline-variant p-4 sm:flex-row sm:items-center">
-          <SearchInput
-            value={search}
-            onChange={(v) => { setSearch(v); setPage(1); }}
-            placeholder="Search descriptions…"
-            className="flex-1"
-          />
-          <Select value={category} onChange={(e) => { setCategory(e.target.value as ExpenseCategory | ''); setPage(1); }} className="sm:w-52">
-            <option value="">All categories</option>
-            {visibleCategoryOptions(isAdmin).map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </Select>
+        <div className="flex flex-col gap-3 border-b border-outline-variant p-4 lg:flex-row lg:items-center">
+          {view === 'list' ? (
+            <SearchInput
+              value={search}
+              onChange={(v) => { setSearch(v); setPage(1); }}
+              placeholder="Search descriptions…"
+              className="flex-1"
+            />
+          ) : (
+            <div className="flex-1" />
+          )}
+          <div className="flex flex-wrap items-center gap-3">
+            <SegmentedControl<ViewKey>
+              value={view}
+              onChange={setView}
+              items={[
+                { value: 'list', label: 'Expenses' },
+                { value: 'daily', label: 'Daily totals' },
+              ]}
+            />
+            <Select
+              value={rangeKey}
+              onChange={(e) => { setRangeKey(e.target.value as RangeKey); setPage(1); }}
+              className="w-40"
+            >
+              <option value="all">All time</option>
+              <option value="today">Today</option>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+              <option value="custom">Custom range</option>
+            </Select>
+            {rangeKey === 'custom' && (
+              <div className="flex items-center gap-2">
+                <Input
+                  type="date"
+                  aria-label="From date"
+                  value={customFrom}
+                  max={customTo || undefined}
+                  onChange={(e) => { setCustomFrom(e.target.value); setPage(1); }}
+                  className="w-40"
+                />
+                <span className="text-on-surface-variant">–</span>
+                <Input
+                  type="date"
+                  aria-label="To date"
+                  value={customTo}
+                  min={customFrom || undefined}
+                  onChange={(e) => { setCustomTo(e.target.value); setPage(1); }}
+                  className="w-40"
+                />
+              </div>
+            )}
+            {view === 'list' && (
+              <Select value={category} onChange={(e) => { setCategory(e.target.value as ExpenseCategory | ''); setPage(1); }} className="w-52">
+                <option value="">All categories</option>
+                {visibleCategoryOptions(isAdmin).map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </Select>
+            )}
+          </div>
         </div>
 
-        {isLoading ? (
+        {view === 'daily' ? (
+          daily.isLoading ? (
+            <LoadingState label="Loading daily totals…" />
+          ) : daily.isError ? (
+            <ErrorState message={extractMessage(daily.error)} onRetry={daily.refetch} />
+          ) : dailyRows.length === 0 ? (
+            <EmptyState
+              icon="calendar_month"
+              title="No expenses in this range"
+              description="Pick a different date range to see daily totals."
+            />
+          ) : (
+            <Table>
+              <THead>
+                <TH>Date</TH>
+                <TH align="center">Entries</TH>
+                <TH align="right">Total</TH>
+                <TH align="right">Action</TH>
+              </THead>
+              <TBody>
+                {dailyRows.map((r) => (
+                  <TR key={r.period} onClick={() => openDay(r.period)}>
+                    <TD className="whitespace-nowrap font-medium">{formatDate(r.period)}</TD>
+                    <TD align="center" className="font-mono-data">{r.count}</TD>
+                    <TD align="right" className="font-mono-data font-bold text-error">−{currency(r.total)}</TD>
+                    <TD align="right">
+                      <Icon name="chevron_right" size={20} className="text-on-surface-variant" />
+                    </TD>
+                  </TR>
+                ))}
+                <TR className="bg-surface-container-low">
+                  <TD className="font-semibold">Total</TD>
+                  <TD align="center" className="font-mono-data font-semibold">{dailyCount}</TD>
+                  <TD align="right" className="font-mono-data font-bold text-error">−{currency(dailyTotal)}</TD>
+                  <TD />
+                </TR>
+              </TBody>
+            </Table>
+          )
+        ) : isLoading ? (
           <LoadingState />
         ) : isError ? (
           <ErrorState message={extractMessage(error)} onRetry={refetch} />

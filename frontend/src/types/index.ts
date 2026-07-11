@@ -443,6 +443,15 @@ export interface SalesSeriesPoint {
   cogs: string;
   grossProfit: string;
   saleCount: number;
+  expenses: string;
+  purchases: string;
+}
+
+/** Per-day total (amount + count) used by the Purchases/Expenses daily views. */
+export interface DailyTotalPoint {
+  period: string;
+  total: string;
+  count: number;
 }
 
 export interface ExpenseByCategory {

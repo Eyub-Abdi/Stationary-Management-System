@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { qk } from './keys';
-import type { Paginated, PaymentMethod, Purchase, SellUnit } from '@/types';
+import type { DailyTotalPoint, Paginated, PaymentMethod, Purchase, SellUnit } from '@/types';
 
 const clean = (p: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined && v !== '' && v !== null));
@@ -30,13 +30,30 @@ export interface CreatePurchaseInput {
   items: PurchaseItemInput[];
 }
 
-export function usePurchases(filters: { page?: number; limit?: number; search?: string } = {}) {
+export interface PurchaseFilters {
+  page?: number;
+  limit?: number;
+  search?: string;
+  from?: string;
+  to?: string;
+}
+
+export function usePurchases(filters: PurchaseFilters = {}) {
   return useQuery({
     queryKey: qk.purchases(filters),
     queryFn: async () => {
       const res = await api.get<Paginated<Purchase>>('/purchases', { params: clean({ ...filters }) });
       return res.data;
     },
+  });
+}
+
+export function usePurchasesDaily(range: { from?: string; to?: string }, enabled = true) {
+  return useQuery({
+    queryKey: qk.purchasesDaily(range),
+    enabled,
+    queryFn: () =>
+      unwrap<DailyTotalPoint[]>(api.get('/purchases/daily', { params: clean({ ...range }) })),
   });
 }
 

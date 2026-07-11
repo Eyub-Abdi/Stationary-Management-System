@@ -20,30 +20,56 @@ export class ReportsService {
 
   // ---- Sales ---------------------------------------------------------------
 
-  /** Time-bucketed sales: revenue, COGS, gross profit, count per period. */
+  /** Time-bucketed sales: revenue, COGS, gross profit, count per period.
+   *  Also reports expenses and purchases falling in each period. */
   async salesSeries(query: SalesReportQueryDto) {
     const unit = TRUNC_UNIT[query.granularity]; // whitelisted, safe to inline
-    const range = this.dateFilter('"createdAt"', query);
+    const salesRange = this.dateFilter('"createdAt"', query);
+    const expenseRange = this.dateFilter('"expenseDate"', query);
+    const purchaseRange = this.dateFilter('"purchaseDate"', query);
 
-    const rows = await this.prisma.$queryRaw<
-      {
-        period: Date;
-        revenue: string;
-        cogs: string;
-        gross_profit: string;
-        sale_count: bigint;
-      }[]
-    >(Prisma.sql`
-      SELECT date_trunc(${unit}, "createdAt") AS period,
-             COALESCE(SUM(total), 0)::text          AS revenue,
-             COALESCE(SUM("totalCogs"), 0)::text    AS cogs,
-             COALESCE(SUM(total - "totalCogs"), 0)::text AS gross_profit,
-             COUNT(*)                               AS sale_count
-      FROM sales
-      WHERE status = 'COMPLETED' ${range}
-      GROUP BY period
-      ORDER BY period ASC;
-    `);
+    const [rows, expenseRows, purchaseRows] = await Promise.all([
+      this.prisma.$queryRaw<
+        {
+          period: Date;
+          revenue: string;
+          cogs: string;
+          gross_profit: string;
+          sale_count: bigint;
+        }[]
+      >(Prisma.sql`
+        SELECT date_trunc(${unit}, "createdAt") AS period,
+               COALESCE(SUM(total), 0)::text          AS revenue,
+               COALESCE(SUM("totalCogs"), 0)::text    AS cogs,
+               COALESCE(SUM(total - "totalCogs"), 0)::text AS gross_profit,
+               COUNT(*)                               AS sale_count
+        FROM sales
+        WHERE status = 'COMPLETED' ${salesRange}
+        GROUP BY period
+        ORDER BY period ASC;
+      `),
+      this.prisma.$queryRaw<{ period: Date; expenses: string }[]>(Prisma.sql`
+        SELECT date_trunc(${unit}, "expenseDate") AS period,
+               COALESCE(SUM(amount), 0)::text      AS expenses
+        FROM expenses
+        WHERE TRUE ${expenseRange}
+        GROUP BY period;
+      `),
+      this.prisma.$queryRaw<{ period: Date; purchases: string }[]>(Prisma.sql`
+        SELECT date_trunc(${unit}, "purchaseDate") AS period,
+               COALESCE(SUM("totalCost"), 0)::text AS purchases
+        FROM purchases
+        WHERE TRUE ${purchaseRange}
+        GROUP BY period;
+      `),
+    ]);
+
+    const expenseByPeriod = new Map(
+      expenseRows.map((r) => [r.period.getTime(), r.expenses]),
+    );
+    const purchaseByPeriod = new Map(
+      purchaseRows.map((r) => [r.period.getTime(), r.purchases]),
+    );
 
     return rows.map((r) => ({
       period: r.period,
@@ -51,6 +77,8 @@ export class ReportsService {
       cogs: r.cogs,
       grossProfit: r.gross_profit,
       saleCount: Number(r.sale_count),
+      expenses: expenseByPeriod.get(r.period.getTime()) ?? '0',
+      purchases: purchaseByPeriod.get(r.period.getTime()) ?? '0',
     }));
   }
 

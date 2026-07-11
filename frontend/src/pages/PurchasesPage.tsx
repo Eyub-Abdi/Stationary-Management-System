@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Badge,
   Button,
@@ -15,6 +15,8 @@ import {
   PageHeader,
   Pagination,
   SearchInput,
+  SegmentedControl,
+  Select,
   TBody,
   TD,
   TH,
@@ -23,7 +25,7 @@ import {
   Table,
 } from '@/components/ui';
 import { useToast } from '@/providers/ToastProvider';
-import { usePurchases } from '@/hooks/usePurchases';
+import { usePurchases, usePurchasesDaily } from '@/hooks/usePurchases';
 import {
   useCreateUnit,
   useDeleteUnit,
@@ -33,19 +35,53 @@ import {
 import { DocLink } from '@/components/DocLink';
 import { extractMessage } from '@/lib/api';
 import { currency, formatDate, num } from '@/lib/utils';
+import { rangeFor, toDateInput, type RangeKey } from '@/lib/dateRange';
 import type { Unit } from '@/types';
+
+type ViewKey = 'list' | 'daily';
 
 export default function PurchasesPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const initialDate = searchParams.get('date') ?? '';
+
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [unitsOpen, setUnitsOpen] = useState(false);
+  const [rangeKey, setRangeKey] = useState<RangeKey>(initialDate ? 'custom' : 'all');
+  const [customFrom, setCustomFrom] = useState(initialDate);
+  const [customTo, setCustomTo] = useState(initialDate);
+  const [view, setView] = useState<ViewKey>(() =>
+    initialDate ? 'list' : localStorage.getItem('purchases-view') === 'daily' ? 'daily' : 'list',
+  );
+  useEffect(() => {
+    localStorage.setItem('purchases-view', view);
+  }, [view]);
 
+  const range = rangeFor(rangeKey, customFrom, customTo);
   const { data, isLoading, isError, refetch, error } = usePurchases({
     page,
     limit: 12,
     search: search || undefined,
+    ...range,
   });
+
+  const daily = usePurchasesDaily(range, view === 'daily');
+  const dailyRows = daily.data ?? [];
+  const dailyTotal = dailyRows.reduce((a, r) => a + num(r.total), 0);
+  const dailyCount = dailyRows.reduce((a, r) => a + r.count, 0);
+
+  // Drill into a single day: filter the purchases list to that date.
+  const openDay = (period: string) => {
+    const day = toDateInput(period);
+    if (!day) return;
+    setCustomFrom(day);
+    setCustomTo(day);
+    setRangeKey('custom');
+    setSearch('');
+    setPage(1);
+    setView('list');
+  };
 
   return (
     <div className="flex flex-col gap-gutter">
@@ -65,19 +101,113 @@ export default function PurchasesPage() {
       />
 
       <Card>
-        <div className="border-b border-outline-variant p-4">
-          <SearchInput
-            value={search}
-            onChange={(v) => {
-              setSearch(v);
-              setPage(1);
-            }}
-            placeholder="Search by purchase number…"
-            className="max-w-md"
-          />
+        <div className="flex flex-col gap-3 border-b border-outline-variant p-4 lg:flex-row lg:items-center">
+          {view === 'list' ? (
+            <SearchInput
+              value={search}
+              onChange={(v) => {
+                setSearch(v);
+                setPage(1);
+              }}
+              placeholder="Search by purchase number…"
+              className="flex-1"
+            />
+          ) : (
+            <div className="flex-1" />
+          )}
+          <div className="flex flex-wrap items-center gap-3">
+            <SegmentedControl<ViewKey>
+              value={view}
+              onChange={setView}
+              items={[
+                { value: 'list', label: 'Purchases' },
+                { value: 'daily', label: 'Daily totals' },
+              ]}
+            />
+            <Select
+              value={rangeKey}
+              onChange={(e) => {
+                setRangeKey(e.target.value as RangeKey);
+                setPage(1);
+              }}
+              className="w-40"
+            >
+              <option value="all">All time</option>
+              <option value="today">Today</option>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+              <option value="custom">Custom range</option>
+            </Select>
+            {rangeKey === 'custom' && (
+              <div className="flex items-center gap-2">
+                <Input
+                  type="date"
+                  aria-label="From date"
+                  value={customFrom}
+                  max={customTo || undefined}
+                  onChange={(e) => {
+                    setCustomFrom(e.target.value);
+                    setPage(1);
+                  }}
+                  className="w-40"
+                />
+                <span className="text-on-surface-variant">–</span>
+                <Input
+                  type="date"
+                  aria-label="To date"
+                  value={customTo}
+                  min={customFrom || undefined}
+                  onChange={(e) => {
+                    setCustomTo(e.target.value);
+                    setPage(1);
+                  }}
+                  className="w-40"
+                />
+              </div>
+            )}
+          </div>
         </div>
 
-        {isLoading ? (
+        {view === 'daily' ? (
+          daily.isLoading ? (
+            <LoadingState label="Loading daily totals…" />
+          ) : daily.isError ? (
+            <ErrorState message={extractMessage(daily.error)} onRetry={daily.refetch} />
+          ) : dailyRows.length === 0 ? (
+            <EmptyState
+              icon="calendar_month"
+              title="No purchases in this range"
+              description="Pick a different date range to see daily totals."
+            />
+          ) : (
+            <Table>
+              <THead>
+                <TH>Date</TH>
+                <TH align="center">Purchases</TH>
+                <TH align="right">Total cost</TH>
+                <TH align="right">Action</TH>
+              </THead>
+              <TBody>
+                {dailyRows.map((r) => (
+                  <TR key={r.period} onClick={() => openDay(r.period)}>
+                    <TD className="whitespace-nowrap font-medium">{formatDate(r.period)}</TD>
+                    <TD align="center" className="font-mono-data">{r.count}</TD>
+                    <TD align="right" className="font-mono-data font-semibold">{currency(r.total)}</TD>
+                    <TD align="right">
+                      <Icon name="chevron_right" size={20} className="text-on-surface-variant" />
+                    </TD>
+                  </TR>
+                ))}
+                <TR className="bg-surface-container-low">
+                  <TD className="font-semibold">Total</TD>
+                  <TD align="center" className="font-mono-data font-semibold">{dailyCount}</TD>
+                  <TD align="right" className="font-mono-data font-semibold">{currency(dailyTotal)}</TD>
+                  <TD />
+                </TR>
+              </TBody>
+            </Table>
+          )
+        ) : isLoading ? (
           <LoadingState label="Loading purchases…" />
         ) : isError ? (
           <ErrorState message={extractMessage(error)} onRetry={refetch} />

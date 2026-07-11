@@ -186,4 +186,43 @@ export class ExpensesService {
     ]);
     return paginate(data, total, query.page, query.limit);
   }
+
+  /** Per-day expense totals (count + total) for the daily-totals view.
+   *  Staff only ever see their petty-cash categories. */
+  async daily(query: { from?: Date; to?: Date }, isAdmin: boolean) {
+    const conditions: Prisma.Sql[] = [];
+    if (query.from && query.to) {
+      conditions.push(Prisma.sql`"expenseDate" BETWEEN ${query.from} AND ${query.to}`);
+    } else if (query.from) {
+      conditions.push(Prisma.sql`"expenseDate" >= ${query.from}`);
+    } else if (query.to) {
+      conditions.push(Prisma.sql`"expenseDate" <= ${query.to}`);
+    }
+    if (!isAdmin) {
+      conditions.push(
+        Prisma.sql`category::text IN (${Prisma.join(PETTY_CASH_CATEGORIES)})`,
+      );
+    }
+    const where = conditions.length
+      ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`
+      : Prisma.empty;
+
+    const rows = await this.prisma.$queryRaw<
+      { period: Date; total: string; count: bigint }[]
+    >(Prisma.sql`
+      SELECT date_trunc('day', "expenseDate") AS period,
+             COALESCE(SUM(amount), 0)::text    AS total,
+             COUNT(*)                          AS count
+      FROM expenses
+      ${where}
+      GROUP BY period
+      ORDER BY period DESC;
+    `);
+
+    return rows.map((r) => ({
+      period: r.period,
+      total: r.total,
+      count: Number(r.count),
+    }));
+  }
 }
