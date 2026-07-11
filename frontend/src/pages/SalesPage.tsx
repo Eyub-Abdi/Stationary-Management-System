@@ -85,7 +85,8 @@ export default function SalesPage() {
     { granularity: 'DAILY', from: range.from, to: range.to },
     canSeeDaily && view === 'daily',
   );
-  const dailyRows = daily.data ?? [];
+  // salesSeries comes back oldest-first (for charts); show newest day on top here.
+  const dailyRows = [...(daily.data ?? [])].sort((a, b) => b.period.localeCompare(a.period));
   const dailyRevenue = dailyRows.reduce((a, r) => a + num(r.revenue), 0);
   const dailyCount = dailyRows.reduce((a, r) => a + r.saleCount, 0);
   const dailyExpenses = dailyRows.reduce((a, r) => a + num(r.expenses), 0);

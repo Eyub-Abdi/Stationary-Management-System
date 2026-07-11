@@ -266,7 +266,7 @@ export class PurchasesService {
           supplier: true,
           items: { select: { productNameSnapshot: true } },
         },
-        orderBy: { purchaseDate: 'desc' },
+        orderBy: [{ purchaseDate: 'desc' }, { createdAt: 'desc' }],
         skip: query.skip,
         take: query.limit,
       }),

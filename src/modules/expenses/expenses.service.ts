@@ -140,7 +140,7 @@ export class ExpensesService {
       this.prisma.expense.findMany({
         where,
         include: { items: true, user: { select: { fullName: true } } },
-        orderBy: { expenseDate: 'desc' },
+        orderBy: [{ expenseDate: 'desc' }, { createdAt: 'desc' }],
         skip: query.skip,
         take: query.limit,
       }),
@@ -178,7 +178,7 @@ export class ExpensesService {
       this.prisma.expense.findMany({
         where,
         include: { user: { select: { fullName: true } } },
-        orderBy: { expenseDate: 'desc' },
+        orderBy: [{ expenseDate: 'desc' }, { createdAt: 'desc' }],
         skip: query.skip,
         take: query.limit,
       }),
