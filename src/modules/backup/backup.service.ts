@@ -18,7 +18,7 @@ const BACKUP_FOLDER = 'STMS-Backups';
 /** Auto-backups older than this many days are pruned. */
 const RETENTION_DAYS = 30;
 
-type PgTool = 'pg_dump' | 'pg_restore';
+type PgTool = 'pg_dump' | 'pg_restore' | 'psql';
 
 export interface LocalBackupResult {
   dir: string;
@@ -212,15 +212,7 @@ export class BackupService {
     await this.prisma.$disconnect().catch(() => undefined);
 
     try {
-      await this.run(this.resolveBin('pg_restore'), [
-        `--dbname=${this.dbUrl()}`,
-        '--clean',
-        '--if-exists',
-        '--no-owner',
-        '--no-privileges',
-        '--single-transaction',
-        path,
-      ]);
+      await this.replaceDatabase(path);
     } catch (e) {
       this.logger.error(`Restore failed: ${(e as Error).message}`);
       throw new InternalServerErrorException(`Restore failed: ${(e as Error).message}`);
@@ -230,6 +222,52 @@ export class BackupService {
       await this.prisma.$connect().catch((e) => {
         this.logger.warn(`Could not reconnect after restore: ${(e as Error).message}`);
       });
+    }
+  }
+
+  /**
+   * Replaces the database contents in a single transaction: the public schema
+   * is dropped and recreated, then the dump is applied over the clean slate.
+   *
+   * `pg_restore --clean` cannot be used for this. It only drops the objects the
+   * dump knows about, so anything added by a migration that ran *after* the
+   * backup was taken survives — and a leftover foreign key onto a restored
+   * table blocks the drop outright:
+   *
+   *   cannot drop constraint users_pkey on table public.users because other
+   *   objects depend on it
+   *
+   * DDL is transactional in PostgreSQL, so wrapping the schema reset and the
+   * restore together means a failure at any point rolls the whole thing back
+   * and the current data is left exactly as it was.
+   */
+  private async replaceDatabase(dumpPath: string): Promise<void> {
+    if (!existsSync(BACKUP_TMP_DIR)) mkdirSync(BACKUP_TMP_DIR, { recursive: true });
+    const sqlPath = join(BACKUP_TMP_DIR, `restore_${Date.now()}.sql`);
+
+    try {
+      // Convert to plain SQL as a separate, checked step: a truncated or
+      // unreadable dump fails here, before anything touches the database.
+      await this.run(this.resolveBin('pg_restore'), [
+        '--no-owner',
+        '--no-privileges',
+        '--file',
+        sqlPath,
+        dumpPath,
+      ]);
+
+      await this.run(this.resolveBin('psql'), [
+        `--dbname=${this.dbUrl()}`,
+        '--single-transaction',
+        '--set',
+        'ON_ERROR_STOP=1',
+        '--command',
+        'DROP SCHEMA public CASCADE; CREATE SCHEMA public;',
+        '--file',
+        sqlPath,
+      ]);
+    } finally {
+      if (existsSync(sqlPath)) unlinkSync(sqlPath);
     }
   }
 }

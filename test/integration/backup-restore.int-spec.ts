@@ -97,6 +97,40 @@ describeDb('Backup & restore (integration)', () => {
     expect(count).toBe(1);
   });
 
+  it('restores a backup taken before a later migration added a foreign key', async () => {
+    // Reproduces the real failure: a dump taken before accounting_periods
+    // existed, restored into a database that now has it. pg_restore --clean
+    // never drops that table (it is not in the dump), so its foreign key onto
+    // users blocks "ALTER TABLE users DROP CONSTRAINT users_pkey".
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS added_after_backup (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        "userId" UUID NOT NULL REFERENCES users(id)
+      );
+    `);
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO added_after_backup ("userId") VALUES ('${originalUserId}');`,
+    );
+
+    await backup.restoreDump(dumpPath);
+
+    // The table that post-dated the backup is gone, and the data is restored.
+    const leftover = await prisma.$queryRawUnsafe<{ exists: boolean }[]>(
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name = 'added_after_backup'
+       ) AS exists;`,
+    );
+    expect(leftover[0].exists).toBe(false);
+    expect(await prisma.user.count()).toBe(1);
+  });
+
+  it('leaves the database untouched when the file is not a real dump', async () => {
+    const before = await prisma.user.count();
+    await expect(backup.restoreDump(__filename)).rejects.toThrow(/not a valid KJ backup/i);
+    expect(await prisma.user.count()).toBe(before);
+  });
+
   it('records the audit row when the signed-in user does exist in the backup', async () => {
     await audit.record({
       userId: originalUserId,
