@@ -1,0 +1,4 @@
+# Shell scripts must keep LF endings regardless of core.autocrlf. The Dockerfile
+# does `COPY . .`, so the working copy goes straight into an Alpine image where
+# /bin/sh is BusyBox and does not tolerate carriage returns.
+*.sh text eol=lf
