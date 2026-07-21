@@ -1,5 +1,16 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsBoolean,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class UpdateSettingsDto {
   @ApiPropertyOptional({ example: 'KJ Stationery', description: 'Shop / business name shown across the app.' })
@@ -39,4 +50,16 @@ export class UpdateSettingsDto {
   @IsString()
   @MaxLength(260)
   backupDir?: string;
+
+  @ApiPropertyOptional({
+    example: 3,
+    description:
+      'How many backup files to keep. Each new backup replaces the oldest once this many exist.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(30)
+  backupKeep?: number;
 }

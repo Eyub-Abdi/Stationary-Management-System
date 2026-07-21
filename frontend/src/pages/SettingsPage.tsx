@@ -248,11 +248,13 @@ function AutoBackupSection() {
   const runBackup = useRunLocalBackup();
   const [dir, setDir] = useState('');
   const [time, setTime] = useState('22:00');
+  const [keep, setKeep] = useState('3');
 
   useEffect(() => {
     if (settings) {
       setDir(settings.backupDir ?? '');
       setTime(settings.backupTime ?? '22:00');
+      setKeep(String(settings.backupKeep ?? 3));
     }
   }, [settings]);
 
@@ -289,6 +291,19 @@ function AutoBackupSection() {
     }
   };
 
+  const saveKeep = async () => {
+    const n = Number(keep);
+    if (!Number.isInteger(n) || n < 1 || n > 30) {
+      return toast.error('Enter a number between 1 and 30');
+    }
+    try {
+      await update.mutateAsync({ backupKeep: n });
+      toast.success('Saved', `Keeping the newest ${n} backup${n === 1 ? '' : 's'}.`);
+    } catch (e) {
+      toast.error('Could not save', extractMessage(e));
+    }
+  };
+
   const backupNow = async () => {
     try {
       const r = await runBackup.mutateAsync();
@@ -300,6 +315,7 @@ function AutoBackupSection() {
 
   const dirDirty = !!settings && dir.trim() !== (settings.backupDir ?? '');
   const timeDirty = !!settings && time !== (settings.backupTime ?? '22:00');
+  const keepDirty = !!settings && keep !== String(settings.backupKeep ?? 3);
 
   return (
     <Card>
@@ -377,6 +393,31 @@ function AutoBackupSection() {
                   className="w-40 font-mono-data"
                 />
                 <Button variant="outline" icon="check" onClick={saveTime} loading={update.isPending} disabled={!timeDirty}>
+                  Save
+                </Button>
+              </div>
+            </Field>
+
+            <Field
+              label="Backups to keep"
+              hint="Each new backup replaces the oldest once this many exist, so old copies don't fill the disk."
+            >
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={keep}
+                  onChange={(e) => setKeep(e.target.value)}
+                  className="w-40 font-mono-data"
+                />
+                <Button
+                  variant="outline"
+                  icon="check"
+                  onClick={saveKeep}
+                  loading={update.isPending}
+                  disabled={!keepDirty}
+                >
                   Save
                 </Button>
               </div>

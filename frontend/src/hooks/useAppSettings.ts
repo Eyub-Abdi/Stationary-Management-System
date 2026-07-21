@@ -9,6 +9,8 @@ export interface AppSettings {
   /** Local time of day (HH:mm) the daily backup runs. */
   backupTime: string;
   backupDir: string | null;
+  /** How many backup files to keep; a new backup replaces the oldest. */
+  backupKeep: number;
   lastBackupAt: string | null;
   lastBackupStatus: string | null;
   lastBackupPath: string | null;
@@ -24,6 +26,7 @@ export interface UpdateAppSettingsInput {
   autoBackupEnabled?: boolean;
   backupTime?: string;
   backupDir?: string;
+  backupKeep?: number;
 }
 
 /** Shop branding (name, branch). Read by any signed-in user to render the UI. */

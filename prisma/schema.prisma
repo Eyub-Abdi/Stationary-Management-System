@@ -986,6 +986,9 @@ model AppSetting {
   backupTime        String   @default("22:00")
   // Optional custom folder; null = OS default (D:\STMS-Backups on Windows).
   backupDir         String?
+  // How many backup files to keep. Each new backup replaces the oldest once
+  // this many exist — old copies are not worth the disk on a shop machine.
+  backupKeep        Int      @default(3)
   lastBackupAt      DateTime?
   // "ok" after a successful run, or a short error message; null = never run.
   lastBackupStatus  String?

@@ -1,4 +1,6 @@
 import { execSync } from 'child_process';
+import { mkdirSync, readdirSync, rmSync } from 'fs';
+import { join } from 'path';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { AuditService } from '../../src/modules/audit/audit.service';
 import { BackupService } from '../../src/modules/backup/backup.service';
@@ -164,6 +166,32 @@ describeDb('Backup & restore (integration)', () => {
     );
     expect(restored[0].exists).toBe(true);
     expect(await prisma.accountingPeriod.count()).toBe(0);
+  });
+
+  it('keeps only the newest N backups, replacing the oldest', async () => {
+    const dir = join(process.cwd(), 'backups', 'tmp', `keep_${Date.now()}`);
+    mkdirSync(dir, { recursive: true });
+    await prisma.appSetting.upsert({
+      where: { id: 'singleton' },
+      create: { id: 'singleton', backupDir: dir, backupKeep: 3 },
+      update: { backupDir: dir, backupKeep: 3 },
+    });
+
+    // Five backups in a row; only the newest three should survive.
+    const written: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const r = await backup.runLocalBackup();
+      written.push(r.filename);
+      // Distinct filenames come from a per-second stamp, so space them out.
+      await new Promise((r2) => setTimeout(r2, 1100));
+    }
+
+    const left = readdirSync(dir).filter((n) => n.endsWith('.dump')).sort();
+    expect(left).toHaveLength(3);
+    // The survivors are the last three written, not an arbitrary three.
+    expect(left).toEqual(written.slice(-3).sort());
+
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it('records the audit row when the signed-in user does exist in the backup', async () => {

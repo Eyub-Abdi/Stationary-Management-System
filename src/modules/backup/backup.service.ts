@@ -15,8 +15,11 @@ export const BACKUP_TMP_DIR = join(process.cwd(), 'backups', 'tmp');
 
 /** Folder name used for on-disk automatic backups. */
 const BACKUP_FOLDER = 'STMS-Backups';
-/** Auto-backups older than this many days are pruned. */
-const RETENTION_DAYS = 30;
+/** Backup files kept on disk when the setting is missing or out of range. */
+const DEFAULT_BACKUP_KEEP = 3;
+/** Guard rails for the admin-set value — always keep at least one. */
+const MIN_BACKUP_KEEP = 1;
+const MAX_BACKUP_KEEP = 30;
 
 type PgTool = 'pg_dump' | 'pg_restore' | 'psql';
 
@@ -192,7 +195,9 @@ export class BackupService {
       ]);
       await this.run(this.resolveBin('pg_restore'), ['--list', path]);
       const sizeBytes = statSync(path).size;
-      this.prune(dir);
+      // Prune after the new file is written and verified, so a failed backup
+      // never costs an existing copy.
+      this.prune(dir, await this.backupKeep());
       await this.prisma.appSetting.update({
         where: { id: 'singleton' },
         data: { lastBackupAt: new Date(), lastBackupStatus: 'ok', lastBackupPath: path },
@@ -328,18 +333,37 @@ export class BackupService {
     return full;
   }
 
-  /** Deletes auto-backup dumps older than the retention window. */
-  private prune(dir: string): void {
-    const cutoff = Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  /**
+   * Keeps only the newest `keep` backups, deleting the rest — a new backup
+   * replaces the oldest copy. Age-based retention was piling up files nobody
+   * wanted on a machine with one disk.
+   */
+  private prune(dir: string, keep: number): void {
     try {
-      for (const name of readdirSync(dir)) {
-        if (!/^kj_\d{14}\.dump$/.test(name)) continue;
-        const full = join(dir, name);
-        if (statSync(full).mtimeMs < cutoff) unlinkSync(full);
+      const files = readdirSync(dir)
+        .filter((n) => /^kj_\d{14}\.dump$/.test(n))
+        .map((name) => {
+          const full = join(dir, name);
+          return { full, mtimeMs: statSync(full).mtimeMs };
+        })
+        // Newest first, so everything past `keep` is the older tail.
+        .sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+      for (const stale of files.slice(keep)) {
+        unlinkSync(stale.full);
+        this.logger.log(`Pruned old backup ${stale.full}`);
       }
     } catch (e) {
       this.logger.warn(`Backup prune skipped: ${(e as Error).message}`);
     }
+  }
+
+  /** How many backups to keep, from settings, clamped to something sane. */
+  private async backupKeep(): Promise<number> {
+    const s = await this.prisma.appSetting.findUnique({ where: { id: 'singleton' } });
+    const value = (s as { backupKeep?: number } | null)?.backupKeep;
+    if (!Number.isFinite(value)) return DEFAULT_BACKUP_KEEP;
+    return Math.min(MAX_BACKUP_KEEP, Math.max(MIN_BACKUP_KEEP, Number(value)));
   }
 
   /**

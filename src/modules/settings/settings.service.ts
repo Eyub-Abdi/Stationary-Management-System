@@ -37,6 +37,7 @@ export class SettingsService {
     // `backupTime` widened until the Prisma client is regenerated to include it.
     if (dto.backupTime !== undefined) (data as { backupTime?: string }).backupTime = dto.backupTime;
     if (dto.backupDir !== undefined) data.backupDir = dto.backupDir.trim() || null;
+    if (dto.backupKeep !== undefined) data.backupKeep = dto.backupKeep;
     return this.prisma.appSetting.upsert({
       where: { id: SETTINGS_ID },
       create: { id: SETTINGS_ID, ...(data as Prisma.AppSettingCreateInput) },
