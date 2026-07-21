@@ -62,21 +62,12 @@ enum InventoryMovementType {
   RETURN
 }
 
-enum ExpenseCategory {
-  RENT
-  SALARY
-  ELECTRICITY
-  INTERNET
-  TONER
-  PAPER
-  TRANSPORT
-  FOOD
-  // Itemized buying of goods for internal/office use (not for resale).
-  OFFICE_SUPPLIES
-  MISCELLANEOUS
+enum CashSessionStatus {
+  OPEN
+  CLOSED
 }
 
-enum CashSessionStatus {
+enum PeriodStatus {
   OPEN
   CLOSED
 }
@@ -139,6 +130,7 @@ model User {
   customerPayments     CustomerPayment[]
   supplierPayments     SupplierPayment[]
   auditLogs            AuditLog[]
+  closedPeriods        AccountingPeriod[]
 
   @@index([role])
   @@index([isActive])
@@ -782,9 +774,35 @@ model InventoryAdjustment {
 // Expenses
 // ----------------------------------------------------------------------------
 
+// Admin-managed list of expense categories. Seeded with the original fixed set,
+// but fully CRUD-able: admins may add their own, rename them, pick an icon and
+// choose which ones staff may use.
+model ExpenseCategory {
+  id           String  @id @default(uuid()) @db.Uuid
+  name         String  @unique
+  // Material Symbols icon name shown next to the category in the UI.
+  icon         String  @default("category")
+  // "Petty cash": staff may record and see these. Fixed overheads (rent,
+  // salary, electricity, internet) stay management-only by default.
+  staffAllowed Boolean @default(false)
+  // Archived categories keep their history but disappear from the pickers.
+  isActive     Boolean @default(true)
+  // Stable handle for categories the code itself resolves (OFFICE_SUPPLIES).
+  // Null for admin-created ones; those carry no behaviour beyond their name.
+  systemKey    String? @unique
+  sortOrder    Int     @default(100)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  expenses Expense[]
+
+  @@index([isActive])
+  @@map("expense_categories")
+}
+
 model Expense {
   id            String          @id @default(uuid()) @db.Uuid
-  category      ExpenseCategory
+  categoryId    String          @db.Uuid
   amount        Decimal         @db.Decimal(14, 2)
   expenseDate   DateTime
   description   String?
@@ -795,12 +813,13 @@ model Expense {
   cashSessionId String?         @db.Uuid
   createdAt     DateTime        @default(now())
 
-  user        User          @relation(fields: [userId], references: [id])
-  cashSession CashSession?  @relation(fields: [cashSessionId], references: [id])
+  user        User            @relation(fields: [userId], references: [id])
+  cashSession CashSession?    @relation(fields: [cashSessionId], references: [id])
+  category    ExpenseCategory @relation(fields: [categoryId], references: [id])
   // Line items for itemized expenses (office/internal-use purchases).
   items       ExpenseItem[]
 
-  @@index([category])
+  @@index([categoryId])
   @@index([expenseDate])
   @@index([userId])
   @@index([cashSessionId])
@@ -821,6 +840,46 @@ model ExpenseItem {
 
   @@index([expenseId])
   @@map("expense_items")
+}
+
+// ----------------------------------------------------------------------------
+// Month-end close ("kufunga mahesabu")
+// ----------------------------------------------------------------------------
+
+// One row per calendar month that has been closed at least once. Closing
+// snapshots the month's figures and freezes the entries behind them, so a
+// reported profit cannot silently change after the fact. A row is only created
+// on the first close; reopening flips the status and keeps the snapshot as a
+// record of what was reported at the time.
+model AccountingPeriod {
+  id     String       @id @default(uuid()) @db.Uuid
+  year   Int
+  month  Int // 1-12
+  status PeriodStatus @default(CLOSED)
+
+  // Figures as computed at close time (never recomputed while closed).
+  grossSales  Decimal @db.Decimal(14, 2)
+  refunds     Decimal @db.Decimal(14, 2)
+  revenue     Decimal @db.Decimal(14, 2)
+  cogs        Decimal @db.Decimal(14, 2)
+  grossProfit Decimal @db.Decimal(14, 2)
+  expenses    Decimal @db.Decimal(14, 2)
+  netProfit   Decimal @db.Decimal(14, 2)
+  purchases   Decimal @db.Decimal(14, 2)
+  saleCount   Int
+
+  notes      String?
+  closedAt   DateTime  @default(now())
+  closedById String    @db.Uuid
+  reopenedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  closedBy User @relation(fields: [closedById], references: [id])
+
+  @@unique([year, month])
+  @@index([status])
+  @@map("accounting_periods")
 }
 
 // ----------------------------------------------------------------------------

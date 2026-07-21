@@ -101,12 +101,74 @@ function describe(log: AuditLog): Described {
         icon: 'local_shipping',
         color: 'amber',
       };
+    // Categories are user-managed rows now, so their names are already
+    // display-ready — no humanize().
     case 'EXPENSE_CREATED':
       return {
         title: 'Expense recorded',
-        detail: [m.category && humanize(m.category), m.amount != null && money(m.amount)].filter(Boolean).join(' · ') || null,
+        detail: [m.category, m.amount != null && money(m.amount)].filter(Boolean).join(' · ') || null,
         icon: 'receipt_long',
         color: 'amber',
+      };
+    case 'EXPENSE_UPDATED':
+      return {
+        title: 'Expense edited',
+        detail:
+          [
+            m.before?.category,
+            m.before?.amount != null && money(m.before.amount),
+            m.after?.amount != null && `→ ${money(m.after.amount)}`,
+          ]
+            .filter(Boolean)
+            .join(' · ') || null,
+        icon: 'edit',
+        color: 'amber',
+      };
+    case 'EXPENSE_DELETED':
+      return {
+        title: 'Expense deleted',
+        detail: [m.category, m.amount != null && money(m.amount)].filter(Boolean).join(' · ') || null,
+        icon: 'delete',
+        color: 'red',
+      };
+    case 'PERIOD_CLOSED':
+      return {
+        title: 'Closed the books',
+        detail:
+          [m.period, m.netProfit != null && `${money(m.netProfit)} net profit`]
+            .filter(Boolean)
+            .join(' · ') || null,
+        icon: 'lock',
+        color: 'green',
+      };
+    case 'PERIOD_REOPENED':
+      return {
+        title: 'Reopened a closed month',
+        detail: [m.period, m.reason].filter(Boolean).join(' · ') || null,
+        icon: 'lock_open',
+        color: 'red',
+      };
+    case 'EXPENSE_CATEGORY_CREATED':
+      return {
+        title: 'Expense category created',
+        detail: m.name ?? null,
+        icon: 'category',
+        color: 'blue',
+      };
+    case 'EXPENSE_CATEGORY_UPDATED':
+      return {
+        title: 'Expense category updated',
+        detail:
+          [m.name, m.isActive === false && 'archived'].filter(Boolean).join(' · ') || null,
+        icon: 'category',
+        color: 'blue',
+      };
+    case 'EXPENSE_CATEGORY_DELETED':
+      return {
+        title: 'Expense category deleted',
+        detail: m.name ?? null,
+        icon: 'category',
+        color: 'red',
       };
     case 'PURCHASE_CREATED':
       return {

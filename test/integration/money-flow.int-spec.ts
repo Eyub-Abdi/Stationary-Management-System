@@ -7,6 +7,7 @@ import { CustomersService } from '../../src/modules/customers/customers.service'
 import { SalesService } from '../../src/modules/sales/sales.service';
 import { PurchasesService } from '../../src/modules/purchases/purchases.service';
 import { CashService } from '../../src/modules/cash/cash.service';
+import { AccountingPeriodsService } from '../../src/modules/accounting/accounting-periods.service';
 
 /**
  * End-to-end money flow against a REAL Postgres (a throwaway DB). Unlike the
@@ -31,6 +32,8 @@ describeDb('Money flow (integration)', () => {
   let userId: string;
   let sessionId: string;
   let productId: string;
+  // Stock and pricing live on the variant; every product has at least one.
+  let variantId: string;
 
   beforeAll(async () => {
     process.env.DATABASE_URL = TEST_DB;
@@ -47,8 +50,10 @@ describeDb('Money flow (integration)', () => {
     const sequences = new SequenceService();
     const inventory = new InventoryService();
     customers = new CustomersService(prisma, audit);
-    sales = new SalesService(prisma, inventory, sequences, audit, customers);
-    purchases = new PurchasesService(prisma, inventory, sequences, audit);
+    // Real period service: no month is closed here, so the lock lets writes through.
+    const periods = new AccountingPeriodsService(prisma, audit);
+    sales = new SalesService(prisma, inventory, sequences, audit, customers, periods);
+    purchases = new PurchasesService(prisma, inventory, sequences, audit, periods);
     cash = new CashService(prisma, audit);
 
     // Clean slate (order-independent thanks to CASCADE).
@@ -72,10 +77,25 @@ describeDb('Money flow (integration)', () => {
     });
     sessionId = session.id;
 
+    const stamp = Date.now();
     const product = await prisma.product.create({
-      data: { sku: `INT-${Date.now()}`, name: 'Test Pen', sellingPrice: '1000', currentStock: 0 },
+      data: {
+        sku: `INT-${stamp}`,
+        name: 'Test Pen',
+        variants: {
+          create: {
+            sku: `INT-${stamp}-V`,
+            label: 'Default',
+            sellingPrice: '1000',
+            currentStock: 0,
+            isDefault: true,
+          },
+        },
+      },
+      include: { variants: true },
     });
     productId = product.id;
+    variantId = product.variants[0].id;
   });
 
   afterAll(async () => {
@@ -87,29 +107,29 @@ describeDb('Money flow (integration)', () => {
       {
         purchaseDate: new Date(),
         paymentMethod: 'CASH',
-        items: [{ productId, quantity: 100, unitCost: 500 }],
+        items: [{ variantId, quantity: 100, unitCost: 500 }],
       },
       userId,
     );
 
-    const p = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
-    expect(p.currentStock).toBe(100);
-    const batch = await prisma.inventoryBatch.findFirstOrThrow({ where: { productId } });
+    const v = await prisma.productVariant.findUniqueOrThrow({ where: { id: variantId } });
+    expect(v.currentStock).toBe(100);
+    const batch = await prisma.inventoryBatch.findFirstOrThrow({ where: { variantId } });
     expect(batch.remainingQuantity).toBe(100);
     expect(batch.unitCost.toString()).toBe('500');
   });
 
   it('rings a cash sale: draws stock FIFO, books COGS and change', async () => {
     const sale = await sales.create(
-      { cashSessionId: sessionId, items: [{ itemType: 'PRODUCT', productId, quantity: 10 }], cashReceived: 12000 },
+      { cashSessionId: sessionId, items: [{ itemType: 'PRODUCT', variantId, quantity: 10 }], cashReceived: 12000 },
       userId,
     );
     expect(sale.total.toString()).toBe('10000');
     expect(sale.changeGiven.toString()).toBe('2000');
     expect(sale.totalCogs.toString()).toBe('5000'); // 10 × 500
 
-    const p = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
-    expect(p.currentStock).toBe(90);
+    const v = await prisma.productVariant.findUniqueOrThrow({ where: { id: variantId } });
+    expect(v.currentStock).toBe(90);
   });
 
   it('rings a credit sale within the limit and grows the receivable', async () => {
@@ -120,7 +140,7 @@ describeDb('Money flow (integration)', () => {
     const sale = await sales.create(
       {
         cashSessionId: sessionId,
-        items: [{ itemType: 'PRODUCT', productId, quantity: 5 }],
+        items: [{ itemType: 'PRODUCT', variantId, quantity: 5 }],
         paymentMethod: 'CREDIT',
         customerId: customer.id,
         cashReceived: 0,
@@ -148,7 +168,7 @@ describeDb('Money flow (integration)', () => {
       sales.create(
         {
           cashSessionId: sessionId,
-          items: [{ itemType: 'PRODUCT', productId, quantity: 5 }], // 5000 > 1000
+          items: [{ itemType: 'PRODUCT', variantId, quantity: 5 }], // 5000 > 1000
           paymentMethod: 'CREDIT',
           customerId: customer.id,
           cashReceived: 0,
@@ -159,7 +179,7 @@ describeDb('Money flow (integration)', () => {
   });
 
   it('reconciles the till: opening + cash sales + repayments − cash purchases', async () => {
-    const summary = await cash.summary(sessionId);
+    const summary = await cash.summary(sessionId, userId, true);
     const b = summary.breakdown;
     // 100000 opening + 10000 cash sale (amountPaid) + 2000 repayment − 50000 purchase
     expect(b.cashSales).toBe('10000.00');

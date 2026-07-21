@@ -19,6 +19,8 @@ import { BackupModule } from './modules/backup/backup.module';
 import { CashModule } from './modules/cash/cash.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { CustomersModule } from './modules/customers/customers.module';
+import { AccountingModule } from './modules/accounting/accounting.module';
+import { ExpenseCategoriesModule } from './modules/expense-categories/expense-categories.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { HealthModule } from './modules/health/health.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
@@ -94,6 +96,8 @@ import { UsersModule } from './modules/users/users.module';
     PurchasesModule,
     InventoryModule,
     SalesModule,
+    AccountingModule,
+    ExpenseCategoriesModule,
     ExpensesModule,
     CashModule,
     ReportsModule,

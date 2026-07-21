@@ -14,15 +14,22 @@ import { SellUnit } from '../../common/enums/sell-unit.enum';
 describe('SalesService', () => {
   const D = (n: number) => new Prisma.Decimal(n);
 
-  const PRODUCT = {
-    id: 'p1',
-    name: 'Blue Pen',
+  // Stock and pricing live on the variant; BULK is the wholesale price tier.
+  const VARIANT = {
+    id: 'v1',
+    label: 'Default',
     status: 'ACTIVE',
+    productId: 'p1',
     sellingPrice: D(12000),
-    baseUnit: 'pcs',
-    bulkUnit: 'Box',
-    unitSize: 12,
-    bulkSellingPrice: D(130000),
+    wholesalePrice: D(10000),
+    product: {
+      id: 'p1',
+      name: 'Blue Pen',
+      status: 'ACTIVE',
+      baseUnit: 'pcs',
+      bulkUnit: 'Box',
+      unitSize: 12,
+    },
   };
 
   // Builds a SalesService with a mocked tx and records key writes.
@@ -58,8 +65,8 @@ describe('SalesService', () => {
           return Promise.resolve({});
         }),
       },
-      product: { findUnique: jest.fn().mockResolvedValue(PRODUCT) },
-      service: { findUnique: jest.fn() },
+      productVariant: { findUnique: jest.fn().mockResolvedValue(VARIANT) },
+      serviceVariant: { findUnique: jest.fn() },
       saleItem: {
         create: jest.fn().mockImplementation(({ data }) => {
           record('saleItem.create', data);
@@ -89,6 +96,8 @@ describe('SalesService', () => {
     const sequences = { next: jest.fn().mockResolvedValue('DOC-1') };
     const audit = { recordTx: jest.fn().mockResolvedValue(undefined) };
     const customers = { allocateToInvoices: jest.fn().mockResolvedValue([]) };
+    // Books open by default; individual tests make assertOpen throw.
+    const periods = { assertOpen: jest.fn().mockResolvedValue(undefined) };
 
     const service = new SalesService(
       prisma as never,
@@ -96,14 +105,15 @@ describe('SalesService', () => {
       sequences as never,
       audit as never,
       customers as never,
+      periods as never,
     );
-    return { service, calls };
+    return { service, calls, tx, periods };
   };
 
   describe('create', () => {
     const cashLine = (over: Partial<CreateSaleDto> = {}): CreateSaleDto => ({
       cashSessionId: 'sess1',
-      items: [{ itemType: 'PRODUCT', productId: 'p1', quantity: 2 }],
+      items: [{ itemType: 'PRODUCT', variantId: 'v1', quantity: 2 }],
       cashReceived: 30000,
       ...over,
     });
@@ -183,29 +193,47 @@ describe('SalesService', () => {
       ).rejects.toThrow(/cannot exceed total/i);
     });
 
-    it('draws pieces = quantity × pack size when selling by the bulk unit', async () => {
+    it('charges the wholesale price tier when selling BULK, still by the piece', async () => {
       const { service, calls } = build();
       await service.create(
         {
           cashSessionId: 'sess1',
-          items: [{ itemType: 'PRODUCT', productId: 'p1', quantity: 2, sellUnit: SellUnit.BULK }],
-          cashReceived: 300000,
+          items: [{ itemType: 'PRODUCT', variantId: 'v1', quantity: 2, sellUnit: SellUnit.BULK }],
+          cashReceived: 25000,
         },
         'user1',
       );
 
-      // 2 boxes × 12 = 24 pieces consumed from inventory.
-      expect(calls['consume'][0]).toBe(24);
-      expect((calls['movement'][0] as { quantity: number }).quantity).toBe(-24);
+      // Everything sells by the piece now — BULK only switches the price tier.
+      expect(calls['consume'][0]).toBe(2);
+      expect((calls['movement'][0] as { quantity: number }).quantity).toBe(-2);
 
       const item = calls['saleItem.create'][0] as Record<string, unknown>;
-      expect(item.unitLabel).toBe('Box');
-      expect(item.unitSize).toBe(12);
-      expect((item.unitPriceSnapshot as Prisma.Decimal).toString()).toBe('130000');
+      expect(item.unitLabel).toBe('pcs');
+      expect(item.unitSize).toBe(1);
+      expect((item.unitPriceSnapshot as Prisma.Decimal).toString()).toBe('10000');
 
       const sale = calls['sale.create'][0] as Record<string, Prisma.Decimal>;
-      expect(sale.total.toString()).toBe('260000'); // 2 × 130000
-      expect(sale.changeGiven.toString()).toBe('40000');
+      expect(sale.total.toString()).toBe('20000'); // 2 × 10000 wholesale
+      expect(sale.changeGiven.toString()).toBe('5000');
+    });
+
+    it('rejects a BULK line when the variant has no wholesale price', async () => {
+      const { service, tx } = build();
+      (tx.productVariant.findUnique as jest.Mock).mockResolvedValueOnce({
+        ...VARIANT,
+        wholesalePrice: D(0),
+      });
+      await expect(
+        service.create(
+          {
+            cashSessionId: 'sess1',
+            items: [{ itemType: 'PRODUCT', variantId: 'v1', quantity: 2, sellUnit: SellUnit.BULK }],
+            cashReceived: 25000,
+          },
+          'user1',
+        ),
+      ).rejects.toThrow(/no wholesale price/i);
     });
   });
 
@@ -228,6 +256,7 @@ describe('SalesService', () => {
             id: 'si1',
             itemType: 'PRODUCT',
             productId: 'p1',
+            variantId: 'v1',
             nameSnapshot: 'Blue Pen',
             quantity: 2,
             unitSize: 1,
@@ -275,6 +304,7 @@ describe('SalesService', () => {
       const sequences = { next: jest.fn().mockResolvedValue('RET-1') };
       const audit = { recordTx: jest.fn().mockResolvedValue(undefined) };
       const customers = { allocateToInvoices: jest.fn().mockResolvedValue([]) };
+      const periods = { assertOpen: jest.fn().mockResolvedValue(undefined) };
 
       const service = new SalesService(
         prisma as never,
@@ -282,6 +312,7 @@ describe('SalesService', () => {
         sequences as never,
         audit as never,
         customers as never,
+        periods as never,
       );
       return { service, calls, customers };
     };

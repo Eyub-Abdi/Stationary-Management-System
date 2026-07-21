@@ -10,6 +10,7 @@ import Decimal from 'decimal.js';
 import { paginate } from '../../common/dto/pagination.dto';
 import { add, money, mul, round, sub, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccountingPeriodsService } from '../accounting/accounting-periods.service';
 import { AuditService } from '../audit/audit.service';
 import { CustomersService } from '../customers/customers.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -56,6 +57,7 @@ export class SalesService {
     private readonly sequences: SequenceService,
     private readonly audit: AuditService,
     private readonly customers: CustomersService,
+    private readonly periods: AccountingPeriodsService,
   ) {}
 
   /**
@@ -368,6 +370,9 @@ export class SalesService {
           'Sale has partial returns; void is not allowed. Reverse via returns instead.',
         );
       }
+      // Voiding removes the sale from its month's revenue — refuse once those
+      // books are closed. A return (dated today) is the correct reversal there.
+      await this.periods.assertOpen(sale.createdAt, 'this sale');
 
       for (const item of sale.items) {
         // Every allocation on the line (product line, or one per consumed product

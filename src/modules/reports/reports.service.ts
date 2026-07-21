@@ -150,13 +150,22 @@ export class ReportsService {
         ? { expenseDate: { gte: query.from, lte: query.to } }
         : {};
     const grouped = await this.prisma.expense.groupBy({
-      by: ['category'],
+      by: ['categoryId'],
       where,
       _sum: { amount: true },
       _count: true,
     });
+    // Categories are user-managed rows now, so resolve their display names.
+    const categories = await this.prisma.expenseCategory.findMany({
+      where: { id: { in: grouped.map((g) => g.categoryId) } },
+      select: { id: true, name: true, icon: true },
+    });
+    const byId = new Map(categories.map((c) => [c.id, c]));
+
     return grouped.map((g) => ({
-      category: g.category,
+      categoryId: g.categoryId,
+      category: byId.get(g.categoryId)?.name ?? 'Unknown',
+      icon: byId.get(g.categoryId)?.icon ?? 'category',
       total: money(g._sum.amount ?? 0).toFixed(2),
       count: g._count,
     }));

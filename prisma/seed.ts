@@ -39,6 +39,30 @@ async function main() {
   }
   console.log(`✓ ${categories.length} categories ready`);
 
+  // ---- Expense categories -------------------------------------------------
+  // The migration seeds these too; upserting keeps them present after a manual
+  // wipe. Admins may add/rename/archive their own from Expenses → Manage.
+  const expenseCategories = [
+    { systemKey: 'RENT', name: 'Rent', icon: 'home_work', staffAllowed: false, sortOrder: 10 },
+    { systemKey: 'SALARY', name: 'Salary', icon: 'badge', staffAllowed: false, sortOrder: 20 },
+    { systemKey: 'ELECTRICITY', name: 'Electricity', icon: 'bolt', staffAllowed: false, sortOrder: 30 },
+    { systemKey: 'INTERNET', name: 'Internet', icon: 'wifi', staffAllowed: false, sortOrder: 40 },
+    { systemKey: 'TONER', name: 'Toner', icon: 'opacity', staffAllowed: true, sortOrder: 50 },
+    { systemKey: 'PAPER', name: 'Paper', icon: 'description', staffAllowed: true, sortOrder: 60 },
+    { systemKey: 'TRANSPORT', name: 'Transport', icon: 'local_shipping', staffAllowed: true, sortOrder: 70 },
+    { systemKey: 'FOOD', name: 'Food', icon: 'restaurant', staffAllowed: true, sortOrder: 80 },
+    { systemKey: 'OFFICE_SUPPLIES', name: 'Office / Internal Use', icon: 'business_center', staffAllowed: false, sortOrder: 90 },
+    { systemKey: 'MISCELLANEOUS', name: 'Miscellaneous', icon: 'category', staffAllowed: true, sortOrder: 100 },
+  ];
+  for (const c of expenseCategories) {
+    await prisma.expenseCategory.upsert({
+      where: { systemKey: c.systemKey },
+      update: {},
+      create: c,
+    });
+  }
+  console.log(`✓ ${expenseCategories.length} expense categories ready`);
+
   const writing = await prisma.category.findUniqueOrThrow({ where: { name: 'Writing' } });
   const paper = await prisma.category.findUniqueOrThrow({ where: { name: 'Paper' } });
   const office = await prisma.category.findUniqueOrThrow({ where: { name: 'Office Supplies' } });

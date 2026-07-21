@@ -8,6 +8,7 @@ import Decimal from 'decimal.js';
 import { paginate, PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { add, money, mul, round, sub, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccountingPeriodsService } from '../accounting/accounting-periods.service';
 import { AuditService } from '../audit/audit.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { SequenceService } from '../shared/sequence.service';
@@ -20,6 +21,7 @@ export class PurchasesService {
     private readonly inventory: InventoryService,
     private readonly sequences: SequenceService,
     private readonly audit: AuditService,
+    private readonly periods: AccountingPeriodsService,
   ) {}
 
   /**
@@ -33,6 +35,9 @@ export class PurchasesService {
     if (dto.items.length === 0) {
       throw new BadRequestException('A purchase must contain at least one item');
     }
+
+    // Backdating stock into a closed month would move its reported purchases.
+    await this.periods.assertOpen(dto.purchaseDate, 'a purchase dated then');
 
     const paymentMethod = dto.paymentMethod ?? 'CASH';
     if (paymentMethod === 'CREDIT' && !dto.supplierId) {

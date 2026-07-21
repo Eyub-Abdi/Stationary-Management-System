@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { SellUnit } from '../../common/enums/sell-unit.enum';
 import { PurchasesService } from './purchases.service';
@@ -10,12 +11,18 @@ import { CreatePurchaseDto } from './dto/create-purchase.dto';
  * are mocked so the orchestration logic is asserted without a database.
  */
 describe('PurchasesService.create', () => {
-  const product = {
-    id: 'p1',
-    name: 'Blue Pen',
-    baseUnit: 'pcs',
-    bulkUnit: 'Box',
-    unitSize: 12,
+  // Stock lives on variants; the product carries the dual-unit configuration.
+  const variant = {
+    id: 'v1',
+    label: 'Default',
+    productId: 'p1',
+    sellingPrice: new Prisma.Decimal(1000),
+    product: {
+      name: 'Blue Pen',
+      baseUnit: 'pcs',
+      bulkUnit: 'Box',
+      unitSize: 12,
+    },
   };
 
   const build = (opts: { session?: { id: string } | null } = {}) => {
@@ -31,10 +38,10 @@ describe('PurchasesService.create', () => {
         }),
         findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'pur1', items: [] }),
       },
-      product: {
-        findMany: jest.fn().mockResolvedValue([product]),
+      productVariant: {
+        findMany: jest.fn().mockResolvedValue([variant]),
         update: jest.fn().mockImplementation(({ data }) => {
-          record('product.update', data);
+          record('variant.update', data);
           return Promise.resolve({});
         }),
       },
@@ -73,19 +80,26 @@ describe('PurchasesService.create', () => {
     const sequences = { next: jest.fn().mockResolvedValue('PUR-1') };
     const audit = { recordTx: jest.fn().mockResolvedValue(undefined) };
 
+    // Books open by default; a test below makes assertOpen throw.
+    const periods = { assertOpen: jest.fn().mockResolvedValue(undefined) };
+
     const service = new PurchasesService(
       prisma as never,
       inventory as never,
       sequences as never,
       audit as never,
+      periods as never,
     );
-    return { service, calls, prisma, tx };
+    return { service, calls, prisma, tx, periods };
   };
 
   const baseDto = (over: Partial<CreatePurchaseDto> = {}): CreatePurchaseDto => ({
     supplierId: 'sup1',
     purchaseDate: new Date('2026-06-23'),
-    items: [{ productId: 'p1', quantity: 5, unitCost: 6000, sellUnit: SellUnit.BULK }],
+    // 5 boxes of 12 pieces; unitSize now travels per line, not on the product.
+    items: [
+      { variantId: 'v1', quantity: 5, unitCost: 6000, sellUnit: SellUnit.BULK, unitSize: 12 },
+    ],
     ...over,
   });
 
@@ -102,8 +116,8 @@ describe('PurchasesService.create', () => {
     expect(move.quantity).toBe(60);
 
     // Reference buying price refreshed to the per-piece cost.
-    const prodUpdate = calls['product.update'][0] as { buyingPrice: Prisma.Decimal };
-    expect(prodUpdate.buyingPrice.toString()).toBe('500');
+    const variantUpdate = calls['variant.update'][0] as { buyingPrice: Prisma.Decimal };
+    expect(variantUpdate.buyingPrice.toString()).toBe('500');
   });
 
   it('settles a cash purchase fully and links it to the open till', async () => {
@@ -147,6 +161,16 @@ describe('PurchasesService.create', () => {
     await expect(
       service.create(baseDto({ paymentMethod: 'CREDIT', supplierId: undefined }), 'user1'),
     ).rejects.toThrow(/supplier is required/i);
+  });
+
+  it('refuses to backdate stock into a closed month', async () => {
+    const { service, periods, prisma } = build();
+    periods.assertOpen.mockRejectedValueOnce(
+      new BadRequestException('June 2026 has been closed'),
+    );
+    await expect(service.create(baseDto(), 'user1')).rejects.toThrow(/closed/i);
+    // Rejected before any stock or ledger write.
+    expect(prisma.runSerializable).not.toHaveBeenCalled();
   });
 
   it('returns the original purchase on a repeated idempotency key', async () => {

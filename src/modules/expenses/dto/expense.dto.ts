@@ -1,20 +1,19 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ExpenseCategory } from '@prisma/client';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsDate,
-  IsEnum,
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Min,
 } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
 
 export class CreateExpenseDto {
-  @ApiProperty({ enum: ExpenseCategory })
-  @IsEnum(ExpenseCategory)
-  category!: ExpenseCategory;
+  @ApiProperty({ format: 'uuid', description: 'Expense category id' })
+  @IsUUID()
+  categoryId!: string;
 
   @ApiProperty({ example: 15000 })
   @Type(() => Number)
@@ -33,11 +32,13 @@ export class CreateExpenseDto {
   description?: string;
 }
 
+export class UpdateExpenseDto extends PartialType(CreateExpenseDto) {}
+
 export class ExpenseQueryDto extends PaginationQueryDto {
-  @ApiPropertyOptional({ enum: ExpenseCategory })
+  @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
-  @IsEnum(ExpenseCategory)
-  category?: ExpenseCategory;
+  @IsUUID()
+  categoryId?: string;
 
   @ApiPropertyOptional({ type: String, format: 'date-time' })
   @IsOptional()

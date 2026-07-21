@@ -41,7 +41,6 @@ import {
   endOfToday,
   formatDate,
   formatDateTime,
-  humanize,
   num,
   startOfMonth,
   startOfToday,
@@ -111,7 +110,8 @@ export default function ReportsPage() {
     [series.data],
   );
   const mixData = useMemo(
-    () => (expenseMix.data ?? []).map((e) => ({ name: humanize(e.category), value: num(e.total) })),
+    // The API resolves category names, so they are already display-ready.
+    () => (expenseMix.data ?? []).map((e) => ({ name: e.category, value: num(e.total) })),
     [expenseMix.data],
   );
   const mixTotal = mixData.reduce((a, b) => a + b.value, 0);
@@ -301,8 +301,8 @@ export default function ReportsPage() {
               <THead><TH>Category</TH><TH align="center">Entries</TH><TH align="right">Total</TH><TH align="right">Share</TH></THead>
               <TBody>
                 {expenseMix.data!.map((e) => (
-                  <TR key={e.category}>
-                    <TD className="font-medium">{humanize(e.category)}</TD>
+                  <TR key={e.categoryId}>
+                    <TD className="font-medium">{e.category}</TD>
                     <TD align="center" className="font-mono-data">{e.count}</TD>
                     <TD align="right" className="font-mono-data font-semibold">{currency(e.total)}</TD>
                     <TD align="right" className="font-mono-data">{mixTotal ? Math.round((num(e.total) / mixTotal) * 100) : 0}%</TD>

@@ -39,7 +39,7 @@ import {
   startOfToday,
   timeAgo,
 } from '@/lib/utils';
-import { CHART_COLORS, EXPENSE_CATEGORY_ICON } from '@/lib/constants';
+import { CHART_COLORS, DEFAULT_EXPENSE_ICON } from '@/lib/constants';
 import type { SaleStatus } from '@/types';
 
 const STATUS_TONE: Record<SaleStatus, 'success' | 'error'> = {
@@ -302,11 +302,11 @@ export default function DashboardPage() {
                       className="flex items-center gap-3 rounded-xl border border-transparent p-3 transition-all hover:border-outline-variant hover:bg-surface-container-low"
                     >
                       <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-error-container text-error">
-                        <Icon name={EXPENSE_CATEGORY_ICON[e.category]} size={20} />
+                        <Icon name={e.category?.icon || DEFAULT_EXPENSE_ICON} size={20} />
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-body-sm font-semibold text-on-surface">
-                          {humanize(e.category)}
+                          {e.category?.name ?? '—'}
                         </p>
                         <p className="font-mono-data text-[11px] text-on-surface-variant">
                           {e.description?.slice(0, 28) || formatDate(e.expenseDate)} · {timeAgo(e.createdAt)}

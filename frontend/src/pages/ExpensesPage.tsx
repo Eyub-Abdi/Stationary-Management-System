@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   ErrorState,
   Field,
@@ -26,31 +27,52 @@ import {
 } from '@/components/ui';
 import { useToast } from '@/providers/ToastProvider';
 import { useAuth } from '@/providers/AuthProvider';
-import { useCreateExpense, useExpenses, useExpensesDaily } from '@/hooks/useExpenses';
-import { EXPENSE_CATEGORY_ICON, EXPENSE_CATEGORY_OPTIONS, PETTY_CASH_CATEGORIES } from '@/lib/constants';
+import {
+  useCreateExpense,
+  useDeleteExpense,
+  useExpenses,
+  useExpensesDaily,
+  useUpdateExpense,
+} from '@/hooks/useExpenses';
+import { useExpenseCategories } from '@/hooks/useExpenseCategories';
+import { ExpenseCategoryManagerModal } from '@/features/expenses/ExpenseCategoryManagerModal';
+import { DEFAULT_EXPENSE_ICON } from '@/lib/constants';
 import { extractMessage } from '@/lib/api';
-import { currency, endOfToday, formatDate, humanize, num, startOfMonth } from '@/lib/utils';
+import { currency, endOfToday, formatDate, num, startOfMonth } from '@/lib/utils';
 import { rangeFor, toDateInput, type RangeKey } from '@/lib/dateRange';
-import type { ExpenseCategory } from '@/types';
+import type { Expense, ExpenseCategory } from '@/types';
 
 type ViewKey = 'list' | 'daily';
 
-// Staff get petty cash only; fixed overheads (rent, salary, electricity, internet)
-// are management-only.
-const visibleCategoryOptions = (isAdmin: boolean) =>
-  isAdmin
-    ? EXPENSE_CATEGORY_OPTIONS
-    : EXPENSE_CATEGORY_OPTIONS.filter((o) => PETTY_CASH_CATEGORIES.includes(o.value));
+/** Categories offered when recording: active ones the caller may actually use.
+ *  The API already hides management-only categories from staff. */
+const selectableCategories = (categories: ExpenseCategory[] | undefined) =>
+  (categories ?? []).filter((c) => c.isActive);
+
+/** Mirrors the backend rule: anything in a closed till is frozen, and staff may
+ *  only correct their own entries on the day they recorded them. */
+const isSameDay = (iso: string) => {
+  const d = new Date(iso);
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+};
 
 export default function ExpensesPage() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
   const [searchParams] = useSearchParams();
   const initialDate = searchParams.get('date') ?? '';
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [category, setCategory] = useState<ExpenseCategory | ''>('');
+  const [categoryId, setCategoryId] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [editing, setEditing] = useState<Expense | null>(null);
+  const [deleting, setDeleting] = useState<Expense | null>(null);
   const [rangeKey, setRangeKey] = useState<RangeKey>(initialDate ? 'custom' : 'all');
   const [customFrom, setCustomFrom] = useState(initialDate);
   const [customTo, setCustomTo] = useState(initialDate);
@@ -66,9 +88,10 @@ export default function ExpensesPage() {
     page,
     limit: 12,
     search: search || undefined,
-    category: category || undefined,
+    categoryId: categoryId || undefined,
     ...range,
   });
+  const { data: categories } = useExpenseCategories();
 
   const daily = useExpensesDaily(range, view === 'daily');
   const dailyRows = daily.data ?? [];
@@ -83,9 +106,15 @@ export default function ExpensesPage() {
     setCustomTo(day);
     setRangeKey('custom');
     setSearch('');
-    setCategory('');
+    setCategoryId('');
     setPage(1);
     setView('list');
+  };
+
+  const canModify = (e: Expense) => {
+    if (e.cashSession?.status === 'CLOSED') return false;
+    if (isAdmin) return true;
+    return e.userId === user?.id && isSameDay(e.createdAt);
   };
 
   const monthExpenses = useExpenses({ from: startOfMonth(), to: endOfToday(), limit: 100 });
@@ -101,9 +130,16 @@ export default function ExpensesPage() {
             : 'Record day-to-day petty-cash spending (toner, paper, transport and the like).'
         }
         actions={
-          <Button icon="add" onClick={() => setCreateOpen(true)}>
-            {isAdmin ? 'Add Expense' : 'Add Petty Cash'}
-          </Button>
+          <>
+            {isAdmin && (
+              <Button variant="outline" icon="tune" onClick={() => setManageOpen(true)}>
+                Manage Categories
+              </Button>
+            )}
+            <Button icon="add" onClick={() => setCreateOpen(true)}>
+              {isAdmin ? 'Add Expense' : 'Add Petty Cash'}
+            </Button>
+          </>
         }
       />
 
@@ -188,10 +224,17 @@ export default function ExpensesPage() {
               </div>
             )}
             {view === 'list' && (
-              <Select value={category} onChange={(e) => { setCategory(e.target.value as ExpenseCategory | ''); setPage(1); }} className="w-52">
+              <Select
+                value={categoryId}
+                onChange={(e) => { setCategoryId(e.target.value); setPage(1); }}
+                className="w-52"
+              >
                 <option value="">All categories</option>
-                {visibleCategoryOptions(isAdmin).map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                {/* Archived categories still filter, so past entries stay reachable. */}
+                {(categories ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}{c.isActive ? '' : ' (archived)'}
+                  </option>
                 ))}
               </Select>
             )}
@@ -257,6 +300,7 @@ export default function ExpensesPage() {
                 <TH>Date</TH>
                 <TH>Recorded by</TH>
                 <TH align="right">Amount</TH>
+                <TH align="right">Actions</TH>
               </THead>
               <TBody>
                 {data!.data.map((e) => (
@@ -264,15 +308,39 @@ export default function ExpensesPage() {
                     <TD>
                       <span className="flex items-center gap-2.5">
                         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-error-container text-error">
-                          <Icon name={EXPENSE_CATEGORY_ICON[e.category]} size={18} />
+                          <Icon name={e.category?.icon || DEFAULT_EXPENSE_ICON} size={18} />
                         </span>
-                        <span className="font-medium">{humanize(e.category)}</span>
+                        <span className="font-medium">{e.category?.name ?? '—'}</span>
                       </span>
                     </TD>
                     <TD className="max-w-xs truncate text-on-surface-variant">{e.description || '—'}</TD>
                     <TD>{formatDate(e.expenseDate)}</TD>
                     <TD className="text-on-surface-variant">{e.user?.fullName ?? '—'}</TD>
                     <TD align="right" className="font-mono-data font-bold text-error">−{currency(e.amount)}</TD>
+                    <TD align="right">
+                      {canModify(e) ? (
+                        <span className="flex justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setEditing(e)}
+                            className="rounded-lg p-1.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
+                            title="Edit expense"
+                          >
+                            <Icon name="edit" size={18} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeleting(e)}
+                            className="rounded-lg p-1.5 text-on-surface-variant hover:bg-error-container hover:text-error"
+                            title="Delete expense"
+                          >
+                            <Icon name="delete" size={18} />
+                          </button>
+                        </span>
+                      ) : (
+                        <span className="text-[12px] text-on-surface-variant">Locked</span>
+                      )}
+                    </TD>
                   </TR>
                 ))}
               </TBody>
@@ -282,42 +350,136 @@ export default function ExpensesPage() {
         )}
       </Card>
 
-      <CreateExpenseModal open={createOpen} onClose={() => setCreateOpen(false)} />
+      <ExpenseFormModal open={createOpen} onClose={() => setCreateOpen(false)} />
+      <ExpenseFormModal
+        open={!!editing}
+        expense={editing ?? undefined}
+        onClose={() => setEditing(null)}
+      />
+      <DeleteExpenseDialog expense={deleting} onClose={() => setDeleting(null)} />
+      <ExpenseCategoryManagerModal open={manageOpen} onClose={() => setManageOpen(false)} />
     </div>
   );
 }
 
-function CreateExpenseModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function DeleteExpenseDialog({
+  expense,
+  onClose,
+}: {
+  expense: Expense | null;
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const del = useDeleteExpense();
+
+  const confirm = async () => {
+    if (!expense) return;
+    try {
+      await del.mutateAsync(expense.id);
+      toast.success('Expense deleted', `${currency(expense.amount)} removed.`);
+      onClose();
+    } catch (e) {
+      toast.error('Failed to delete expense', extractMessage(e));
+    }
+  };
+
+  return (
+    <ConfirmDialog
+      open={!!expense}
+      onClose={onClose}
+      onConfirm={confirm}
+      loading={del.isPending}
+      icon="delete"
+      title="Delete this expense?"
+      confirmLabel="Delete"
+      message={
+        expense ? (
+          <>
+            {currency(expense.amount)} — {expense.category?.name} on{' '}
+            {formatDate(expense.expenseDate)}.
+            {(expense.items?.length ?? 0) > 0 && ' Its line items are removed too.'}
+            {' '}This cannot be undone.
+          </>
+        ) : (
+          ''
+        )
+      }
+    />
+  );
+}
+
+/** Records a new expense, or edits an existing one when `expense` is given. */
+function ExpenseFormModal({
+  open,
+  expense,
+  onClose,
+}: {
+  open: boolean;
+  expense?: Expense;
+  onClose: () => void;
+}) {
   const toast = useToast();
   const { isAdmin } = useAuth();
   const create = useCreateExpense();
-  const [category, setCategory] = useState<ExpenseCategory>('MISCELLANEOUS');
+  const update = useUpdateExpense();
+  const { data: categories } = useExpenseCategories();
+  const options = selectableCategories(categories);
+  const isEdit = !!expense;
+  // Office purchases derive their amount and category from their line items.
+  const isItemized = (expense?.items?.length ?? 0) > 0;
+
+  const [categoryId, setCategoryId] = useState('');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [description, setDescription] = useState('');
 
   useEffect(() => {
-    if (open) {
-      setCategory('MISCELLANEOUS');
-      setAmount('');
-      setDate(new Date().toISOString().slice(0, 10));
-      setDescription('');
-    }
-  }, [open]);
+    if (!open) return;
+    setCategoryId(expense?.categoryId ?? '');
+    setAmount(expense?.amount ?? '');
+    setDate((expense?.expenseDate ?? new Date().toISOString()).slice(0, 10));
+    setDescription(expense?.description ?? '');
+  }, [open, expense]);
+
+  // A category chosen before it was archived stays selectable while editing.
+  const shownOptions =
+    expense && !options.some((o) => o.id === expense.categoryId) && expense.category
+      ? [expense.category, ...options]
+      : options;
+
+  const pending = create.isPending || update.isPending;
 
   const submit = async () => {
-    if (num(amount) <= 0) return toast.error('Enter an amount greater than zero');
+    if (!isItemized && num(amount) <= 0) {
+      return toast.error('Enter an amount greater than zero');
+    }
+    if (!isItemized && !categoryId) return toast.error('Pick a category');
+    const name = shownOptions.find((o) => o.id === categoryId)?.name ?? '';
     try {
-      await create.mutateAsync({
-        category,
-        amount: num(amount),
-        expenseDate: new Date(date).toISOString(),
-        description: description.trim() || undefined,
-      });
-      toast.success('Expense recorded', `${currency(amount)} — ${humanize(category)}`);
+      if (isEdit) {
+        await update.mutateAsync({
+          id: expense!.id,
+          input: {
+            // The itemized flow owns these two fields; leave them untouched.
+            categoryId: isItemized ? undefined : categoryId,
+            amount: isItemized ? undefined : num(amount),
+            expenseDate: new Date(date).toISOString(),
+            description: description.trim() || undefined,
+          },
+        });
+        toast.success('Expense updated', `${currency(amount)} — ${name}`);
+      } else {
+        await create.mutateAsync({
+          categoryId,
+          amount: num(amount),
+          expenseDate: new Date(date).toISOString(),
+          description: description.trim() || undefined,
+        });
+        toast.success('Expense recorded', `${currency(amount)} — ${name}`);
+      }
       onClose();
     } catch (e) {
-      toast.error('Failed to record expense', extractMessage(e));
+      toast.error(isEdit ? 'Failed to update expense' : 'Failed to record expense', extractMessage(e));
     }
   };
 
@@ -325,26 +487,50 @@ function CreateExpenseModal({ open, onClose }: { open: boolean; onClose: () => v
     <Modal
       open={open}
       onClose={onClose}
-      title={isAdmin ? 'Add Expense' : 'Add Petty Cash'}
-      subtitle="If a cash session is open, this is deducted from the till"
+      title={isEdit ? 'Edit Expense' : isAdmin ? 'Add Expense' : 'Add Petty Cash'}
+      subtitle={
+        isEdit
+          ? 'Changes flow through to the till and your reports'
+          : 'If a cash session is open, this is deducted from the till'
+      }
       footer={
         <>
-          <Button variant="outline" onClick={onClose} disabled={create.isPending}>Cancel</Button>
-          <Button onClick={submit} loading={create.isPending} icon="check">Record Expense</Button>
+          <Button variant="outline" onClick={onClose} disabled={pending}>Cancel</Button>
+          <Button onClick={submit} loading={pending} icon="check">
+            {isEdit ? 'Save Changes' : 'Record Expense'}
+          </Button>
         </>
       }
     >
       <div className="space-y-4">
+        {isItemized && (
+          <p className="rounded-xl bg-surface-container-low p-3 text-body-sm text-on-surface-variant">
+            This is an itemized office purchase — its amount and category come from its
+            line items. You can still edit the date and description here.
+          </p>
+        )}
         <Field label="Category" required>
-          <Select value={category} onChange={(e) => setCategory(e.target.value as ExpenseCategory)}>
-            {visibleCategoryOptions(isAdmin).map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+          <Select
+            value={categoryId}
+            disabled={isItemized}
+            onChange={(e) => setCategoryId(e.target.value)}
+          >
+            <option value="" disabled>Select a category…</option>
+            {shownOptions.map((o) => (
+              <option key={o.id} value={o.id}>{o.name}</option>
             ))}
           </Select>
         </Field>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Amount" required>
-            <Input type="number" min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <Input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={amount}
+              disabled={isItemized}
+              onChange={(e) => setAmount(e.target.value)}
+            />
           </Field>
           <Field label="Date" required>
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />

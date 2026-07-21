@@ -10,17 +10,6 @@ export type PricingType = 'PER_PAGE' | 'FIXED';
 export type SaleItemType = 'PRODUCT' | 'SERVICE';
 export type SaleStatus = 'COMPLETED' | 'VOIDED';
 export type InventoryMovementType = 'PURCHASE' | 'SALE' | 'ADJUSTMENT' | 'RETURN';
-export type ExpenseCategory =
-  | 'RENT'
-  | 'SALARY'
-  | 'ELECTRICITY'
-  | 'INTERNET'
-  | 'TONER'
-  | 'PAPER'
-  | 'TRANSPORT'
-  | 'FOOD'
-  | 'OFFICE_SUPPLIES'
-  | 'MISCELLANEOUS';
 export type CashSessionStatus = 'OPEN' | 'CLOSED';
 export type CashMovementType = 'DEPOSIT' | 'WITHDRAWAL';
 export type PaymentMethod = 'CASH' | 'CREDIT';
@@ -357,8 +346,22 @@ export interface ExpenseItem {
   lineTotal: string;
 }
 
+/** Admin-managed expense category. `systemKey` is set on the seeded defaults;
+ *  the OFFICE_SUPPLIES one is wired to office purchases and can't be removed. */
+export interface ExpenseCategory {
+  id: string;
+  name: string;
+  icon: string;
+  staffAllowed: boolean;
+  isActive: boolean;
+  systemKey: string | null;
+  sortOrder: number;
+  _count?: { expenses: number };
+}
+
 export interface Expense {
   id: string;
+  categoryId: string;
   category: ExpenseCategory;
   amount: string;
   expenseDate: string;
@@ -367,6 +370,8 @@ export interface Expense {
   userId: string;
   user?: { fullName: string };
   cashSessionId: string | null;
+  /** Present on list reads; a CLOSED session freezes the entry. */
+  cashSession?: { status: CashSessionStatus } | null;
   items?: ExpenseItem[];
   createdAt: string;
 }
@@ -454,8 +459,50 @@ export interface DailyTotalPoint {
   count: number;
 }
 
+export type PeriodStatus = 'OPEN' | 'CLOSED';
+
+/** A finished calendar month on the closing screen. */
+export interface AccountingPeriod {
+  year: number;
+  month: number;
+  label: string;
+  status: PeriodStatus;
+  isClosed: boolean;
+  closedAt: string | null;
+  closedBy: string | null;
+  revenue: string;
+  grossProfit: string;
+  expenses: string;
+  netProfit: string;
+  saleCount: number;
+}
+
+/** Full monthly statement. A closed month also reports `liveFigures` — what the
+ *  same numbers would be today, so drift from the snapshot is visible. */
+export interface MonthlyStatement extends AccountingPeriod {
+  grossSales: string;
+  refunds: string;
+  cogs: string;
+  purchases: string;
+  notes: string | null;
+  liveFigures: {
+    grossSales: string;
+    refunds: string;
+    revenue: string;
+    cogs: string;
+    grossProfit: string;
+    expenses: string;
+    netProfit: string;
+    purchases: string;
+    saleCount: number;
+  } | null;
+}
+
 export interface ExpenseByCategory {
-  category: ExpenseCategory;
+  categoryId: string;
+  /** Display name of the category, already resolved by the API. */
+  category: string;
+  icon: string;
   total: string;
   count: number;
 }

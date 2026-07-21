@@ -1,8 +1,4 @@
-import type {
-  ExpenseCategory,
-  PricingType,
-  Role,
-} from '@/types';
+import type { PricingType, Role } from '@/types';
 
 /** Icon used for all services in the UI (services no longer carry their own). */
 export const DEFAULT_SERVICE_ICON = 'design_services';
@@ -12,31 +8,34 @@ export const PRICING_TYPE_OPTIONS: { value: PricingType; label: string }[] = [
   { value: 'FIXED', label: 'Fixed Price' },
 ];
 
-export const EXPENSE_CATEGORY_OPTIONS: { value: ExpenseCategory; label: string; icon: string }[] = [
-  { value: 'RENT', label: 'Rent', icon: 'home_work' },
-  { value: 'SALARY', label: 'Salary', icon: 'badge' },
-  { value: 'ELECTRICITY', label: 'Electricity', icon: 'bolt' },
-  { value: 'INTERNET', label: 'Internet', icon: 'wifi' },
-  { value: 'TONER', label: 'Toner', icon: 'opacity' },
-  { value: 'PAPER', label: 'Paper', icon: 'description' },
-  { value: 'TRANSPORT', label: 'Transport', icon: 'local_shipping' },
-  { value: 'FOOD', label: 'Food', icon: 'restaurant' },
-  { value: 'OFFICE_SUPPLIES', label: 'Office / Internal Use', icon: 'business_center' },
-  { value: 'MISCELLANEOUS', label: 'Miscellaneous', icon: 'category' },
-];
+/** Fallback when a category has no icon set. */
+export const DEFAULT_EXPENSE_ICON = 'category';
 
-export const EXPENSE_CATEGORY_ICON: Record<ExpenseCategory, string> = Object.fromEntries(
-  EXPENSE_CATEGORY_OPTIONS.map((o) => [o.value, o.icon]),
-) as Record<ExpenseCategory, string>;
-
-// Categories staff may record/see ("petty cash"). Fixed overheads (rent, salary,
-// electricity, internet) are management-only. Keep in sync with the backend.
-export const PETTY_CASH_CATEGORIES: ExpenseCategory[] = [
-  'TONER',
-  'PAPER',
-  'TRANSPORT',
-  'FOOD',
-  'MISCELLANEOUS',
+// Icons an admin can pick from when creating an expense category. These are
+// Material Symbols names — the same set the rest of the UI draws from.
+export const EXPENSE_ICON_OPTIONS = [
+  'category',
+  'home_work',
+  'badge',
+  'bolt',
+  'wifi',
+  'opacity',
+  'description',
+  'local_shipping',
+  'restaurant',
+  'business_center',
+  'water_drop',
+  'local_gas_station',
+  'build',
+  'cleaning_services',
+  'shopping_cart',
+  'phone_iphone',
+  'health_and_safety',
+  'school',
+  'campaign',
+  'gavel',
+  'savings',
+  'receipt_long',
 ];
 
 export const ROLE_OPTIONS: { value: Role; label: string }[] = [
