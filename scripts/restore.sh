@@ -12,6 +12,9 @@
 set -euo pipefail
 
 : "${DATABASE_URL:?Set DATABASE_URL (postgresql://...)}"
+# Prisma appends connection options (?schema=public, ?connection_limit=...) that
+# libpq rejects as "invalid URI query parameter" — strip them for pg_restore.
+PGRESTORE_URL="${DATABASE_URL%%\?*}"
 DUMP="${1:?Usage: restore.sh <path-to-.dump>}"
 [ -f "$DUMP" ] || { echo "[restore] file not found: $DUMP" >&2; exit 1; }
 
@@ -20,7 +23,7 @@ echo "[restore] press Ctrl-C within 5s to abort…"
 sleep 5
 
 pg_restore \
-  --dbname="$DATABASE_URL" \
+  --dbname="$PGRESTORE_URL" \
   --clean --if-exists \
   --no-owner --no-privileges \
   --jobs=4 \

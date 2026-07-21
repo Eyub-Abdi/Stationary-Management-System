@@ -15,6 +15,9 @@
 set -euo pipefail
 
 : "${DATABASE_URL:?Set DATABASE_URL (postgresql://...)}"
+# Prisma appends connection options (?schema=public, ?connection_limit=...) that
+# libpq rejects as "invalid URI query parameter" — strip them for pg_dump.
+PGDUMP_URL="${DATABASE_URL%%\?*}"
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-14}"
 
@@ -23,7 +26,7 @@ STAMP="$(date +%Y%m%d_%H%M%S)"
 OUT="$BACKUP_DIR/kj_${STAMP}.dump"
 
 echo "[backup] dumping to $OUT"
-pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner --no-privileges --file="$OUT"
+pg_dump --dbname="$PGDUMP_URL" --format=custom --no-owner --no-privileges --file="$OUT"
 
 # Integrity check: the dump must list a table of contents.
 pg_restore --list "$OUT" >/dev/null
