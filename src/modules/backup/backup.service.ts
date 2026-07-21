@@ -205,6 +205,12 @@ export class BackupService {
         'That file is not a valid KJ backup. Upload a .dump produced by this app.',
       );
     }
+    // Drop our pooled connections first. `--clean` recreates every table, and a
+    // pooled connection holds cached query plans bound to the *old* tables — the
+    // next query through one fails with "cached plan must not change result
+    // type" even though the restore itself succeeded.
+    await this.prisma.$disconnect().catch(() => undefined);
+
     try {
       await this.run(this.resolveBin('pg_restore'), [
         `--dbname=${this.dbUrl()}`,
@@ -218,6 +224,12 @@ export class BackupService {
     } catch (e) {
       this.logger.error(`Restore failed: ${(e as Error).message}`);
       throw new InternalServerErrorException(`Restore failed: ${(e as Error).message}`);
+    } finally {
+      // Reconnect either way, so the app can serve this response and keep
+      // working against the restored database.
+      await this.prisma.$connect().catch((e) => {
+        this.logger.warn(`Could not reconnect after restore: ${(e as Error).message}`);
+      });
     }
   }
 }

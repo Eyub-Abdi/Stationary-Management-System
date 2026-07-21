@@ -27,7 +27,12 @@ export function useRestoreBackup() {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 0, // restores can take a while; do not time out
       });
-      return (res.data?.data ?? res.data) as { ok: boolean; restoredFrom: string };
+      return (res.data?.data ?? res.data) as {
+        ok: boolean;
+        restoredFrom: string;
+        /** The session was issued against the previous database — sign in again. */
+        restartRequired?: boolean;
+      };
     },
   });
 }

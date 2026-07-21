@@ -506,6 +506,7 @@ function StartupSection() {
 
 function BackupRestoreSection() {
   const toast = useToast();
+  const { logout } = useAuth();
   const restore = useRestoreBackup();
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -517,8 +518,11 @@ function BackupRestoreSection() {
     if (!file) return;
     try {
       await restore.mutateAsync(file);
-      toast.success('Database restored', 'Reloading with the restored data…');
-      setTimeout(() => window.location.reload(), 1500);
+      // The signed-in session belongs to the database that was just replaced —
+      // the account may not even exist in the backup. Sign out rather than
+      // reload into a half-valid session.
+      toast.success('Database restored', 'Sign in again to continue.');
+      setTimeout(() => logout(), 1500);
     } catch (e) {
       toast.error('Restore failed', extractMessage(e));
     }
@@ -535,7 +539,8 @@ function BackupRestoreSection() {
             <span>
               This <strong>permanently replaces all current data</strong> with the contents of the
               uploaded backup. Anything recorded since that backup will be lost. Make sure no one
-              else is using the system, and download a fresh backup first.
+              else is using the system, and download a fresh backup first. You will be signed out
+              afterwards, since your login belongs to the database being replaced.
             </span>
           </div>
 

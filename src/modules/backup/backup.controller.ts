@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Controller,
+  Logger,
   Post,
   Res,
   UploadedFile,
@@ -35,6 +36,8 @@ import { backupMulterOptions } from './backup.upload';
 @Permission('settings')
 @Controller('admin')
 export class BackupController {
+  private readonly logger = new Logger(BackupController.name);
+
   constructor(
     private readonly backup: BackupService,
     private readonly audit: AuditService,
@@ -89,14 +92,29 @@ export class BackupController {
     }
     try {
       await this.backup.restoreDump(file.path);
-      await this.audit.record({
-        userId: user.id,
-        action: 'DB_RESTORED',
-        entityType: 'Database',
-        entityId: file.originalname,
-        metadata: { filename: file.originalname, size: file.size },
-      });
-      return { ok: true, restoredFrom: file.originalname };
+
+      // The restore has already committed. Everything past this point is
+      // bookkeeping and must never turn a successful restore into a reported
+      // failure: the restored database has the dump's users table, so this row
+      // can legitimately violate the audit_logs -> users foreign key when the
+      // signed-in account does not exist in the backup being restored.
+      try {
+        await this.audit.record({
+          userId: user.id,
+          action: 'DB_RESTORED',
+          entityType: 'Database',
+          entityId: file.originalname,
+          metadata: { filename: file.originalname, size: file.size },
+        });
+      } catch (e) {
+        this.logger.warn(
+          `Database restored from ${file.originalname}, but the audit record could not be written: ${(e as Error).message}`,
+        );
+      }
+
+      // The signed-in session was issued against the previous database, so the
+      // client must sign in again and the process should be restarted.
+      return { ok: true, restoredFrom: file.originalname, restartRequired: true };
     } finally {
       void rm(file.path, { force: true });
     }
