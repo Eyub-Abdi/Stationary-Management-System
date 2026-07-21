@@ -27,6 +27,32 @@ export interface LocalBackupResult {
   sizeBytes: number;
 }
 
+/** What a dump file contains, read without restoring it. */
+export interface DumpInspection {
+  /** Migrations recorded inside the dump, oldest first. */
+  migrations: string[];
+  latestMigration: string | null;
+  /** Migrations this app has that the dump does not — it predates them. */
+  missingMigrations: string[];
+  /** True when restoring would roll the schema back. */
+  isBehind: boolean;
+  tableCount: number;
+  /** Set when the post-restore `migrate deploy` failed. The data is restored;
+   *  the schema still needs bringing up to date by hand. */
+  migrationError?: string;
+}
+
+export interface BackupFileInfo {
+  filename: string;
+  path: string;
+  sizeBytes: number;
+  /** File modification time — the real local clock time it was written. */
+  takenAt: Date;
+  inspection: DumpInspection | null;
+  /** Set when the file could not be read as a dump. */
+  error?: string;
+}
+
 /**
  * Wraps the PostgreSQL client tools to produce and apply custom-format dumps
  * (the same `-Fc` format as scripts/backup.sh). Backups are downloaded by the
@@ -74,11 +100,16 @@ export class BackupService {
     return candidates.find((c) => existsSync(c)) ?? tool;
   }
 
-  /** Runs a tool, resolving on exit 0 and rejecting with stderr otherwise. */
-  private run(bin: string, args: string[]): Promise<string> {
+  /**
+   * Runs a tool, resolving on exit 0 and rejecting with stderr otherwise.
+   * Pass `captureStdout` when the tool's output is the thing you want.
+   */
+  private run(bin: string, args: string[], captureStdout = false): Promise<string> {
     return new Promise((resolve, reject) => {
       const child = spawn(bin, args, { windowsHide: true });
       let stderr = '';
+      let stdout = '';
+      if (captureStdout) child.stdout.on('data', (d) => (stdout += d.toString()));
       child.stderr.on('data', (d) => (stderr += d.toString()));
       child.on('error', (e) =>
         reject(
@@ -88,7 +119,9 @@ export class BackupService {
         ),
       );
       child.on('close', (code) =>
-        code === 0 ? resolve(stderr) : reject(new Error(stderr.trim() || `${bin} exited ${code}`)),
+        code === 0
+          ? resolve(captureStdout ? stdout : stderr)
+          : reject(new Error(stderr.trim() || `${bin} exited ${code}`)),
       );
     });
   }
@@ -176,6 +209,125 @@ export class BackupService {
     }
   }
 
+  /**
+   * Reads what a dump contains without restoring it: the migration history it
+   * carries, and whether that is behind the migrations this build expects.
+   *
+   * Restoring a dump that predates the current schema rolls the database back,
+   * and the running app — whose Prisma client is generated for the *current*
+   * schema — then fails on every query for a column that no longer exists.
+   * Knowing this up front is what lets the UI warn instead of bricking login.
+   */
+  async inspectDump(path: string): Promise<DumpInspection> {
+    // Table of contents: cheap, and proves the file is a real dump.
+    const toc = await this.run(this.resolveBin('pg_restore'), ['--list', path], true);
+    const tableCount = (toc.match(/TABLE public /g) ?? []).length;
+
+    // The migration history lives in _prisma_migrations as data, so pull just
+    // that one table out as SQL and read the names from its COPY block.
+    let migrations: string[] = [];
+    try {
+      const sql = await this.run(
+        this.resolveBin('pg_restore'),
+        ['--data-only', '--table=_prisma_migrations', '--file=-', path],
+        true,
+      );
+      migrations = this.parseMigrationNames(sql);
+    } catch {
+      // An unreadable history is not fatal — treat it as unknown.
+    }
+
+    const known = this.localMigrationNames();
+    const inDump = new Set(migrations);
+    const missingMigrations = known.filter((m) => !inDump.has(m));
+
+    return {
+      migrations,
+      latestMigration: migrations.length ? migrations[migrations.length - 1] : null,
+      missingMigrations,
+      // Only meaningful when we could read a history at all.
+      isBehind: migrations.length > 0 && missingMigrations.length > 0,
+      tableCount,
+    };
+  }
+
+  /** Migration folder names shipped with this build, in order. */
+  private localMigrationNames(): string[] {
+    const dir = join(process.cwd(), 'prisma', 'migrations');
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+      .filter((n) => /^\d{14}_/.test(n))
+      .sort();
+  }
+
+  /** Pulls migration_name values out of the _prisma_migrations COPY block. */
+  private parseMigrationNames(sql: string): string[] {
+    const names: string[] = [];
+    let inCopy = false;
+    for (const line of sql.split('\n')) {
+      if (!inCopy) {
+        if (/^COPY public\._prisma_migrations /i.test(line)) inCopy = true;
+        continue;
+      }
+      if (line === '\\.') break;
+      // Columns: id, checksum, finished_at, migration_name, ...
+      const cols = line.split('\t');
+      if (cols.length > 3 && /^\d{14}_/.test(cols[3])) names.push(cols[3]);
+    }
+    return names.sort();
+  }
+
+  /**
+   * Every dump in the configured backup folder, newest first, with what each
+   * one contains. Lets an admin pick a restore point knowingly.
+   */
+  async listBackups(): Promise<{ dir: string; files: BackupFileInfo[] }> {
+    const dir = await this.effectiveBackupDir();
+    if (!existsSync(dir)) return { dir, files: [] };
+
+    const names = readdirSync(dir).filter((n) => n.endsWith('.dump'));
+    const files: BackupFileInfo[] = [];
+
+    for (const filename of names) {
+      const full = join(dir, filename);
+      let stat;
+      try {
+        stat = statSync(full);
+      } catch {
+        continue;
+      }
+      const base: BackupFileInfo = {
+        filename,
+        path: full,
+        sizeBytes: stat.size,
+        takenAt: stat.mtime,
+        inspection: null,
+      };
+      try {
+        base.inspection = await this.inspectDump(full);
+      } catch (e) {
+        base.error = (e as Error).message?.slice(0, 200) || 'Unreadable dump';
+      }
+      files.push(base);
+    }
+
+    files.sort((a, b) => b.takenAt.getTime() - a.takenAt.getTime());
+    return { dir, files };
+  }
+
+  /** Resolves a filename inside the backup folder, rejecting path traversal. */
+  async resolveBackupFile(filename: string): Promise<string> {
+    if (!/^[\w.-]+\.dump$/.test(filename)) {
+      throw new BadRequestException('Invalid backup filename.');
+    }
+    const dir = await this.effectiveBackupDir();
+    const full = join(dir, filename);
+    if (!full.startsWith(dir) || !existsSync(full)) {
+      throw new BadRequestException('That backup file was not found.');
+    }
+    return full;
+  }
+
   /** Deletes auto-backup dumps older than the retention window. */
   private prune(dir: string): void {
     const cutoff = Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000;
@@ -195,14 +347,28 @@ export class BackupService {
    * custom-format dump first, then restores atomically (--single-transaction):
    * any failure rolls back, so a bad file can never leave a half-restored DB.
    */
-  async restoreDump(path: string): Promise<void> {
+  async restoreDump(path: string, acknowledgeOlder = false): Promise<DumpInspection> {
     // Reject anything that is not a readable custom-format dump before we touch
     // the live database.
+    let inspection: DumpInspection;
     try {
-      await this.run(this.resolveBin('pg_restore'), ['--list', path]);
+      inspection = await this.inspectDump(path);
     } catch {
       throw new BadRequestException(
         'That file is not a valid KJ backup. Upload a .dump produced by this app.',
+      );
+    }
+
+    // A backup from before the current schema rolls the database back. The app
+    // keeps running against the *new* Prisma client, so every query then fails
+    // on a column that no longer exists — which is how a restore takes down
+    // login. Refuse unless the admin has been shown this and accepted it.
+    if (inspection.isBehind && !acknowledgeOlder) {
+      const n = inspection.missingMigrations.length;
+      throw new BadRequestException(
+        `This backup was taken before ${n} of the current database change${
+          n === 1 ? '' : 's'
+        } (oldest missing: ${inspection.missingMigrations[0]}). Restoring it will roll the database back. Confirm you want to restore an older backup to continue.`,
       );
     }
     // Drop our pooled connections first. `--clean` recreates every table, and a
@@ -222,6 +388,54 @@ export class BackupService {
       await this.prisma.$connect().catch((e) => {
         this.logger.warn(`Could not reconnect after restore: ${(e as Error).message}`);
       });
+    }
+
+    // Bring the restored database up to the schema this build expects, so the
+    // app is never left querying tables and columns the dump did not have.
+    // A failure here is reported, not thrown: the restore has already
+    // committed, and calling that "Restore failed" would be the same lie this
+    // endpoint used to tell.
+    if (inspection.missingMigrations.length) {
+      inspection.migrationError = await this.applyPendingMigrations();
+    }
+
+    return inspection;
+  }
+
+  /**
+   * Runs `prisma migrate deploy` against the restored database. Without this an
+   * older backup leaves the schema behind the running code, and every request
+   * fails until someone runs it by hand.
+   */
+  private async applyPendingMigrations(): Promise<string | undefined> {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const isWin = process.platform === 'win32';
+        // Node refuses to spawn .cmd shims without a shell; the arguments here
+        // are fixed constants, so there is nothing injectable.
+        const child = spawn('npx', ['prisma', 'migrate', 'deploy'], {
+          cwd: process.cwd(),
+          windowsHide: true,
+          shell: isWin,
+          // The Prisma CLI loads .env, which otherwise wins over the inherited
+          // value — the migration would land on whatever database .env names
+          // rather than the one just restored. Pass it explicitly so both steps
+          // always target the same database.
+          env: { ...process.env, DATABASE_URL: this.dbUrl() },
+        });
+        let stderr = '';
+        child.stderr.on('data', (d) => (stderr += d.toString()));
+        child.on('error', (e) => reject(e));
+        child.on('close', (code) =>
+          code === 0 ? resolve() : reject(new Error(stderr.trim() || `migrate exited ${code}`)),
+        );
+      });
+      this.logger.log('Applied pending migrations after restore.');
+      return undefined;
+    } catch (e) {
+      const msg = (e as Error).message?.slice(0, 300) ?? 'unknown error';
+      this.logger.error(`Migrations after restore failed: ${msg}`);
+      return `The data was restored, but bringing the database schema up to date failed: ${msg} — run "npx prisma migrate deploy" before using the app.`;
     }
   }
 

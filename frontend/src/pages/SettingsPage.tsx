@@ -5,20 +5,29 @@ import {
   Card,
   CardBody,
   CardHeader,
+  Checkbox,
   Field,
   Icon,
   Input,
+  LoadingState,
   PageHeader,
   Tabs,
 } from '@/components/ui';
 import { useTheme } from '@/providers/ThemeProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/providers/ToastProvider';
-import { useRestoreBackup, useRunLocalBackup } from '@/hooks/useBackup';
+import {
+  useBackupFiles,
+  useRestoreBackup,
+  useRestoreLocalBackup,
+  useRunLocalBackup,
+  type BackupFileInfo,
+  type RestoreResult,
+} from '@/hooks/useBackup';
 import { useSetStartup, useStartupStatus } from '@/hooks/useSystem';
 import { useAppSettings, useUpdateAppSettings } from '@/hooks/useAppSettings';
 import { extractMessage } from '@/lib/api';
-import { cn, initials } from '@/lib/utils';
+import { cn, formatDateTime, initials } from '@/lib/utils';
 
 type TabKey = 'preferences' | 'business' | 'backup';
 
@@ -508,21 +517,46 @@ function BackupRestoreSection() {
   const toast = useToast();
   const { logout } = useAuth();
   const restore = useRestoreBackup();
+  const restoreLocal = useRestoreLocalBackup();
+  const { data: backups, isLoading: loadingBackups } = useBackupFiles();
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [confirmText, setConfirmText] = useState('');
+  const [acknowledgeOlder, setAcknowledgeOlder] = useState(false);
+  const [picked, setPicked] = useState<BackupFileInfo | null>(null);
 
-  const canRestore = !!file && confirmText.trim().toUpperCase() === RESTORE_PHRASE && !restore.isPending;
+  const pending = restore.isPending || restoreLocal.isPending;
+  const confirmed = confirmText.trim().toUpperCase() === RESTORE_PHRASE;
+  const canRestore = (!!file || !!picked) && confirmed && !pending;
+
+  const afterRestore = (result: RestoreResult) => {
+    if (result.migrationError) {
+      // The data is in — only the schema catch-up failed. Say exactly that
+      // rather than calling a committed restore a failure.
+      toast.error('Restored, but the schema needs attention', result.migrationError);
+    } else {
+      toast.success(
+        'Database restored',
+        result.rolledBack
+          ? `Rolled back to an older backup; ${result.migrationsApplied ?? 0} database change(s) re-applied. Sign in again.`
+          : 'Sign in again to continue.',
+      );
+    }
+    // The signed-in session belongs to the database that was just replaced —
+    // the account may not even exist in the backup. Sign out rather than
+    // reload into a half-valid session.
+    setTimeout(() => logout(), 2000);
+  };
 
   const onRestore = async () => {
-    if (!file) return;
     try {
-      await restore.mutateAsync(file);
-      // The signed-in session belongs to the database that was just replaced —
-      // the account may not even exist in the backup. Sign out rather than
-      // reload into a half-valid session.
-      toast.success('Database restored', 'Sign in again to continue.');
-      setTimeout(() => logout(), 1500);
+      if (picked) {
+        afterRestore(
+          await restoreLocal.mutateAsync({ filename: picked.filename, acknowledgeOlder }),
+        );
+      } else if (file) {
+        afterRestore(await restore.mutateAsync({ file, acknowledgeOlder }));
+      }
     } catch (e) {
       toast.error('Restore failed', extractMessage(e));
     }
@@ -544,17 +578,82 @@ function BackupRestoreSection() {
             </span>
           </div>
 
+          {/* Backups on disk — pick a restore point knowing what is in it. */}
+          <div className="mt-4">
+            <p className="mb-2 text-body-sm font-semibold text-on-surface">
+              Backups on this machine
+            </p>
+            {loadingBackups ? (
+              <LoadingState label="Reading backups…" />
+            ) : (backups?.files.length ?? 0) === 0 ? (
+              <p className="text-[12px] text-on-surface-variant">
+                No backups found in {backups?.dir ?? 'the backup folder'}.
+              </p>
+            ) : (
+              <ul className="max-h-64 divide-y divide-outline-variant overflow-y-auto rounded-xl border border-outline-variant">
+                {backups!.files.map((b) => {
+                  const behind = b.inspection?.isBehind;
+                  const active = picked?.filename === b.filename;
+                  return (
+                    <li key={b.filename}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPicked(active ? null : b);
+                          setFile(null);
+                          setAcknowledgeOlder(false);
+                        }}
+                        className={`flex w-full items-center gap-3 p-3 text-left transition-colors ${
+                          active ? 'bg-secondary-container' : 'hover:bg-surface-container-low'
+                        }`}
+                      >
+                        <Icon
+                          name={active ? 'radio_button_checked' : 'radio_button_unchecked'}
+                          size={18}
+                          className="shrink-0 text-on-surface-variant"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-body-sm font-semibold text-on-surface">
+                            {/* Real local time — filenames are UTC and read 3h early. */}
+                            {formatDateTime(b.takenAt)}
+                          </span>
+                          <span className="block truncate text-[12px] text-on-surface-variant">
+                            {(b.sizeBytes / 1024 / 1024).toFixed(2)} MB · {b.filename}
+                          </span>
+                        </span>
+                        {b.error ? (
+                          <Badge tone="error">Unreadable</Badge>
+                        ) : behind ? (
+                          <Badge tone="warning">
+                            Older — rolls back {b.inspection!.missingMigrations.length}
+                          </Badge>
+                        ) : (
+                          <Badge tone="success">Current</Badge>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
+          <p className="mt-4 text-body-sm text-on-surface-variant">Or upload a file:</p>
           <input
             ref={fileRef}
             type="file"
             accept=".dump"
             hidden
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            onChange={(e) => {
+              setFile(e.target.files?.[0] ?? null);
+              setPicked(null);
+              setAcknowledgeOlder(false);
+            }}
           />
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="mt-4 flex w-full items-center gap-3 rounded-xl border-2 border-dashed border-outline-variant p-3 text-left transition-colors hover:border-secondary"
+            className="mt-1 flex w-full items-center gap-3 rounded-xl border-2 border-dashed border-outline-variant p-3 text-left transition-colors hover:border-secondary"
           >
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-container text-on-surface-variant">
               <Icon name="upload_file" size={20} />
@@ -569,6 +668,30 @@ function BackupRestoreSection() {
             </span>
           </button>
 
+          {/* Rolling the schema back is what broke login before — make it explicit. */}
+          {picked?.inspection?.isBehind && (
+            <div className="mt-4 rounded-xl bg-error-container/60 p-3 text-[13px] text-on-error-container">
+              <p className="font-semibold">
+                This backup is older than the current database schema.
+              </p>
+              <p className="mt-1">
+                It predates {picked.inspection.missingMigrations.length} database change
+                {picked.inspection.missingMigrations.length === 1 ? '' : 's'}. Restoring rolls the
+                database back to {formatDateTime(picked.takenAt)}; anything recorded since is lost.
+                The missing changes are re-applied automatically afterwards so the app keeps
+                working.
+              </p>
+              <div className="mt-2">
+                <Checkbox
+                  id="ack-older-backup"
+                  checked={acknowledgeOlder}
+                  onChange={(e) => setAcknowledgeOlder(e.target.checked)}
+                  label="I understand this restores older data"
+                />
+              </div>
+            </div>
+          )}
+
           <label className="mt-4 block text-body-sm text-on-surface-variant">
             Type <span className="font-mono-data font-bold text-error">{RESTORE_PHRASE}</span> to confirm
           </label>
@@ -580,7 +703,13 @@ function BackupRestoreSection() {
           />
 
           <div className="mt-4">
-            <Button variant="danger" icon="restore" disabled={!canRestore} loading={restore.isPending} onClick={onRestore}>
+            <Button
+              variant="danger"
+              icon="restore"
+              disabled={!canRestore || (!!picked?.inspection?.isBehind && !acknowledgeOlder)}
+              loading={pending}
+              onClick={onRestore}
+            >
               Restore database
             </Button>
           </div>

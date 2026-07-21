@@ -131,6 +131,41 @@ describeDb('Backup & restore (integration)', () => {
     expect(await prisma.user.count()).toBe(before);
   });
 
+  it('refuses a backup that predates the current schema unless acknowledged', async () => {
+    // Build a genuinely older backup: roll the newest migration back in full —
+    // its table *and* its history row — then dump. That is exactly the shape of
+    // the file that took login down, a schema behind the running Prisma client.
+    // Reverse it completely — table and enum type. A backup taken before the
+    // migration would contain neither; leaving the type behind would be a state
+    // that never occurs in practice.
+    await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS accounting_periods CASCADE;`);
+    await prisma.$executeRawUnsafe(`DROP TYPE IF EXISTS "PeriodStatus";`);
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM _prisma_migrations WHERE migration_name LIKE '%_accounting_periods';`,
+    );
+    const behind = await backup.createDump();
+
+    const inspection = await backup.inspectDump(behind.path);
+    expect(inspection.isBehind).toBe(true);
+    expect(inspection.missingMigrations).toContain('20260721103000_accounting_periods');
+
+    // Refused by default — this is the protection that was missing.
+    await expect(backup.restoreDump(behind.path)).rejects.toThrow(
+      /taken before .* database change/i,
+    );
+
+    // Acknowledged, it proceeds and re-applies what the backup predates, so the
+    // schema matches the running code instead of breaking every query.
+    const result = await backup.restoreDump(behind.path, true);
+    expect(result.migrationError).toBeUndefined();
+
+    const restored = await prisma.$queryRawUnsafe<{ exists: boolean }[]>(
+      `SELECT to_regclass('public.accounting_periods') IS NOT NULL AS exists;`,
+    );
+    expect(restored[0].exists).toBe(true);
+    expect(await prisma.accountingPeriod.count()).toBe(0);
+  });
+
   it('records the audit row when the signed-in user does exist in the backup', async () => {
     await audit.record({
       userId: originalUserId,

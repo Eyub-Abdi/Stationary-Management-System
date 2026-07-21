@@ -1,6 +1,8 @@
 import {
   BadRequestException,
+  Body,
   Controller,
+  Get,
   Logger,
   Post,
   Res,
@@ -25,6 +27,7 @@ import { Permission } from '../../common/decorators/permission.decorator';
 import { AuditService } from '../audit/audit.service';
 import { BackupService } from './backup.service';
 import { backupMulterOptions } from './backup.upload';
+import { RestoreLocalDto } from './dto/restore.dto';
 
 /**
  * Database backup & restore (admin only). Backups download a compressed dump the
@@ -74,49 +77,107 @@ export class BackupController {
     });
   }
 
+  @Get('backups')
+  @ApiOperation({
+    summary:
+      'List dumps in the backup folder, newest first, with what each one contains (admin).',
+  })
+  listBackups() {
+    return this.backup.listBackups();
+  }
+
+  @Post('restore/local')
+  @ApiOperation({
+    summary: 'Restore from a dump already in the backup folder, by filename (admin).',
+  })
+  async restoreLocal(
+    @Body() dto: RestoreLocalDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const path = await this.backup.resolveBackupFile(dto.filename);
+    return this.applyRestore(path, dto.filename, user, dto.acknowledgeOlder ?? false);
+  }
+
   @Post('restore')
   @ApiOperation({
     summary: 'Restore the database from an uploaded backup, replacing all data (admin).',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
-    schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } },
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        acknowledgeOlder: { type: 'string', enum: ['true', 'false'] },
+      },
+    },
   })
   @UseInterceptors(FileInterceptor('file', backupMulterOptions))
   async restore(
     @CurrentUser() user: AuthenticatedUser,
     @UploadedFile() file?: Express.Multer.File,
+    // Multipart fields arrive as strings.
+    @Body('acknowledgeOlder') acknowledgeOlder?: string,
   ) {
     if (!file) {
       throw new BadRequestException('No backup file uploaded (field name must be "file").');
     }
     try {
-      await this.backup.restoreDump(file.path);
-
-      // The restore has already committed. Everything past this point is
-      // bookkeeping and must never turn a successful restore into a reported
-      // failure: the restored database has the dump's users table, so this row
-      // can legitimately violate the audit_logs -> users foreign key when the
-      // signed-in account does not exist in the backup being restored.
-      try {
-        await this.audit.record({
-          userId: user.id,
-          action: 'DB_RESTORED',
-          entityType: 'Database',
-          entityId: file.originalname,
-          metadata: { filename: file.originalname, size: file.size },
-        });
-      } catch (e) {
-        this.logger.warn(
-          `Database restored from ${file.originalname}, but the audit record could not be written: ${(e as Error).message}`,
-        );
-      }
-
-      // The signed-in session was issued against the previous database, so the
-      // client must sign in again and the process should be restarted.
-      return { ok: true, restoredFrom: file.originalname, restartRequired: true };
+      return await this.applyRestore(
+        file.path,
+        file.originalname,
+        user,
+        acknowledgeOlder === 'true',
+      );
     } finally {
       void rm(file.path, { force: true });
     }
+  }
+
+  /** Shared by both restore routes: restore, then record it best-effort. */
+  private async applyRestore(
+    path: string,
+    label: string,
+    user: AuthenticatedUser,
+    acknowledgeOlder: boolean,
+  ) {
+    const inspection = await this.backup.restoreDump(path, acknowledgeOlder);
+
+    // The restore has already committed. Everything past this point is
+    // bookkeeping and must never turn a successful restore into a reported
+    // failure: the restored database has the dump's users table, so this row
+    // can legitimately violate the audit_logs -> users foreign key when the
+    // signed-in account does not exist in the backup being restored.
+    try {
+      await this.audit.record({
+        userId: user.id,
+        action: 'DB_RESTORED',
+        entityType: 'Database',
+        entityId: label,
+        metadata: {
+          filename: label,
+          rolledBack: inspection.isBehind,
+          migrationsApplied: inspection.missingMigrations.length,
+        },
+      });
+    } catch (e) {
+      this.logger.warn(
+        `Database restored from ${label}, but the audit record could not be written: ${(e as Error).message}`,
+      );
+    }
+
+    // The signed-in session was issued against the previous database, so the
+    // client must sign in again and the process should be restarted.
+    return {
+      ok: true,
+      restoredFrom: label,
+      restartRequired: true,
+      rolledBack: inspection.isBehind,
+      migrationsApplied: inspection.migrationError
+        ? 0
+        : inspection.missingMigrations.length,
+      // Present only when the data restored but the schema catch-up did not.
+      migrationError: inspection.migrationError,
+    };
   }
 }
