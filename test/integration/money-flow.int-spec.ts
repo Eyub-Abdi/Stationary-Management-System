@@ -179,7 +179,7 @@ describeDb('Money flow (integration)', () => {
   });
 
   it('reconciles the till: opening + cash sales + repayments − cash purchases', async () => {
-    const summary = await cash.summary(sessionId, userId, true);
+    const summary = await cash.summary(sessionId);
     const b = summary.breakdown;
     // 100000 opening + 10000 cash sale (amountPaid) + 2000 repayment − 50000 purchase
     expect(b.cashSales).toBe('10000.00');

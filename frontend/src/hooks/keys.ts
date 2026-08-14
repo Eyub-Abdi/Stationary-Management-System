@@ -31,6 +31,9 @@ export const qk = {
   officePurchase: (id: string) => ['office-purchase', id] as const,
   cashSessions: (params?: unknown) => ['cash-sessions', params] as const,
   cashSession: (id: string) => ['cash-session', id] as const,
+  // Shares the 'cash-session' prefix so every mutation that already busts a
+  // session's figures (sales, expenses, payments) also refreshes the shared one.
+  currentCashSession: () => ['cash-session', 'current'] as const,
   cashVariances: (params?: unknown) => ['cash-sessions', 'variances', params] as const,
   openingFloat: () => ['cash-sessions', 'opening-float'] as const,
   users: (params?: unknown) => ['users', params] as const,

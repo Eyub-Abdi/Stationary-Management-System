@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -41,10 +40,12 @@ export class CashService {
   /**
    * The cash physically left in the drawer at the end of the last shift — used
    * as the default opening float so staff don't recount it. 0 if none yet.
+   * Sessions closed without a count (e.g. by the migration to a shared till)
+   * carry no float, so they're skipped.
    */
   async suggestedOpeningFloat() {
     const last = await this.prisma.cashSession.findFirst({
-      where: { status: 'CLOSED' },
+      where: { status: 'CLOSED', actualAmount: { not: null } },
       orderBy: { closedAt: 'desc' },
       select: { actualAmount: true, closedAt: true },
     });
@@ -55,15 +56,34 @@ export class CashService {
     };
   }
 
-  /** Opens a daily cash session. A user may have only one OPEN session. */
+  /**
+   * The one shared till everyone is transacting against, or null when it's
+   * closed. Every station reads this instead of remembering a session of its
+   * own, so all users always see (and post to) the same drawer.
+   */
+  async current() {
+    const session = await this.prisma.cashSession.findFirst({
+      where: { status: 'OPEN' },
+      include: { user: { select: { fullName: true } }, movements: true },
+      orderBy: { openedAt: 'desc' },
+    });
+    if (!session) return null;
+    const breakdown = await this.computeBreakdown(this.prisma, session.id);
+    return { ...session, breakdown };
+  }
+
+  /**
+   * Opens the shop's cash session. There is exactly one shared till, so only
+   * one session may be OPEN at a time no matter who opens it — the database
+   * enforces this too (partial unique index on status = 'OPEN').
+   */
   async open(dto: OpenSessionDto, userId: string) {
     const existing = await this.prisma.cashSession.findFirst({
-      where: { userId, status: 'OPEN' },
+      where: { status: 'OPEN' },
+      include: { user: { select: { fullName: true } } },
     });
     if (existing) {
-      throw new ConflictException(
-        'You already have an open cash session. Close it before opening another.',
-      );
+      throw new ConflictException(this.alreadyOpenMessage(existing.user.fullName));
     }
 
     // When no float is supplied, carry over the previous shift's counted cash.
@@ -72,9 +92,18 @@ export class CashService {
         ? toPrisma(dto.openingBalance)
         : (await this.suggestedOpeningFloat()).amount;
 
-    const session = await this.prisma.cashSession.create({
-      data: { userId, openingBalance },
-    });
+    const session = await this.prisma.cashSession
+      .create({ data: { userId, openingBalance } })
+      .catch((e: unknown) => {
+        // Two people hit "Open Session" at once; the index kept one of them out.
+        if (
+          e instanceof Prisma.PrismaClientKnownRequestError &&
+          e.code === 'P2002'
+        ) {
+          throw new ConflictException(this.alreadyOpenMessage());
+        }
+        throw e;
+      });
 
     await this.audit.record({
       userId,
@@ -87,13 +116,8 @@ export class CashService {
     return session;
   }
 
-  async addMovement(
-    sessionId: string,
-    dto: CashMovementDto,
-    userId: string,
-    isAdmin: boolean,
-  ) {
-    const session = await this.getOwnedOpenSession(sessionId, userId, isAdmin);
+  async addMovement(sessionId: string, dto: CashMovementDto, userId: string) {
+    const session = await this.getOpenSession(sessionId);
 
     const movement = await this.prisma.cashMovement.create({
       data: {
@@ -122,12 +146,7 @@ export class CashService {
    *
    * Expected = opening + cashSales + deposits - expenses - withdrawals
    */
-  async close(
-    sessionId: string,
-    dto: CloseSessionDto,
-    userId: string,
-    isAdmin: boolean,
-  ) {
+  async close(sessionId: string, dto: CloseSessionDto, userId: string) {
     return this.prisma.runSerializable(async (tx) => {
       const locked = await tx.$queryRaw<
         { id: string; userId: string; status: string }[]
@@ -136,9 +155,6 @@ export class CashService {
       `);
       if (locked.length === 0) throw new NotFoundException('Cash session not found');
       const row = locked[0];
-      if (!isAdmin && row.userId !== userId) {
-        throw new ForbiddenException('You can only close your own session');
-      }
       if (row.status !== 'OPEN') {
         throw new ConflictException('Cash session is already closed');
       }
@@ -176,9 +192,9 @@ export class CashService {
     });
   }
 
-  /** Live summary for an open or closed session. Users may only view their own
-   * sessions; admins may view anyone's. */
-  async summary(sessionId: string, userId: string, isAdmin: boolean) {
+  /** Live summary for an open or closed session. The till is shared, so anyone
+   * signed in may view it. */
+  async summary(sessionId: string) {
     const session = await this.prisma.cashSession.findUnique({
       where: { id: sessionId },
       include: {
@@ -187,18 +203,14 @@ export class CashService {
       },
     });
     if (!session) throw new NotFoundException('Cash session not found');
-    if (!isAdmin && session.userId !== userId) {
-      throw new ForbiddenException('Not your cash session');
-    }
     const breakdown = await this.computeBreakdown(this.prisma, sessionId);
     return { ...session, breakdown };
   }
 
-  /** Lists sessions: a user sees only their own; an admin sees everyone's. */
-  async findAll(query: CashSessionQueryDto, userId: string, isAdmin: boolean) {
+  /** Lists the shop's sessions — the same history for everyone. */
+  async findAll(query: CashSessionQueryDto) {
     const where: Prisma.CashSessionWhereInput = {
       ...(query.status ? { status: query.status } : {}),
-      ...(isAdmin ? {} : { userId }),
     };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.cashSession.findMany({
@@ -234,18 +246,17 @@ export class CashService {
 
   // ---- internals ----------------------------------------------------------
 
-  private async getOwnedOpenSession(
-    sessionId: string,
-    userId: string,
-    isAdmin: boolean,
-  ) {
+  private alreadyOpenMessage(openedBy?: string) {
+    return openedBy
+      ? `The till is already open (opened by ${openedBy}). Everyone shares one cash session — close it before opening another.`
+      : 'The till is already open. Everyone shares one cash session — close it before opening another.';
+  }
+
+  private async getOpenSession(sessionId: string) {
     const session = await this.prisma.cashSession.findUnique({
       where: { id: sessionId },
     });
     if (!session) throw new NotFoundException('Cash session not found');
-    if (!isAdmin && session.userId !== userId) {
-      throw new ForbiddenException('Not your cash session');
-    }
     if (session.status !== 'OPEN') {
       throw new BadRequestException('Cash session is closed');
     }

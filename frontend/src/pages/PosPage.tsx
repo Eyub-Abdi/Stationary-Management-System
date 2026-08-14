@@ -315,7 +315,7 @@ export default function PosPage() {
   const complete = async () => {
     if (cart.length === 0) return;
     if (!session) {
-      toast.error('No open cash session', 'Open a cash session before recording sales.');
+      toast.error('The till is closed', 'Open the shop’s cash session before recording sales.');
       return;
     }
     if (payment === 'CASH' && received < total) {
@@ -344,7 +344,6 @@ export default function PosPage() {
     try {
       const sale = await createSale.mutateAsync({
         input: {
-          cashSessionId: session.id,
           items,
           paymentMethod: payment,
           customerId: payment === 'CREDIT' ? customerId : undefined,
@@ -383,7 +382,7 @@ export default function PosPage() {
             className="flex items-center gap-2 rounded-xl border border-error/40 bg-error-container/40 px-4 py-2 text-body-sm font-semibold text-on-error-container"
           >
             <Icon name="warning" size={20} className="text-error" />
-            No open cash session — open one to record sales
+            The till is closed — open it to record sales
           </Link>
         )}
       </div>

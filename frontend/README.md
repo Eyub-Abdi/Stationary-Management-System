@@ -88,8 +88,9 @@ src/
 
 ### Notable integrations
 
-- **Cash-session aware POS** — the API requires an open cash session to record a
-  sale; the topbar shows live session status and the POS guides you to open one.
+- **Cash-session aware POS** — the shop shares a single cash session; the API
+  requires it to be open to record a sale. The topbar shows live status, and any
+  station can open or close it (the others pick the change up automatically).
 - **Idempotent sales** — each sale sends an `Idempotency-Key` to prevent duplicates.
 - **FIFO purchases & inventory** — purchases create batches; movements and
   valuation are surfaced in the Inventory screen.

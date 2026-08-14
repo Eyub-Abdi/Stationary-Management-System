@@ -10,6 +10,7 @@ import { add, money, mul, round, sub, toPrisma } from '../../common/utils/money'
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountingPeriodsService } from '../accounting/accounting-periods.service';
 import { AuditService } from '../audit/audit.service';
+import { findOpenSession } from '../cash/open-session';
 import { InventoryService } from '../inventory/inventory.service';
 import { SequenceService } from '../shared/sequence.service';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
@@ -64,13 +65,9 @@ export class PurchasesService {
         if (dup) return dup;
       }
 
-      // Link the cash portion to the recorder's open till (if any), so a cash
+      // Link the cash portion to the shared open till (if any), so a cash
       // purchase reduces that session's expected cash at close.
-      const session = await tx.cashSession.findFirst({
-        where: { userId, status: 'OPEN' },
-        orderBy: { openedAt: 'desc' },
-        select: { id: true },
-      });
+      const session = await findOpenSession(tx);
       // Validate variants up-front (with their product's dual-unit config).
       const variantIds = [...new Set(dto.items.map((i) => i.variantId))];
       const variants = await tx.productVariant.findMany({

@@ -1,10 +1,11 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
   IsInt,
   IsNotEmpty,
+  IsOptional,
   IsString,
   IsUUID,
   MaxLength,
@@ -26,12 +27,14 @@ export class ReturnLineDto {
 }
 
 export class ReturnSaleDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
+    deprecated: true,
     description:
-      'The cashier’s OPEN cash session the refund is paid from. Must belong to the operator and be open.',
+      'Ignored. The refund is paid from the shop’s one shared open cash session.',
   })
+  @IsOptional()
   @IsUUID()
-  cashSessionId!: string;
+  cashSessionId?: string;
 
   @ApiProperty({ type: [ReturnLineDto] })
   @IsArray()

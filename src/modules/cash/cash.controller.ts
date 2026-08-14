@@ -41,7 +41,7 @@ export class CashController {
     @Body() dto: CashMovementDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.cash.addMovement(id, dto, user.id, user.role === Role.ADMIN);
+    return this.cash.addMovement(id, dto, user.id);
   }
 
   @Post(':id/close')
@@ -51,13 +51,21 @@ export class CashController {
     @Body() dto: CloseSessionDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.cash.close(id, dto, user.id, user.role === Role.ADMIN);
+    return this.cash.close(id, dto, user.id);
   }
 
   @Get()
-  @ApiOperation({ summary: 'List cash sessions — your own; admins see everyone’s' })
-  findAll(@Query() query: CashSessionQueryDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.cash.findAll(query, user.id, user.role === Role.ADMIN);
+  @ApiOperation({ summary: 'List cash sessions (shared history — same for everyone)' })
+  findAll(@Query() query: CashSessionQueryDto) {
+    return this.cash.findAll(query);
+  }
+
+  @Get('current')
+  @ApiOperation({
+    summary: 'The shop’s open cash session (shared by all users), or null',
+  })
+  current() {
+    return this.cash.current();
   }
 
   @Get('variances')
@@ -76,8 +84,8 @@ export class CashController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Session summary with live cash breakdown (own; admins any)' })
-  summary(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.cash.summary(id, user.id, user.role === Role.ADMIN);
+  @ApiOperation({ summary: 'Session summary with live cash breakdown' })
+  summary(@Param('id', ParseUUIDPipe) id: string) {
+    return this.cash.summary(id);
   }
 }

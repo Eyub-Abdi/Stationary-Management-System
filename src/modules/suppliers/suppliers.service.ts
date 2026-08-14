@@ -8,6 +8,7 @@ import { paginate, PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { money, sub, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { requireOpenSession } from '../cash/open-session';
 import {
   CreateSupplierDto,
   RecordSupplierPaymentDto,
@@ -143,15 +144,7 @@ export class SuppliersService {
         );
       }
 
-      const session = await tx.cashSession.findFirst({
-        where: { userId, status: 'OPEN' },
-        orderBy: { openedAt: 'desc' },
-      });
-      if (!session) {
-        throw new BadRequestException(
-          'No open cash session. Open one before paying a supplier from the till.',
-        );
-      }
+      const session = await requireOpenSession(tx, 'paying a supplier');
 
       if (dto.purchaseId) {
         const purchase = await tx.purchase.findUnique({

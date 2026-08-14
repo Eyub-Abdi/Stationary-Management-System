@@ -1,62 +1,34 @@
-import { createContext, useContext, useEffect, useState } from 'react';
-import { useCashSessionSummary } from '@/hooks/useCash';
+import { createContext, useContext } from 'react';
+import { useCurrentCashSession } from '@/hooks/useCash';
 import { useAuth } from './AuthProvider';
-import { api } from '@/lib/api';
 import type { CashSession } from '@/types';
 
-const KEY = 'sp.activeCashSession';
-
 interface CashSessionCtx {
-  activeId: string | null;
+  /** The shared session everything is posted to — undefined when the till is closed. */
   session: CashSession | undefined;
   isLoading: boolean;
-  setActiveId: (id: string | null) => void;
 }
 
 const Ctx = createContext<CashSessionCtx | null>(null);
 
+/**
+ * The whole shop works out of ONE cash session. Rather than each station
+ * remembering a session of its own (which drifted: staff left sessions open,
+ * the next person opened another, and takings landed in the wrong drawer), we
+ * simply read whichever session is open on the server and poll for changes —
+ * so opening or closing the till on one machine is reflected on all of them.
+ */
 export function CashSessionProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, user } = useAuth();
-  const [activeId, setActiveIdState] = useState<string | null>(() => localStorage.getItem(KEY));
-
-  const setActiveId = (id: string | null) => {
-    setActiveIdState(id);
-    if (id) localStorage.setItem(KEY, id);
-    else localStorage.removeItem(KEY);
-  };
-
-  // Re-attach to one's own open session on login, so the UI's notion of the
-  // active session always matches what the backend will attribute sales to.
-  // Staff get only their own sessions from this endpoint; for an admin (who
-  // sees everyone's) we pick the one that belongs to them.
-  useEffect(() => {
-    if (!isAuthenticated || activeId || !user) return;
-    let cancelled = false;
-    api
-      .get('/cash-sessions', { params: { status: 'OPEN', limit: 20 } })
-      .then((res) => {
-        const list = (res.data?.data ?? []) as CashSession[];
-        const mine = list.find((s) => s.userId === user.id);
-        if (!cancelled && mine) setActiveId(mine.id);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, user?.id]);
-
-  const { data: session, isLoading, error } = useCashSessionSummary(activeId);
-
-  // If the stored session is gone or already closed, drop it.
-  useEffect(() => {
-    if (error) setActiveId(null);
-    if (session && session.status === 'CLOSED') setActiveId(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [error, session]);
+  const { isAuthenticated } = useAuth();
+  const { data: session, isLoading } = useCurrentCashSession(isAuthenticated);
 
   return (
-    <Ctx.Provider value={{ activeId, session: session?.status === 'OPEN' ? session : undefined, isLoading, setActiveId }}>
+    <Ctx.Provider
+      value={{
+        session: session?.status === 'OPEN' ? session : undefined,
+        isLoading: isAuthenticated ? isLoading : false,
+      }}
+    >
       {children}
     </Ctx.Provider>
   );

@@ -35,6 +35,20 @@ export function useCashVariances(filters: { page?: number; limit?: number }) {
   });
 }
 
+/**
+ * The shop's one shared cash session (null when the till is closed). Polled so
+ * a station notices when someone else opens or closes the till.
+ */
+export function useCurrentCashSession(enabled = true) {
+  return useQuery({
+    queryKey: qk.currentCashSession(),
+    enabled,
+    refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
+    queryFn: () => unwrap<CashSession | null>(api.get('/cash-sessions/current')),
+  });
+}
+
 export function useCashSessionSummary(id: string | null | undefined) {
   return useQuery({
     queryKey: qk.cashSession(id ?? ''),
@@ -68,7 +82,10 @@ export function useOpenCashSession() {
       unwrap<CashSession>(
         api.post('/cash-sessions/open', clean({ openingBalance })),
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['cash-sessions'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cash-sessions'] });
+      qc.invalidateQueries({ queryKey: qk.currentCashSession() });
+    },
   });
 }
 
@@ -80,6 +97,7 @@ export function useCloseCashSession() {
     onSuccess: (_d, { id }) => {
       qc.invalidateQueries({ queryKey: ['cash-sessions'] });
       qc.invalidateQueries({ queryKey: qk.cashSession(id) });
+      qc.invalidateQueries({ queryKey: qk.currentCashSession() });
     },
   });
 }
@@ -101,6 +119,7 @@ export function useCashMovement() {
     onSuccess: (_d, { id }) => {
       qc.invalidateQueries({ queryKey: qk.cashSession(id) });
       qc.invalidateQueries({ queryKey: ['cash-sessions'] });
+      qc.invalidateQueries({ queryKey: qk.currentCashSession() });
     },
   });
 }

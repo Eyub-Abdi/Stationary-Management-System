@@ -9,6 +9,7 @@ import { paginate, PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { money, sub, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { requireOpenSession } from '../cash/open-session';
 import {
   CreateCustomerDto,
   RecordCustomerPaymentDto,
@@ -224,16 +225,8 @@ export class CustomersService {
         );
       }
 
-      // Cash received must land in the staff member's open till.
-      const session = await tx.cashSession.findFirst({
-        where: { userId, status: 'OPEN' },
-        orderBy: { openedAt: 'desc' },
-      });
-      if (!session) {
-        throw new BadRequestException(
-          'No open cash session. Open one before receiving a payment.',
-        );
-      }
+      // Cash received must land in the shop's shared till.
+      const session = await requireOpenSession(tx, 'receiving a payment');
 
       if (dto.saleId) {
         const sale = await tx.sale.findUnique({ where: { id: dto.saleId } });

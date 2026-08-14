@@ -29,7 +29,6 @@ export interface SaleItemInput {
 }
 
 export interface CreateSaleInput {
-  cashSessionId: string;
   items: SaleItemInput[];
   paymentMethod?: PaymentMethod;
   customerId?: string;
@@ -87,15 +86,13 @@ export function useReturnSale() {
   return useMutation({
     mutationFn: ({
       id,
-      cashSessionId,
       items,
       reason,
     }: {
       id: string;
-      cashSessionId: string;
       items: { saleItemId: string; quantity: number }[];
       reason: string;
-    }) => unwrap<SaleReturnResult>(api.post(`/sales/${id}/returns`, { cashSessionId, items, reason })),
+    }) => unwrap<SaleReturnResult>(api.post(`/sales/${id}/returns`, { items, reason })),
     onSuccess: (_d, { id }) => {
       qc.invalidateQueries({ queryKey: ['sales'] });
       qc.invalidateQueries({ queryKey: qk.sale(id) });

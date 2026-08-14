@@ -886,6 +886,13 @@ model AccountingPeriod {
 // Cash management
 // ----------------------------------------------------------------------------
 
+/// The shop's till. Only ONE session may be OPEN at a time and every user
+/// works in it — `userId` records who opened it, not who owns it.
+///
+/// That single-open rule is enforced by a partial unique index Prisma cannot
+/// express (`cash_sessions_single_open`, added in the
+/// 20260814090000_single_shared_cash_session migration). If a generated
+/// migration ever proposes dropping it, keep it.
 model CashSession {
   id             String            @id @default(uuid()) @db.Uuid
   userId         String            @db.Uuid

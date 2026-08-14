@@ -65,12 +65,14 @@ export class SaleItemInputDto {
 }
 
 export class CreateSaleDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
+    deprecated: true,
     description:
-      'The cashier’s OPEN cash session this sale is rung into. Must belong to the seller and be open; the sale is attributed to it for reconciliation.',
+      'Ignored. The shop runs one shared cash session; sales are attributed to whichever session is currently open.',
   })
+  @IsOptional()
   @IsUUID()
-  cashSessionId!: string;
+  cashSessionId?: string;
 
   @ApiProperty({ type: [SaleItemInputDto] })
   @IsArray()

@@ -183,9 +183,9 @@ function ReturnModal({ sale, open, onClose }: { sale: Sale; open: boolean; onClo
       .map(([saleItemId, quantity]) => ({ saleItemId, quantity }));
     if (items.length === 0) return toast.error('Select at least one item to return');
     if (reason.trim().length < 5) return toast.error('Enter a reason (min 5 characters)');
-    if (!session) return toast.error('No open cash session', 'Open a cash session before processing a refund.');
+    if (!session) return toast.error('The till is closed', 'Open the shop’s cash session before processing a refund.');
     try {
-      const result = await ret.mutateAsync({ id: sale.id, cashSessionId: session.id, items, reason: reason.trim() });
+      const result = await ret.mutateAsync({ id: sale.id, items, reason: reason.trim() });
       const credit = Number(result.creditApplied);
       const cash = Number(result.totalRefund) - credit;
       const detail =
@@ -219,7 +219,7 @@ function ReturnModal({ sale, open, onClose }: { sale: Sale; open: boolean; onClo
       <div className="space-y-4">
         {!session && (
           <div className="rounded-xl border border-error/40 bg-error-container/40 px-4 py-3 text-body-sm font-semibold text-on-error-container">
-            No open cash session — open one to refund from the till.
+            The till is closed — open it to refund from the drawer.
           </div>
         )}
         <div className="space-y-2">

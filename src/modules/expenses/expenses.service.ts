@@ -10,6 +10,7 @@ import { add, money, mul, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountingPeriodsService } from '../accounting/accounting-periods.service';
 import { AuditService } from '../audit/audit.service';
+import { findOpenSession } from '../cash/open-session';
 import { ExpenseCategoriesService } from '../expense-categories/expense-categories.service';
 import {
   CreateExpenseDto,
@@ -36,8 +37,8 @@ export class ExpensesService {
   ) {}
 
   /**
-   * Records an expense. If the user has an OPEN cash session it is linked, so
-   * the expense reduces that session's expected cash at close (cash-only model).
+   * Records an expense. If the shared till is open the expense is linked to it,
+   * so it reduces that session's expected cash at close (cash-only model).
    */
   async create(dto: CreateExpenseDto, userId: string, isAdmin: boolean) {
     // Throws if the category is archived, or is management-only and the caller
@@ -46,11 +47,7 @@ export class ExpensesService {
     // Backdating into a month whose books are closed would move its net profit.
     await this.periods.assertOpen(dto.expenseDate, 'an expense dated then');
 
-    const session = await this.prisma.cashSession.findFirst({
-      where: { userId, status: 'OPEN' },
-      orderBy: { openedAt: 'desc' },
-      select: { id: true },
-    });
+    const session = await findOpenSession(this.prisma);
 
     const expense = await this.prisma.expense.create({
       data: {
@@ -230,11 +227,7 @@ export class ExpensesService {
 
     const [categoryId, session] = await Promise.all([
       this.categories.officeCategoryId(),
-      this.prisma.cashSession.findFirst({
-        where: { userId, status: 'OPEN' },
-        orderBy: { openedAt: 'desc' },
-        select: { id: true },
-      }),
+      findOpenSession(this.prisma),
     ]);
 
     const expense = await this.prisma.expense.create({

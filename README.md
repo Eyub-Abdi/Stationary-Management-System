@@ -362,22 +362,34 @@ Sell 70 more  ->  COGS = 50 × 500 + 20 × 700 = 39,000
 
 ## 17. Cash session architecture
 
-Daily till lifecycle, one open session per user:
+Daily till lifecycle. There is **one shared session for the whole shop** — one
+physical drawer, one session, everyone posts to it:
 
 ```
 Expected = Opening + Cash Sales + Deposits − Expenses − Withdrawals
 Variance = Actual (counted) − Expected
 ```
 
-- **Open**: staff enters opening float; only one `OPEN` session allowed.
-- **During**: sales and expenses created by that user attach to the session;
-  deposits/withdrawals recorded as `CashMovement`s.
-- **Close**: under a `SELECT ... FOR UPDATE` row lock (so no sale slips in
-  mid-calculation), the system computes expected cash, stores
-  `expectedAmount / actualAmount / variance / notes`, and audits the close with
-  the full breakdown.
-- **Admin** reviews all sessions and a dedicated **variances** report.
+- **Open**: whoever starts the day enters the opening float (carried over from
+  the last counted close). At most one `OPEN` session may exist at a time —
+  enforced in the service *and* by a partial unique index
+  (`cash_sessions_single_open`); `CashSession.userId` records who opened it, not
+  who owns it.
+- **During**: every user's sales, refunds, expenses, purchases and customer /
+  supplier payments attach to that one session, whoever is signed in;
+  deposits/withdrawals recorded as `CashMovement`s. Clients read
+  `GET /cash-sessions/current` rather than remembering a session id, so opening
+  or closing the till on one machine is seen by all of them.
+- **Close**: any signed-in user may close it. Under a `SELECT ... FOR UPDATE`
+  row lock (so no sale slips in mid-calculation), the system computes expected
+  cash, stores `expectedAmount / actualAmount / variance / notes`, and audits
+  the close with the full breakdown.
+- **Admin** reviews the session history and a dedicated **variances** report.
 - Sales require an open session — enforcing that all cash is accounted for.
+
+Before this, each cashier opened a private session. Sessions were left open, the
+next person opened another, and the day's cash scattered across several "open"
+tills that never reconciled.
 
 ---
 

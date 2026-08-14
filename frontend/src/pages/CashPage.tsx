@@ -41,7 +41,7 @@ type TabKey = 'sessions' | 'variances';
 
 export default function CashPage() {
   const { isAdmin } = useAuth();
-  const { session, isLoading: sessionLoading, setActiveId } = useActiveCashSession();
+  const { session, isLoading: sessionLoading } = useActiveCashSession();
   const [tab, setTab] = useState<TabKey>('sessions');
   const [openModal, setOpenModal] = useState(false);
   const [closeModal, setCloseModal] = useState(false);
@@ -51,7 +51,7 @@ export default function CashPage() {
     <div className="flex flex-col gap-gutter">
       <PageHeader
         title="Cash Management"
-        description="Open and reconcile daily cash sessions, and track till movements."
+        description="One shared till for the whole shop — open it once a day, everyone rings into it, then reconcile."
         actions={
           session ? (
             <>
@@ -78,8 +78,8 @@ export default function CashPage() {
         <Card>
           <EmptyState
             icon="account_balance"
-            title="No open cash session"
-            description="Open a session at the start of your shift to record sales and reconcile cash."
+            title="The till is closed"
+            description="Open the shop's cash session at the start of the day. Everyone rings into the same session, so it only needs opening once."
             action={<Button icon="lock_open" onClick={() => setOpenModal(true)}>Open Cash Session</Button>}
           />
         </Card>
@@ -95,19 +95,19 @@ export default function CashPage() {
               { value: 'variances', label: 'Variances', icon: 'rule' },
             ]}
           />
-          {tab === 'sessions' ? <SessionsTable onResume={setActiveId} /> : <VariancesTable />}
+          {tab === 'sessions' ? <SessionsTable /> : <VariancesTable />}
         </>
       ) : (
         <div className="flex flex-col gap-3">
-          <h3 className="text-h3 font-semibold text-on-surface">My sessions</h3>
-          <SessionsTable onResume={setActiveId} />
+          <h3 className="text-h3 font-semibold text-on-surface">Session history</h3>
+          <SessionsTable />
         </div>
       )}
 
-      <OpenSessionModal open={openModal} onClose={() => setOpenModal(false)} onOpened={setActiveId} />
+      <OpenSessionModal open={openModal} onClose={() => setOpenModal(false)} />
       {session && (
         <>
-          <CloseSessionModal session={session} open={closeModal} onClose={() => setCloseModal(false)} onClosed={() => setActiveId(null)} />
+          <CloseSessionModal session={session} open={closeModal} onClose={() => setCloseModal(false)} />
           <MovementModal sessionId={session.id} open={moveModal} onClose={() => setMoveModal(false)} />
         </>
       )}
@@ -121,8 +121,8 @@ function ActiveSessionPanel({ session }: { session: CashSession }) {
     <div className="grid grid-cols-1 gap-gutter lg:grid-cols-12">
       <Card className="lg:col-span-8">
         <CardHeader
-          title="Active Session"
-          subtitle={`Opened ${formatDateTime(session.openedAt)} · ${session.user?.fullName ?? ''}`}
+          title="Shop Till"
+          subtitle={`Opened ${formatDateTime(session.openedAt)}${session.user?.fullName ? ` by ${session.user.fullName}` : ''} · shared by everyone`}
           action={<Badge tone="success" dot>OPEN</Badge>}
         />
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-outline-variant bg-outline-variant sm:grid-cols-3">
@@ -175,7 +175,7 @@ function Cell({
   );
 }
 
-function SessionsTable({ onResume }: { onResume: (id: string) => void }) {
+function SessionsTable() {
   const [page, setPage] = useState(1);
   const { data, isLoading, isError, refetch, error } = useCashSessions({ page, limit: 10 });
   return (
@@ -197,7 +197,6 @@ function SessionsTable({ onResume }: { onResume: (id: string) => void }) {
               <TH align="right">Expected</TH>
               <TH align="right">Actual</TH>
               <TH align="right">Variance</TH>
-              <TH align="right" />
             </THead>
             <TBody>
               {data!.data.map((s) => (
@@ -210,11 +209,6 @@ function SessionsTable({ onResume }: { onResume: (id: string) => void }) {
                   <TD align="right" className="font-mono-data">{s.actualAmount ? currency(s.actualAmount) : '—'}</TD>
                   <TD align="right">
                     {s.variance != null ? <VarianceTag value={num(s.variance)} /> : '—'}
-                  </TD>
-                  <TD align="right">
-                    {s.status === 'OPEN' && (
-                      <Button size="sm" variant="ghost" onClick={() => onResume(s.id)}>Resume</Button>
-                    )}
                   </TD>
                 </TR>
               ))}
@@ -282,15 +276,7 @@ function VarianceTag({ value }: { value: number }) {
   );
 }
 
-function OpenSessionModal({
-  open,
-  onClose,
-  onOpened,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onOpened: (id: string) => void;
-}) {
+function OpenSessionModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const toast = useToast();
   const openSession = useOpenCashSession();
   const suggested = useSuggestedOpeningFloat(open);
@@ -308,7 +294,6 @@ function OpenSessionModal({
     try {
       // hasPrevious → omit the amount so the server carries it over authoritatively.
       const s = await openSession.mutateAsync(hasPrevious ? undefined : num(balance));
-      onOpened(s.id);
       toast.success('Cash session opened', `Float ${currency(s.openingBalance)}`);
       setBalance('');
       onClose();
@@ -324,8 +309,8 @@ function OpenSessionModal({
       title="Open Cash Session"
       subtitle={
         hasPrevious
-          ? 'The float is carried over from your last shift’s closing count'
-          : 'Count the cash in the drawer to start your first shift'
+          ? 'The float is carried over from the last shift’s closing count'
+          : 'Count the cash in the drawer to start the first shift'
       }
       footer={
         <>
@@ -364,12 +349,10 @@ function CloseSessionModal({
   session,
   open,
   onClose,
-  onClosed,
 }: {
   session: CashSession;
   open: boolean;
   onClose: () => void;
-  onClosed: () => void;
 }) {
   const toast = useToast();
   const closeSession = useCloseCashSession();
@@ -384,7 +367,6 @@ function CloseSessionModal({
     try {
       await closeSession.mutateAsync({ id: session.id, actualAmount: num(actual), notes: notes.trim() || undefined });
       toast.success('Session closed', variance === 0 ? 'Drawer balanced perfectly.' : `Variance ${currency(variance ?? 0)}`);
-      onClosed();
       onClose();
     } catch (e) {
       toast.error('Could not close session', extractMessage(e));

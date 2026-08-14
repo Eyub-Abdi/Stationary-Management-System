@@ -135,3 +135,44 @@ describe('CashService.computeBreakdown', () => {
     expect(b.expectedAmount).toBe('65000.00');
   });
 });
+
+/**
+ * The shop shares one till, so "is a session already open?" is a question about
+ * the shop, never about the person asking.
+ */
+describe('CashService.open', () => {
+  const build = (openSession: unknown, lastClosed: unknown = null) => {
+    const findFirst = jest.fn().mockImplementation(({ where }) =>
+      Promise.resolve(where.status === 'OPEN' ? openSession : lastClosed),
+    );
+    const create = jest.fn().mockImplementation(({ data }) =>
+      Promise.resolve({ id: 'new-session', ...data }),
+    );
+    const prisma = { cashSession: { findFirst, create } };
+    const audit = { record: jest.fn().mockResolvedValue(undefined) };
+    return {
+      service: new CashService(prisma as never, audit as never),
+      create,
+    };
+  };
+
+  it('refuses a second session while another user has the till open', async () => {
+    const { service, create } = build({
+      id: 'sess1',
+      user: { fullName: 'Amina' },
+    });
+    await expect(service.open({}, 'user2')).rejects.toThrow(/already open.*Amina/is);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('opens with the carried-over float when the till is closed', async () => {
+    const { service, create } = build(null, {
+      actualAmount: new Prisma.Decimal(62000),
+      closedAt: new Date(),
+    });
+    const session = await service.open({}, 'user2');
+    expect(create).toHaveBeenCalled();
+    expect(session.openingBalance.toString()).toBe('62000');
+    expect(session.userId).toBe('user2');
+  });
+});
