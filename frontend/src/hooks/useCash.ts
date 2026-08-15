@@ -59,12 +59,15 @@ export function useCashSessionSummary(id: string | null | undefined) {
 }
 
 export interface SuggestedFloat {
+  /** What was left in the drawer: counted minus anything taken out at close. */
   amount: string;
   hasPrevious: boolean;
   from: string | null;
+  counted: string;
+  withdrawn: string;
 }
 
-/** The carry-over opening float (last shift's counted closing cash). */
+/** The carry-over opening float (what the last shift left in the drawer). */
 export function useSuggestedOpeningFloat(enabled = true) {
   return useQuery({
     queryKey: qk.openingFloat(),
@@ -92,8 +95,20 @@ export function useOpenCashSession() {
 export function useCloseCashSession() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, actualAmount, notes }: { id: string; actualAmount: number; notes?: string }) =>
-      unwrap<CashSession>(api.post(`/cash-sessions/${id}/close`, { actualAmount, notes })),
+    mutationFn: ({
+      id,
+      actualAmount,
+      withdrawal,
+      notes,
+    }: {
+      id: string;
+      actualAmount: number;
+      withdrawal?: number;
+      notes?: string;
+    }) =>
+      unwrap<CashSession>(
+        api.post(`/cash-sessions/${id}/close`, { actualAmount, withdrawal, notes }),
+      ),
     onSuccess: (_d, { id }) => {
       qc.invalidateQueries({ queryKey: ['cash-sessions'] });
       qc.invalidateQueries({ queryKey: qk.cashSession(id) });

@@ -905,6 +905,10 @@ model CashSession {
   expectedAmount Decimal? @db.Decimal(14, 2)
   actualAmount   Decimal? @db.Decimal(14, 2)
   variance       Decimal? @db.Decimal(14, 2)
+  // Cash taken out of the drawer as part of closing, after it was counted. Kept
+  // apart from actualAmount so the count still reconciles against expected
+  // while the next shift's float carries over only what was physically left.
+  closingWithdrawal Decimal? @db.Decimal(14, 2)
   notes          String?
 
   user             User              @relation(fields: [userId], references: [id])

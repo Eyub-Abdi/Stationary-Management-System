@@ -332,8 +332,19 @@ function OpenSessionModal({ open, onClose }: { open: boolean; onClose: () => voi
             </div>
             <span className="font-mono-data text-h2 font-bold text-primary">{currency(carryOver!.amount)}</span>
           </div>
+          {/* Spelling out the subtraction is what makes the figure checkable:
+              if the drawer does not hold this much, the last close forgot to
+              record what was taken out. */}
           <p className="flex items-center gap-1.5 text-[12px] text-on-surface-variant">
-            <Icon name="info" size={16} /> No need to recount — this is the cash left in the drawer at the last close.
+            <Icon name="info" size={16} />
+            {num(carryOver?.withdrawn ?? 0) > 0 ? (
+              <span>
+                {currency(carryOver!.counted)} was counted and{' '}
+                {currency(carryOver!.withdrawn)} taken out, leaving this in the drawer.
+              </span>
+            ) : (
+              <span>No need to recount — this is the cash left in the drawer at the last close.</span>
+            )}
           </p>
         </div>
       ) : (
@@ -357,16 +368,36 @@ function CloseSessionModal({
   const toast = useToast();
   const closeSession = useCloseCashSession();
   const [actual, setActual] = useState('');
+  const [withdrawal, setWithdrawal] = useState('');
   const [notes, setNotes] = useState('');
 
   const expected = num(session.breakdown?.expectedAmount ?? 0);
   const variance = actual === '' ? null : num(actual) - expected;
+  const counted = num(actual);
+  const takingOut = withdrawal === '' ? 0 : num(withdrawal);
+  const leftInDrawer = counted - takingOut;
+  const takingTooMuch = actual !== '' && takingOut > counted;
 
   const submit = async () => {
     if (actual === '' || num(actual) < 0) return toast.error('Enter the counted cash amount');
+    if (takingTooMuch) {
+      return toast.error('More than was counted', 'You cannot take out more cash than the drawer holds.');
+    }
     try {
-      await closeSession.mutateAsync({ id: session.id, actualAmount: num(actual), notes: notes.trim() || undefined });
-      toast.success('Session closed', variance === 0 ? 'Drawer balanced perfectly.' : `Variance ${currency(variance ?? 0)}`);
+      await closeSession.mutateAsync({
+        id: session.id,
+        actualAmount: counted,
+        withdrawal: withdrawal === '' ? undefined : takingOut,
+        notes: notes.trim() || undefined,
+      });
+      toast.success(
+        'Session closed',
+        takingOut > 0
+          ? `${currency(takingOut)} taken out · ${currency(leftInDrawer)} left for the next shift.`
+          : variance === 0
+            ? 'Drawer balanced perfectly.'
+            : `Variance ${currency(variance ?? 0)}`,
+      );
       onClose();
     } catch (e) {
       toast.error('Could not close session', extractMessage(e));
@@ -402,6 +433,36 @@ function CloseSessionModal({
             <span className="text-body-sm font-semibold">Variance</span>
             <span className="font-mono-data font-bold">
               {variance > 0 ? '+' : ''}{currency(variance)} {variance === 0 ? '' : variance > 0 ? '(over)' : '(short)'}
+            </span>
+          </div>
+        )}
+        {/* Asked after the count, because the count reconciles the whole drawer
+            and this only decides what is still there in the morning. Leaving it
+            blank carries the full amount over — right only if the cash actually
+            stays in the drawer overnight. */}
+        {actual !== '' && (
+          <Field
+            label="Cash taken out now"
+            hint="Banked or taken home at close. Leave blank if it all stays in the drawer."
+            error={takingTooMuch ? 'More than was counted in the drawer.' : undefined}
+          >
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={withdrawal}
+              onChange={(e) => setWithdrawal(e.target.value)}
+              placeholder="0.00"
+            />
+          </Field>
+        )}
+        {actual !== '' && takingOut > 0 && !takingTooMuch && (
+          <div className="flex items-center justify-between rounded-xl bg-surface-container-low px-4 py-3">
+            <span className="text-body-sm text-on-surface-variant">
+              Stays in the drawer · opens the next session
+            </span>
+            <span className="font-mono-data text-h3 font-bold text-on-surface">
+              {currency(leftInDrawer)}
             </span>
           </div>
         )}

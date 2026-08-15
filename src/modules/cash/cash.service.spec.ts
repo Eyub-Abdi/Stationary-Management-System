@@ -175,4 +175,26 @@ describe('CashService.open', () => {
     expect(session.openingBalance.toString()).toBe('62000');
     expect(session.userId).toBe('user2');
   });
+
+  // The drawer is emptied overnight: only what stayed behind is there in the
+  // morning, so carrying the whole count over would invent cash.
+  it('carries over only what was left after a closing withdrawal', async () => {
+    const { service } = build(null, {
+      actualAmount: new Prisma.Decimal(587400),
+      closingWithdrawal: new Prisma.Decimal(550000),
+      closedAt: new Date(),
+    });
+    const session = await service.open({}, 'user2');
+    expect(session.openingBalance.toString()).toBe('37400');
+  });
+
+  it('still honours an explicitly supplied float', async () => {
+    const { service } = build(null, {
+      actualAmount: new Prisma.Decimal(587400),
+      closingWithdrawal: new Prisma.Decimal(550000),
+      closedAt: new Date(),
+    });
+    const session = await service.open({ openingBalance: 10000 }, 'user2');
+    expect(session.openingBalance.toString()).toBe('10000');
+  });
 });

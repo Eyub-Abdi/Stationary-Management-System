@@ -47,12 +47,19 @@ export class CashService {
     const last = await this.prisma.cashSession.findFirst({
       where: { status: 'CLOSED', actualAmount: { not: null } },
       orderBy: { closedAt: 'desc' },
-      select: { actualAmount: true, closedAt: true },
+      select: { actualAmount: true, closedAt: true, closingWithdrawal: true },
     });
+    // What carries over is what stayed in the drawer, not what was counted:
+    // cash removed at close went to the bank or home and will not be there in
+    // the morning.
+    const counted = money(last?.actualAmount ?? 0);
+    const withdrawn = money(last?.closingWithdrawal ?? 0);
     return {
-      amount: toPrisma(last?.actualAmount ?? 0),
+      amount: toPrisma(sub(counted, withdrawn)),
       hasPrevious: !!last,
       from: last?.closedAt ?? null,
+      counted: counted.toFixed(2),
+      withdrawn: withdrawn.toFixed(2),
     };
   }
 
@@ -164,6 +171,19 @@ export class CashService {
       const actual = money(dto.actualAmount);
       const variance = sub(actual, expected);
 
+      // Cash lifted out of the drawer once it had been counted — banked or taken
+      // home overnight. The count above already reconciled the full drawer, so
+      // this changes nothing about the variance; it only decides how much is
+      // still there tomorrow. Recording it is what keeps the next session's
+      // float honest instead of carrying over money that has left the building.
+      const withdrawal = money(dto.withdrawal ?? 0);
+      if (withdrawal.greaterThan(actual)) {
+        throw new BadRequestException(
+          `You cannot take out ${withdrawal.toFixed(2)} — only ${actual.toFixed(2)} was counted.`,
+        );
+      }
+      const leftInDrawer = sub(actual, withdrawal);
+
       const session = await tx.cashSession.update({
         where: { id: sessionId },
         data: {
@@ -172,6 +192,7 @@ export class CashService {
           expectedAmount: toPrisma(expected),
           actualAmount: toPrisma(actual),
           variance: toPrisma(variance),
+          closingWithdrawal: dto.withdrawal != null ? toPrisma(withdrawal) : null,
           notes: dto.notes,
         },
       });
@@ -185,6 +206,8 @@ export class CashService {
           ...breakdown,
           actualAmount: actual.toFixed(2),
           variance: variance.toFixed(2),
+          closingWithdrawal: withdrawal.toFixed(2),
+          leftInDrawer: leftInDrawer.toFixed(2),
         },
       });
 

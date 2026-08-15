@@ -30,6 +30,17 @@ export class CloseSessionDto {
   @Min(0)
   actualAmount!: number;
 
+  @ApiPropertyOptional({
+    example: 150000,
+    description:
+      'Cash taken out of the drawer at close (banked or held). Counted first, so it does not affect the variance — it only reduces the float carried into the next session.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  withdrawal?: number;
+
   @ApiPropertyOptional({ description: 'Notes, e.g. explanation of any variance.' })
   @IsOptional()
   @IsString()
