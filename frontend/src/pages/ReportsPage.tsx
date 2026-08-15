@@ -46,10 +46,10 @@ import {
   startOfToday,
 } from '@/lib/utils';
 
-type RangeKey = 'today' | '7d' | '30d' | 'month';
+type RangeKey = 'today' | '7d' | '30d' | 'month' | 'all';
 type TabKey = 'financial' | 'sales' | 'expenses' | 'inventory' | 'cash' | 'staff';
 
-function rangeFor(key: RangeKey): { from: string; to: string; label: string } {
+function rangeFor(key: RangeKey): { from?: string; to?: string; label: string } {
   const to = endOfToday();
   switch (key) {
     case 'today':
@@ -60,6 +60,10 @@ function rangeFor(key: RangeKey): { from: string; to: string; label: string } {
       return { from: daysAgo(29), to, label: 'Last 30 days' };
     case 'month':
       return { from: startOfMonth(), to, label: 'This month' };
+    case 'all':
+      // No bounds at all: the API leaves the date filter off entirely rather
+      // than us inventing an epoch the business didn't start at.
+      return { label: 'All time' };
   }
 }
 
@@ -85,7 +89,9 @@ export default function ReportsPage() {
   const r = { from: range.from, to: range.to };
 
   const summary = useFinancialSummary(r);
-  const series = useSalesSeries({ ...r, granularity: rangeKey === 'today' ? 'DAILY' : 'DAILY' });
+  // All time can span years — bucket it by month so the axis stays readable.
+  const monthly = rangeKey === 'all';
+  const series = useSalesSeries({ ...r, granularity: monthly ? 'MONTHLY' : 'DAILY' });
   const expenseMix = useExpensesByCategory(r);
   const topProducts = useTopProducts(r, tab === 'sales' || tab === 'inventory');
   const topServices = useTopServices(r, tab === 'sales');
@@ -106,8 +112,8 @@ export default function ReportsPage() {
   const debtLoading = aging.isLoading || supplierDebt.isLoading;
 
   const seriesData = useMemo(
-    () => (series.data ?? []).map((p) => ({ label: formatDate(p.period, 'dd MMM'), revenue: num(p.revenue), profit: num(p.grossProfit) })),
-    [series.data],
+    () => (series.data ?? []).map((p) => ({ label: formatDate(p.period, monthly ? 'MMM yyyy' : 'dd MMM'), revenue: num(p.revenue), profit: num(p.grossProfit) })),
+    [series.data, monthly],
   );
   const mixData = useMemo(
     // The API resolves category names, so they are already display-ready.
@@ -155,6 +161,7 @@ export default function ReportsPage() {
                 { value: '7d', label: '7D' },
                 { value: '30d', label: '30D' },
                 { value: 'month', label: 'Month' },
+                { value: 'all', label: 'All' },
               ]}
             />
             <Button variant="outline" icon="download" onClick={handleExport}>
@@ -204,8 +211,10 @@ export default function ReportsPage() {
         ]}
       />
 
+      {/* items-start: the charts are a fixed height, so letting the row stretch
+          them to match a long table just adds empty space under the plot. */}
       {tab === 'financial' && (
-        <div className="grid grid-cols-1 gap-gutter lg:grid-cols-12">
+        <div className="grid grid-cols-1 items-start gap-gutter lg:grid-cols-12">
           <Card className="lg:col-span-8">
             <CardHeader title="Revenue & Profit Trend" subtitle={range.label} />
             <div className="px-4 pb-5">
@@ -243,7 +252,7 @@ export default function ReportsPage() {
       )}
 
       {tab === 'sales' && (
-        <div className="grid grid-cols-1 gap-gutter lg:grid-cols-12">
+        <div className="grid grid-cols-1 items-start gap-gutter lg:grid-cols-12">
           <Card className="lg:col-span-7">
             <CardHeader title="Daily Sales" subtitle={range.label} />
             <div className="px-4 pb-5">

@@ -180,9 +180,10 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Charts (admin) */}
+      {/* Charts (admin) — items-start so the fixed-height chart isn't stretched
+          to match the taller mix card, which only adds space under the plot. */}
       {isAdmin && (
-        <div className="grid grid-cols-1 gap-gutter lg:grid-cols-12">
+        <div className="grid grid-cols-1 items-start gap-gutter lg:grid-cols-12">
           <Card className="lg:col-span-8">
             <CardHeader
               title="Weekly Sales Trend"
@@ -233,7 +234,7 @@ export default function DashboardPage() {
       )}
 
       {/* Tables */}
-      <div className="grid grid-cols-1 gap-gutter lg:grid-cols-12">
+      <div className="grid grid-cols-1 items-start gap-gutter lg:grid-cols-12">
         <Card className={cn('overflow-hidden', isAdmin ? 'lg:col-span-8' : 'lg:col-span-12')}>
           <CardHeader
             title="Recent Transactions"

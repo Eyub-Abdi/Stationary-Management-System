@@ -74,7 +74,7 @@ export default function SettingsPage() {
 
 function PreferencesTab() {
   const { theme, setTheme } = useTheme();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   return (
     <div className="grid grid-cols-1 gap-gutter lg:grid-cols-2">
       <Card>
@@ -111,10 +111,14 @@ function PreferencesTab() {
               <Badge tone={user?.role === 'ADMIN' ? 'navy' : 'neutral'} className="mt-1">{user?.role}</Badge>
             </div>
           </div>
-          <div className="mt-4 rounded-xl bg-surface-container-low p-3 text-[13px] text-on-surface-variant">
-            <Icon name="info" size={16} className="mr-1" />
-            Contact an administrator to change your role or reset your password.
-          </div>
+          {/* Admins do this themselves under Users, so the note would be telling
+              them to go and ask themselves. */}
+          {!isAdmin && (
+            <div className="mt-4 rounded-xl bg-surface-container-low p-3 text-[13px] text-on-surface-variant">
+              <Icon name="info" size={16} className="mr-1" />
+              Contact an administrator to change your role or reset your password.
+            </div>
+          )}
         </CardBody>
       </Card>
 

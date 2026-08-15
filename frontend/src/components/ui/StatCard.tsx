@@ -4,18 +4,17 @@ import { Skeleton } from './States';
 
 type Accent = 'primary' | 'secondary' | 'error' | 'tertiary';
 
-const ACCENT_BORDER: Record<Accent, string> = {
-  primary: 'border-t-primary',
-  secondary: 'border-t-secondary',
-  error: 'border-t-error',
-  tertiary: 'border-t-tertiary-fixed-dim',
-};
-
+/**
+ * The accent is carried by the icon alone — one small glyph of colour against a
+ * neutral chip. Each token below is a role pair that inverts with the theme, so
+ * the icon stays legible in both (the old `tertiary-fixed-dim` was a pale tan
+ * that all but vanished on a white card).
+ */
 const ACCENT_ICON: Record<Accent, string> = {
   primary: 'text-primary',
   secondary: 'text-secondary',
   error: 'text-error',
-  tertiary: 'text-tertiary-fixed-dim',
+  tertiary: 'text-on-tertiary-fixed-variant',
 };
 
 export function StatCard({
@@ -37,37 +36,44 @@ export function StatCard({
   loading?: boolean;
   footer?: React.ReactNode;
 }) {
+  const down = trend?.positive === false;
   return (
-    <div
-      className={cn(
-        'rounded-2xl border border-outline-variant border-t-4 bg-surface-container-lowest p-stack-md shadow-sm transition-transform hover:-translate-y-0.5 hover:shadow-md',
-        ACCENT_BORDER[accent],
-      )}
-    >
-      <div className="mb-2 flex items-start justify-between">
-        <span className="text-label-caps uppercase tracking-wide text-on-surface-variant">{label}</span>
-        <Icon name={icon} className={ACCENT_ICON[accent]} />
-      </div>
-      {loading ? (
-        <Skeleton className="h-8 w-28" />
-      ) : (
-        <div className="flex items-baseline gap-2">
-          <h3 className="text-h2 font-semibold text-on-surface">{value}</h3>
-          {trend && (
-            <span
-              className={cn(
-                'text-[11px] font-bold',
-                trend.positive === false ? 'text-error' : 'text-secondary',
+    <div className="rounded-2xl border border-outline-variant bg-surface-container-lowest p-5 shadow-sm">
+      <div className="flex items-start gap-3">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface-container">
+          <Icon name={icon} size={20} className={ACCENT_ICON[accent]} />
+        </span>
+
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-body-sm font-medium text-on-surface-variant">{label}</p>
+
+          {loading ? (
+            <Skeleton className="mt-2 h-7 w-28" />
+          ) : (
+            <div className="mt-1 flex flex-wrap items-baseline gap-x-2">
+              {/* Proportional figures: tabular digits look loose at this size. */}
+              <span className="text-h2 font-semibold text-on-surface">{value}</span>
+              {trend && (
+                // Direction is stated by the arrow as well as the colour, so it
+                // still reads without colour vision.
+                <span
+                  className={cn(
+                    'inline-flex items-center gap-0.5 text-[12px] font-semibold',
+                    down ? 'text-error' : 'text-secondary',
+                  )}
+                >
+                  <Icon name={down ? 'arrow_downward' : 'arrow_upward'} size={14} />
+                  {trend.value}
+                </span>
               )}
-            >
-              {trend.value}
-            </span>
+            </div>
+          )}
+
+          {hint && !loading && (
+            <p className="mt-1 truncate text-[12px] text-on-surface-variant">{hint}</p>
           )}
         </div>
-      )}
-      {hint && !loading && (
-        <p className="mt-1 font-mono-data text-[11px] text-outline">{hint}</p>
-      )}
+      </div>
       {footer}
     </div>
   );

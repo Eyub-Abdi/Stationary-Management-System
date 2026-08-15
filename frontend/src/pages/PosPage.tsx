@@ -387,10 +387,12 @@ export default function PosPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-gutter lg:grid-cols-12">
+      {/* items-start: the catalog grows with the product count, and stretching
+          the cart to match it just trails empty space under Complete Sale. */}
+      <div className="grid grid-cols-1 items-start gap-gutter lg:grid-cols-12">
         {/* Catalog */}
         <div className="lg:col-span-7 xl:col-span-8">
-          <Card className="flex h-full flex-col">
+          <Card className="flex flex-col">
             <div className="flex flex-col gap-3 border-b border-outline-variant p-4 sm:flex-row sm:items-center">
               <SegmentedControl
                 value={tab}
@@ -492,7 +494,7 @@ export default function PosPage() {
 
         {/* Cart */}
         <div className="lg:col-span-5 xl:col-span-4">
-          <Card className="flex h-full flex-col">
+          <Card className="flex flex-col">
             <div className="flex items-center justify-between border-b border-outline-variant px-5 py-4">
               <h3 className="text-h3 font-semibold text-on-surface">Current Sale</h3>
               {cart.length > 0 && (

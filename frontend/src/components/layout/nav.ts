@@ -29,7 +29,9 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/profit', label: 'Profit Analysis', icon: 'trending_up', permission: 'reports' },
   { to: '/movement', label: 'Product Movement', icon: 'insights', permission: 'reports' },
   { to: '/closing', label: 'Closing the Books', icon: 'event_available', adminOnly: true },
-  { to: '/users', label: 'Users', icon: 'group', permission: 'users' },
+  // Distinct from Customers' `group`: collapsed, the rail is icons only, so two
+  // entries sharing a glyph would be indistinguishable.
+  { to: '/users', label: 'Users', icon: 'manage_accounts', permission: 'users' },
   { to: '/activity', label: 'Activity Logs', icon: 'history', adminOnly: true },
   { to: '/settings', label: 'Settings', icon: 'settings' },
 ];
