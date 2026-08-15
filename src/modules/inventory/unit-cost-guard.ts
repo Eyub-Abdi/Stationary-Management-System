@@ -1,6 +1,24 @@
 import { ConflictException } from '@nestjs/common';
 import Decimal from 'decimal.js';
-import { money } from '../../common/utils/money';
+
+export type UnitInfo = {
+  baseUnit: string;
+  bulkUnit?: string | null;
+  unitSize?: number;
+};
+
+/**
+ * The remedy differs by where the cost came from. A stock adjustment asks for
+ * the per-piece cost directly, so the fix is to divide it down by hand; a
+ * purchase line divides it for you once the pack size is set.
+ */
+function defaultRemedy(unitCost: Decimal, units: UnitInfo): string {
+  const { baseUnit, bulkUnit, unitSize } = units;
+  const remedy = `Enter the cost of ONE ${baseUnit}, not of a whole ${bulkUnit ?? 'pack'}.`;
+  return bulkUnit && unitSize && unitSize > 1
+    ? `${remedy} If ${unitCost.toFixed(2)} is the price of a ${bulkUnit} of ${unitSize}, the cost per ${baseUnit} is ${unitCost.dividedBy(unitSize).toFixed(2)}.`
+    : remedy;
+}
 
 /**
  * Every cost the inventory holds is per BASE unit — one sheet, one pen — because
@@ -13,27 +31,25 @@ import { money } from '../../common/utils/money';
  * A cost above the selling price is the tell. No shop knowingly buys a sheet for
  * more than it sells one for, so we refuse rather than warn — a bad batch is far
  * harder to unpick later than a re-typed number is now.
+ *
+ * `sellingPrice` must be the price the item will actually carry once this call
+ * succeeds, so a purchase that raises the price in the same request is judged
+ * against the new one.
  */
 export function assertCostPerBaseUnit(
   unitCost: Decimal,
-  variant: { sellingPrice: Decimal | { toString(): string } },
-  units: { baseUnit: string; bulkUnit?: string | null; unitSize?: number },
+  sellingPrice: Decimal,
+  units: UnitInfo,
+  context: { item?: string; remedy?: string } = {},
 ): void {
-  const sellingPrice = money(variant.sellingPrice.toString());
-
   // A variant priced at 0 is not yet set up for sale, so there is nothing to
   // compare against; let it through rather than block stock-taking.
   if (sellingPrice.lte(0) || unitCost.lte(sellingPrice)) return;
 
-  const { baseUnit, bulkUnit, unitSize } = units;
-  // Show the arithmetic they most likely meant: pack price ÷ pack size.
-  const perBase =
-    bulkUnit && unitSize && unitSize > 1
-      ? ` If ${unitCost.toFixed(2)} is the price of a ${bulkUnit} of ${unitSize}, the cost per ${baseUnit} is ${unitCost.dividedBy(unitSize).toFixed(2)}.`
-      : '';
-
+  const prefix = context.item ? `${context.item}: ` : 'Unit cost ';
   throw new ConflictException(
-    `Unit cost ${unitCost.toFixed(2)} is above the selling price ${sellingPrice.toFixed(2)}. ` +
-      `Enter the cost of ONE ${baseUnit}, not of a whole ${bulkUnit ?? 'pack'}.${perBase}`,
+    `${prefix}${unitCost.toFixed(2)} per ${units.baseUnit} is above the ` +
+      `${sellingPrice.toFixed(2)} selling price. ` +
+      `${context.remedy ?? defaultRemedy(unitCost, units)}`,
   );
 }

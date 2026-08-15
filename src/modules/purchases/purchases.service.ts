@@ -12,6 +12,7 @@ import { AccountingPeriodsService } from '../accounting/accounting-periods.servi
 import { AuditService } from '../audit/audit.service';
 import { findOpenSession } from '../cash/open-session';
 import { InventoryService } from '../inventory/inventory.service';
+import { assertCostPerBaseUnit } from '../inventory/unit-cost-guard';
 import { SequenceService } from '../shared/sequence.service';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 
@@ -132,6 +133,22 @@ export class PurchasesService {
             `Set a selling price for ${nameSnapshot} — it has no price yet.`,
           );
         }
+        // Judge the cost against the price this line leaves behind, so raising
+        // the price in the same purchase is taken into account.
+        const sellingPrice =
+          item.sellingPrice !== undefined
+            ? money(item.sellingPrice)
+            : money(variant.sellingPrice);
+        // A pack bought as a single unit lands here: unitSize stays 1, so the
+        // pack price becomes the per-piece cost and inflates COGS for as long
+        // as the batch lasts.
+        assertCostPerBaseUnit(pieceCost, sellingPrice, product, {
+          item: nameSnapshot,
+          remedy:
+            sellUnit === 'BULK'
+              ? `Check the pack size (${unitSize}) and the cost per ${unitLabel}.`
+              : `If this was a ${product.bulkUnit ?? 'pack'}, switch the line to pack units and enter how many ${product.baseUnit} it holds.`,
+        });
         return { item, variant, unitSize, unitLabel, lineTotal, basePieces, pieceCost, nameSnapshot };
       });
 

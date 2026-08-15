@@ -120,6 +120,51 @@ describe('PurchasesService.create', () => {
     expect(variantUpdate.buyingPrice.toString()).toBe('500');
   });
 
+  // The Limination Poach mistake: a pack bought as one base unit at the pack
+  // price, so its whole cost lands on a single piece and inflates COGS.
+  it('rejects a pack price entered as a single base unit', async () => {
+    const { service } = build();
+    await expect(
+      service.create(
+        baseDto({
+          paymentMethod: 'CASH',
+          items: [{ variantId: 'v1', quantity: 1, unitCost: 20000 }],
+        }),
+        'user1',
+      ),
+    ).rejects.toThrow(/above the 1000.00 selling price/);
+  });
+
+  // The same cost is fine once the line says how many pieces the pack holds.
+  it('accepts that pack price once the pack size is set', async () => {
+    const { service, calls } = build();
+    await service.create(
+      baseDto({
+        paymentMethod: 'CASH',
+        items: [
+          { variantId: 'v1', quantity: 1, unitCost: 20000, sellUnit: SellUnit.BULK, unitSize: 100 },
+        ],
+      }),
+      'user1',
+    );
+    const batch = calls['addBatch'][0] as { quantity: number; unitCost: Prisma.Decimal };
+    expect(batch.quantity).toBe(100);
+    expect(batch.unitCost.toString()).toBe('200');
+  });
+
+  // A purchase that raises the price is judged against the new one, not the old.
+  it('measures the cost against a selling price set in the same line', async () => {
+    const { service, calls } = build();
+    await service.create(
+      baseDto({
+        paymentMethod: 'CASH',
+        items: [{ variantId: 'v1', quantity: 1, unitCost: 1500, sellingPrice: 2500 }],
+      }),
+      'user1',
+    );
+    expect(calls['addBatch']).toHaveLength(1);
+  });
+
   it('settles a cash purchase fully and links it to the open till', async () => {
     const { service, calls } = build();
     await service.create(baseDto({ paymentMethod: 'CASH' }), 'user1');

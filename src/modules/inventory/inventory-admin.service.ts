@@ -42,7 +42,11 @@ export class InventoryAdminService {
         const unitCost = money(dto.unitCost ?? variant.buyingPrice);
         // Catches a pack price typed into a per-piece field, whether it came
         // from the form or from the buyingPrice fallback above.
-        assertCostPerBaseUnit(unitCost, variant, variant.product);
+        assertCostPerBaseUnit(
+          unitCost,
+          money(variant.sellingPrice),
+          variant.product,
+        );
         await this.inventory.addBatchTx(tx, {
           variantId: dto.variantId,
           productId,
