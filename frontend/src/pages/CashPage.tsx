@@ -373,6 +373,10 @@ function CloseSessionModal({
 
   const expected = num(session.breakdown?.expectedAmount ?? 0);
   const variance = actual === '' ? null : num(actual) - expected;
+  // Expected values carry stray cents (585,399.97), so an exact-zero test
+  // reported a balanced drawer as "+TZS 0 (over)". Judge it at the precision
+  // the figure is actually shown in — whole shillings.
+  const balanced = variance !== null && Math.round(variance) === 0;
   const counted = num(actual);
   const takingOut = withdrawal === '' ? 0 : num(withdrawal);
   const leftInDrawer = counted - takingOut;
@@ -394,8 +398,8 @@ function CloseSessionModal({
         'Session closed',
         takingOut > 0
           ? `${currency(takingOut)} taken out · ${currency(leftInDrawer)} left for the next shift.`
-          : variance === 0
-            ? 'Drawer balanced perfectly.'
+          : balanced
+            ? 'Drawer balanced.'
             : `Variance ${currency(variance ?? 0)}`,
       );
       onClose();
@@ -408,6 +412,7 @@ function CloseSessionModal({
     <Modal
       open={open}
       onClose={onClose}
+      size="lg"
       title="Close Cash Session"
       subtitle="Count the physical cash and reconcile against expected"
       footer={
@@ -417,33 +422,20 @@ function CloseSessionModal({
         </>
       }
     >
-      <div className="space-y-4">
-        <div className="flex items-center justify-between rounded-xl bg-surface-container-low px-4 py-3">
-          <span className="text-body-sm text-on-surface-variant">Expected in drawer</span>
-          <span className="font-mono-data text-h3 font-bold text-primary">{currency(expected)}</span>
-        </div>
-        <Field label="Actual counted cash" required>
-          <Input type="number" min="0" step="0.01" value={actual} onChange={(e) => setActual(e.target.value)} placeholder="0.00" autoFocus />
-        </Field>
-        {variance !== null && (
-          <div className={cn(
-            'flex items-center justify-between rounded-xl px-4 py-3',
-            variance === 0 ? 'bg-secondary-container/50 text-on-secondary-container' : 'bg-error-container/50 text-on-error-container',
-          )}>
-            <span className="text-body-sm font-semibold">Variance</span>
-            <span className="font-mono-data font-bold">
-              {variance > 0 ? '+' : ''}{currency(variance)} {variance === 0 ? '' : variance > 0 ? '(over)' : '(short)'}
-            </span>
-          </div>
-        )}
-        {/* Asked after the count, because the count reconciles the whole drawer
-            and this only decides what is still there in the morning. Leaving it
-            blank carries the full amount over — right only if the cash actually
-            stays in the drawer overnight. */}
-        {actual !== '' && (
+      {/* Two columns: what you type on the left, what it adds up to on the
+          right. The running total was three stacked boxes before, which is what
+          made the dialog tall — as one ledger it is both shorter and readable
+          top to bottom, the way the drawer is actually reconciled. */}
+      <div className="grid gap-5 sm:grid-cols-2">
+        <div className="space-y-4">
+          <Field label="Actual counted cash" required>
+            <Input type="number" min="0" step="0.01" value={actual} onChange={(e) => setActual(e.target.value)} placeholder="0.00" autoFocus />
+          </Field>
+          {/* Asked after the count, because the count reconciles the whole
+              drawer and this only decides what is still there in the morning. */}
           <Field
             label="Cash taken out now"
-            hint="Banked or taken home at close. Leave blank if it all stays in the drawer."
+            hint="Banked or taken home. Leave blank if it all stays in the drawer."
             error={takingTooMuch ? 'More than was counted in the drawer.' : undefined}
           >
             <Input
@@ -453,24 +445,93 @@ function CloseSessionModal({
               value={withdrawal}
               onChange={(e) => setWithdrawal(e.target.value)}
               placeholder="0.00"
+              disabled={actual === ''}
             />
           </Field>
-        )}
-        {actual !== '' && takingOut > 0 && !takingTooMuch && (
-          <div className="flex items-center justify-between rounded-xl bg-surface-container-low px-4 py-3">
-            <span className="text-body-sm text-on-surface-variant">
-              Stays in the drawer · opens the next session
-            </span>
-            <span className="font-mono-data text-h3 font-bold text-on-surface">
-              {currency(leftInDrawer)}
-            </span>
-          </div>
-        )}
-        <Field label="Notes">
-          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Explain any variance…" />
-        </Field>
+          <Field label="Notes">
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Explain any variance…" />
+          </Field>
+        </div>
+
+        <div className="rounded-xl bg-surface-container-low p-4">
+          <dl className="space-y-2.5 text-body-sm">
+            <LedgerRow label="Expected in drawer" value={currency(expected)} />
+            <LedgerRow
+              label="Counted"
+              value={actual === '' ? '—' : currency(counted)}
+              muted={actual === ''}
+            />
+            <div className="border-t border-outline-variant pt-2.5">
+              <LedgerRow
+                label="Variance"
+                value={
+                  actual === ''
+                    ? '—'
+                    : balanced
+                      ? 'Balanced'
+                      : `${variance! > 0 ? '+' : '−'}${currency(Math.abs(variance!))} ${variance! > 0 ? 'over' : 'short'}`
+                }
+                muted={actual === ''}
+                tone={actual === '' ? undefined : balanced ? 'good' : 'bad'}
+                strong
+              />
+            </div>
+            {takingOut > 0 && !takingTooMuch && (
+              <LedgerRow label="Taken out" value={`− ${currency(takingOut)}`} />
+            )}
+            <div className="border-t border-outline-variant pt-2.5">
+              <LedgerRow
+                label="Left in drawer"
+                value={actual === '' ? '—' : currency(Math.max(0, leftInDrawer))}
+                muted={actual === ''}
+                strong
+              />
+              {/* Always shown, including when nothing is taken out: the whole
+                  point is that carrying the full amount over is a visible
+                  decision rather than a silent default. */}
+              <p className="mt-1 text-[11px] text-on-surface-variant">
+                Opens the next session
+              </p>
+            </div>
+          </dl>
+        </div>
       </div>
     </Modal>
+  );
+}
+
+/** One line of the closing ledger: label left, figure right. */
+function LedgerRow({
+  label,
+  value,
+  strong,
+  muted,
+  tone,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+  muted?: boolean;
+  tone?: 'good' | 'bad';
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className={cn('text-on-surface-variant', strong && 'font-medium text-on-surface')}>
+        {label}
+      </dt>
+      <dd
+        className={cn(
+          'font-mono-data tabular-nums',
+          strong ? 'font-bold' : 'font-medium',
+          muted && 'text-outline',
+          tone === 'good' && 'text-secondary',
+          tone === 'bad' && 'text-error',
+          !muted && !tone && 'text-on-surface',
+        )}
+      >
+        {value}
+      </dd>
+    </div>
   );
 }
 
