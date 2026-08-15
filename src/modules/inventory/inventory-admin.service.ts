@@ -7,6 +7,7 @@ import { AuditService } from '../audit/audit.service';
 import { AdjustStockDto } from './dto/adjust-stock.dto';
 import { MovementQueryDto } from './dto/movement-query.dto';
 import { InventoryService } from './inventory.service';
+import { assertCostPerBaseUnit } from './unit-cost-guard';
 
 /**
  * Admin-facing inventory operations (manual adjustments, ledger queries,
@@ -26,6 +27,11 @@ export class InventoryAdminService {
     return this.prisma.runSerializable(async (tx) => {
       const variant = await tx.productVariant.findUnique({
         where: { id: dto.variantId },
+        include: {
+          product: {
+            select: { baseUnit: true, bulkUnit: true, unitSize: true },
+          },
+        },
       });
       if (!variant) throw new NotFoundException('Variant not found');
       const productId = variant.productId;
@@ -34,6 +40,9 @@ export class InventoryAdminService {
       // For negative adjustments we consume FIFO to keep valuation correct.
       if (dto.quantityChange > 0) {
         const unitCost = money(dto.unitCost ?? variant.buyingPrice);
+        // Catches a pack price typed into a per-piece field, whether it came
+        // from the form or from the buyingPrice fallback above.
+        assertCostPerBaseUnit(unitCost, variant, variant.product);
         await this.inventory.addBatchTx(tx, {
           variantId: dto.variantId,
           productId,

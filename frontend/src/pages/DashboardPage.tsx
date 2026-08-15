@@ -169,14 +169,7 @@ export default function DashboardPage() {
           icon="inventory"
           loading={lowStock.isLoading}
           value={lowStock.data?.length ?? 0}
-          footer={
-            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-container">
-              <div
-                className="h-full rounded-full bg-error"
-                style={{ width: `${Math.min(100, (lowStock.data?.length ?? 0) * 8)}%` }}
-              />
-            </div>
-          }
+          hint="At or below minimum"
         />
       </div>
 

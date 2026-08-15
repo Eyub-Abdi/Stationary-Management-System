@@ -7,6 +7,7 @@ import {
   EmptyState,
   ErrorState,
   Field,
+  Icon,
   Input,
   LoadingState,
   Modal,
@@ -270,7 +271,9 @@ function AdjustStockModal({ open, onClose }: { open: boolean; onClose: () => voi
   const adjust = useAdjustStock();
   const { data: products } = useProducts({ status: 'ACTIVE', limit: 100 });
 
-  // One option per active variant.
+  // One option per active variant. The unit of measure travels with it: costs
+  // here are per base unit, and saying which unit that is out loud is what stops
+  // a pack price being entered as a piece price.
   const variantOptions = (products?.data ?? []).flatMap((p) =>
     p.variants
       .filter((v) => v.status === 'ACTIVE')
@@ -278,6 +281,10 @@ function AdjustStockModal({ open, onClose }: { open: boolean; onClose: () => voi
         variantId: v.id,
         currentStock: v.currentStock,
         buyingPrice: num(v.buyingPrice),
+        sellingPrice: num(v.sellingPrice),
+        baseUnit: p.baseUnit,
+        bulkUnit: p.bulkUnit,
+        unitSize: p.unitSize,
         label:
           v.label && v.label !== 'Default' ? `${p.name} — ${v.label}` : p.name,
       })),
@@ -299,11 +306,29 @@ function AdjustStockModal({ open, onClose }: { open: boolean; onClose: () => voi
     }
   }, [open]);
 
+  const selected = variantOptions.find((o) => o.variantId === variantId);
+  const unit = selected?.baseUnit ?? 'unit';
+  const qtyNum = parseInt(quantity, 10) || 0;
+  const costNum = unitCost === '' ? (selected?.buyingPrice ?? 0) : num(unitCost);
+  // Buying above the selling price means a pack price in a per-piece field. The
+  // API refuses it too; catching it here says so before the round trip.
+  const costTooHigh =
+    direction === 'in' &&
+    !!selected &&
+    selected.sellingPrice > 0 &&
+    costNum > selected.sellingPrice;
+
   const submit = async () => {
     if (!variantId) return toast.error('Select a product variant');
     const qty = parseInt(quantity, 10);
     if (!qty || qty <= 0) return toast.error('Enter a quantity greater than zero');
     if (!reason.trim()) return toast.error('A reason is required');
+    if (costTooHigh) {
+      return toast.error(
+        'Unit cost looks like a pack price',
+        `Enter the cost of one ${unit}, not of the whole pack.`,
+      );
+    }
     const quantityChange = direction === 'in' ? qty : -qty;
     try {
       await adjust.mutateAsync({
@@ -356,14 +381,51 @@ function AdjustStockModal({ open, onClose }: { open: boolean; onClose: () => voi
               <option value="out">Stock Out (−)</option>
             </Select>
           </Field>
-          <Field label="Quantity" required>
+          <Field
+            label={selected ? `Quantity (${unit})` : 'Quantity'}
+            required
+            hint={selected ? `In single ${unit} units` : undefined}
+          >
             <Input type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
           </Field>
         </div>
         {direction === 'in' && (
-          <Field label="Unit cost" hint="Optional — defaults to product reference buying price">
-            <Input type="number" min="0" step="0.01" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
-          </Field>
+          <>
+            <Field
+              label={selected ? `Cost per ${unit}` : 'Unit cost'}
+              hint={
+                selected
+                  ? `The cost of ONE ${unit} — divide a pack price by how many ${unit} it holds`
+                  : 'Optional — defaults to the product reference buying price'
+              }
+              error={
+                costTooHigh
+                  ? `Above the ${currency(selected!.sellingPrice)} selling price. This looks like a pack price, not the cost of one ${unit}.`
+                  : undefined
+              }
+            >
+              <Input type="number" min="0" step="0.01" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
+            </Field>
+            {/* The arithmetic in full: a wrong unit cost is invisible on its own
+                line but impossible to miss once multiplied out. */}
+            {selected && qtyNum > 0 && costNum > 0 && (
+              <div
+                className={cn(
+                  'flex items-start gap-2 rounded-xl px-3 py-2.5 text-[13px]',
+                  costTooHigh
+                    ? 'bg-error-container text-on-error-container'
+                    : 'bg-surface-container-low text-on-surface-variant',
+                )}
+              >
+                <Icon name={costTooHigh ? 'warning' : 'calculate'} size={16} className="mt-0.5 shrink-0" />
+                <span>
+                  {qtyNum.toLocaleString()} {unit} × {currency(costNum)} ={' '}
+                  <strong className="font-semibold">{currency(qtyNum * costNum)}</strong> added to
+                  inventory value
+                </span>
+              </div>
+            )}
+          </>
         )}
         <Field label="Reason" required>
           <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Stock count correction / damaged goods" />
