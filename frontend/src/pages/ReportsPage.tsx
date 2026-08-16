@@ -7,7 +7,7 @@ import {
   Icon,
   LoadingState,
   PageHeader,
-  SegmentedControl,
+  PeriodPicker,
   Skeleton,
   StatCard,
   TBody,
@@ -34,38 +34,10 @@ import {
 import { useSupplierSummary } from '@/hooks/useCatalog';
 import { useCustomerAging } from '@/hooks/useCustomers';
 import { CHART_COLORS } from '@/lib/constants';
-import {
-  cn,
-  currency,
-  daysAgo,
-  endOfToday,
-  formatDate,
-  formatDateTime,
-  num,
-  startOfMonth,
-  startOfToday,
-} from '@/lib/utils';
+import { cn, currency, formatDate, formatDateTime, num } from '@/lib/utils';
+import { resolvePeriod, type Period } from '@/lib/period';
 
-type RangeKey = 'today' | '7d' | '30d' | 'month' | 'all';
 type TabKey = 'financial' | 'sales' | 'expenses' | 'inventory' | 'cash' | 'staff';
-
-function rangeFor(key: RangeKey): { from?: string; to?: string; label: string } {
-  const to = endOfToday();
-  switch (key) {
-    case 'today':
-      return { from: startOfToday(), to, label: 'Today' };
-    case '7d':
-      return { from: daysAgo(6), to, label: 'Last 7 days' };
-    case '30d':
-      return { from: daysAgo(29), to, label: 'Last 30 days' };
-    case 'month':
-      return { from: startOfMonth(), to, label: 'This month' };
-    case 'all':
-      // No bounds at all: the API leaves the date filter off entirely rather
-      // than us inventing an epoch the business didn't start at.
-      return { label: 'All time' };
-  }
-}
 
 function exportCsv(filename: string, rows: Record<string, unknown>[]) {
   if (rows.length === 0) return;
@@ -83,15 +55,15 @@ function exportCsv(filename: string, rows: Record<string, unknown>[]) {
 
 export default function ReportsPage() {
   const toast = useToast();
-  const [rangeKey, setRangeKey] = useState<RangeKey>('7d');
+  const [period, setPeriod] = useState<Period>({ kind: '7d' });
   const [tab, setTab] = useState<TabKey>('financial');
-  const range = rangeFor(rangeKey);
+  const range = useMemo(() => resolvePeriod(period), [period]);
   const r = { from: range.from, to: range.to };
 
   const summary = useFinancialSummary(r);
-  // All time can span years — bucket it by month so the axis stays readable.
-  const monthly = rangeKey === 'all';
-  const series = useSalesSeries({ ...r, granularity: monthly ? 'MONTHLY' : 'DAILY' });
+  // Long spans get monthly buckets, or the axis is unreadable.
+  const monthly = range.granularity === 'MONTHLY';
+  const series = useSalesSeries({ ...r, granularity: range.granularity });
   const expenseMix = useExpensesByCategory(r);
   const topProducts = useTopProducts(r, tab === 'sales' || tab === 'inventory');
   const topServices = useTopServices(r, tab === 'sales');
@@ -153,17 +125,7 @@ export default function ReportsPage() {
         description="Analyze sales, expenses, profit, inventory and cash performance."
         actions={
           <>
-            <SegmentedControl
-              value={rangeKey}
-              onChange={setRangeKey}
-              items={[
-                { value: 'today', label: 'Today' },
-                { value: '7d', label: '7D' },
-                { value: '30d', label: '30D' },
-                { value: 'month', label: 'Month' },
-                { value: 'all', label: 'All' },
-              ]}
-            />
+            <PeriodPicker value={period} onChange={setPeriod} />
             <Button variant="outline" icon="download" onClick={handleExport}>
               Export CSV
             </Button>

@@ -9,7 +9,7 @@ import {
   LoadingState,
   PageHeader,
   SearchInput,
-  SegmentedControl,
+  PeriodPicker,
   StatCard,
   TBody,
   TD,
@@ -20,34 +20,9 @@ import {
 } from '@/components/ui';
 import { useProductProfitability } from '@/hooks/useReports';
 import { extractMessage } from '@/lib/api';
-import {
-  cn,
-  currency,
-  daysAgo,
-  endOfToday,
-  num,
-  startOfMonth,
-  startOfToday,
-} from '@/lib/utils';
+import { cn, currency, num } from '@/lib/utils';
+import { resolvePeriod, type Period } from '@/lib/period';
 import type { ProductProfitRow } from '@/types';
-
-type RangeKey = 'today' | '7d' | '30d' | 'month' | 'all';
-
-function rangeFor(key: RangeKey): { from?: string; to?: string; label: string } {
-  const to = endOfToday();
-  switch (key) {
-    case 'today':
-      return { from: startOfToday(), to, label: 'Today' };
-    case '7d':
-      return { from: daysAgo(6), to, label: 'Last 7 days' };
-    case '30d':
-      return { from: daysAgo(29), to, label: 'Last 30 days' };
-    case 'month':
-      return { from: startOfMonth(), to, label: 'This month' };
-    case 'all':
-      return { label: 'All time' };
-  }
-}
 
 function exportCsv(filename: string, rows: Record<string, unknown>[]) {
   if (rows.length === 0) return;
@@ -70,9 +45,9 @@ function marginTone(margin: number): 'success' | 'warning' | 'error' {
 }
 
 export default function ProfitPage() {
-  const [rangeKey, setRangeKey] = useState<RangeKey>('30d');
+  const [period, setPeriod] = useState<Period>({ kind: '30d' });
   const [search, setSearch] = useState('');
-  const range = rangeFor(rangeKey);
+  const range = useMemo(() => resolvePeriod(period), [period]);
   const { data, isLoading, isError, error, refetch } = useProductProfitability({
     from: range.from,
     to: range.to,
@@ -105,7 +80,7 @@ export default function ProfitPage() {
             variant="outline"
             icon="download"
             disabled={filtered.length === 0}
-            onClick={() => exportCsv(`profit-${rangeKey}`, filtered as unknown as Record<string, unknown>[])}
+            onClick={() => exportCsv(`profit-${period.kind}`, filtered as unknown as Record<string, unknown>[])}
           >
             Export CSV
           </Button>
@@ -155,17 +130,7 @@ export default function ProfitPage() {
             placeholder="Search by product or SKU…"
             className="lg:max-w-xs lg:flex-1"
           />
-          <SegmentedControl
-            value={rangeKey}
-            onChange={setRangeKey}
-            items={[
-              { value: 'today', label: 'Today' },
-              { value: '7d', label: '7d' },
-              { value: '30d', label: '30d' },
-              { value: 'month', label: 'Month' },
-              { value: 'all', label: 'All' },
-            ]}
-          />
+          <PeriodPicker value={period} onChange={setPeriod} />
         </div>
 
         {isLoading ? (
