@@ -9,6 +9,7 @@ import { paginate } from '../../common/dto/pagination.dto';
 import { money, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { assertTillCovers } from '../cash/expected-cash';
 import { requireOpenSession } from '../cash/open-session';
 import {
   BankCorrectionDto,
@@ -119,6 +120,10 @@ export class BankService {
     const amount = money(dto.amount);
     return this.prisma.runSerializable(async (tx) => {
       const session = await requireOpenSession(tx, 'moving cash to the bank');
+      // The bank direction has always checked it can cover the move; the till
+      // direction must too, or a mistyped transfer leaves the drawer expecting
+      // a negative amount for the rest of the day.
+      await assertTillCovers(tx, session.id, amount, 'banking more than it holds');
       await tx.cashMovement.create({
         data: {
           cashSessionId: session.id,

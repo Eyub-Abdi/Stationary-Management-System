@@ -3,6 +3,7 @@ import { CashMovementType, CashSessionStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsEnum,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -40,6 +41,15 @@ export class CloseSessionDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   withdrawal?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Where that cash went. BANK records it on the bank ledger; omit it when someone is simply holding the money.',
+    enum: ['BANK'],
+  })
+  @IsOptional()
+  @IsIn(['BANK'])
+  withdrawalTo?: 'BANK';
 
   @ApiPropertyOptional({ description: 'Notes, e.g. explanation of any variance.' })
   @IsOptional()

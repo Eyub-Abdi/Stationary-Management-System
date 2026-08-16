@@ -10,31 +10,23 @@ import { paginate } from '../../common/dto/pagination.dto';
 import { add, money, sub, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { BankService } from '../banking/bank.service';
 import {
   CashMovementDto,
   CashSessionQueryDto,
   CloseSessionDto,
   OpenSessionDto,
 } from './dto/cash.dto';
+import { CashBreakdown, computeBreakdown } from './expected-cash';
 
-export interface CashBreakdown {
-  openingBalance: string;
-  cashSales: string;
-  customerPayments: string;
-  deposits: string;
-  refunds: string;
-  withdrawals: string;
-  expenses: string;
-  purchases: string;
-  supplierPayments: string;
-  expectedAmount: string;
-}
+export type { CashBreakdown } from './expected-cash';
 
 @Injectable()
 export class CashService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly bank: BankService,
   ) {}
 
   /**
@@ -197,6 +189,25 @@ export class CashService {
         },
       });
 
+      // Money leaving the drawer is easiest to account for at the moment it
+      // leaves, which is the only moment anyone knows where it is going. Told
+      // it went to the bank, we put it on the bank ledger here rather than
+      // hoping someone records the trip tomorrow.
+      //
+      // Deliberately NOT a CashMovement: this happens after the count, so
+      // treating it as one would move `expected` and turn a balanced drawer
+      // into a variance.
+      if (withdrawal.greaterThan(0) && dto.withdrawalTo === 'BANK') {
+        await this.bank.writeTx(tx, {
+          type: 'TRANSFER_IN',
+          amount: withdrawal,
+          userId,
+          cashSessionId: sessionId,
+          notes: 'Banked at close of day',
+          action: 'BANK_TRANSFER_IN',
+        });
+      }
+
       await this.audit.recordTx(tx, {
         userId,
         action: 'CASH_SESSION_CLOSED',
@@ -286,85 +297,10 @@ export class CashService {
     return session;
   }
 
-  private async computeBreakdown(
+  private computeBreakdown(
     client: Prisma.TransactionClient | PrismaService,
     sessionId: string,
   ): Promise<CashBreakdown> {
-    const session = await client.cashSession.findUniqueOrThrow({
-      where: { id: sessionId },
-      select: { openingBalance: true },
-    });
-
-    const [sales, custPayments, deposits, withdrawals, expenses, returns, purchases, supPayments] =
-      await Promise.all([
-        // Only the CASH actually collected at sale time (credit balances excluded).
-        client.sale.aggregate({
-          where: { cashSessionId: sessionId, status: 'COMPLETED' },
-          _sum: { amountPaid: true },
-        }),
-        client.customerPayment.aggregate({
-          where: { cashSessionId: sessionId },
-          _sum: { amount: true },
-        }),
-        client.cashMovement.aggregate({
-          where: { cashSessionId: sessionId, type: 'DEPOSIT' },
-          _sum: { amount: true },
-        }),
-        client.cashMovement.aggregate({
-          where: { cashSessionId: sessionId, type: 'WITHDRAWAL' },
-          _sum: { amount: true },
-        }),
-        client.expense.aggregate({
-          where: { cashSessionId: sessionId },
-          _sum: { amount: true },
-        }),
-        client.saleReturn.aggregate({
-          where: { cashSessionId: sessionId },
-          _sum: { totalRefund: true, creditApplied: true },
-        }),
-        // Cash paid out of the till for stock purchases (down payment / full).
-        client.purchase.aggregate({
-          where: { cashSessionId: sessionId },
-          _sum: { amountPaid: true },
-        }),
-        client.supplierPayment.aggregate({
-          where: { cashSessionId: sessionId },
-          _sum: { amount: true },
-        }),
-      ]);
-
-    const opening = money(session.openingBalance);
-    const cashSales = money(sales._sum.amountPaid ?? 0);
-    const custPay = money(custPayments._sum.amount ?? 0);
-    const dep = money(deposits._sum.amount ?? 0);
-    const wd = money(withdrawals._sum.amount ?? 0);
-    const exp = money(expenses._sum.amount ?? 0);
-    // Only the cash portion of refunds leaves the till; credit-applied refunds
-    // reduce the customer's balance instead.
-    const refunds = sub(
-      money(returns._sum.totalRefund ?? 0),
-      money(returns._sum.creditApplied ?? 0),
-    );
-    const purch = money(purchases._sum.amountPaid ?? 0);
-    const supPay = money(supPayments._sum.amount ?? 0);
-
-    // Expected = opening + cashSales + customerPayments + deposits
-    //            − expenses − withdrawals − refunds − purchases − supplierPayments
-    const inflow = add(opening, cashSales, custPay, dep);
-    const outflow = add(exp, wd, refunds, purch, supPay);
-    const expected: Decimal = sub(inflow, outflow);
-
-    return {
-      openingBalance: opening.toFixed(2),
-      cashSales: cashSales.toFixed(2),
-      customerPayments: custPay.toFixed(2),
-      deposits: dep.toFixed(2),
-      refunds: refunds.toFixed(2),
-      withdrawals: wd.toFixed(2),
-      expenses: exp.toFixed(2),
-      purchases: purch.toFixed(2),
-      supplierPayments: supPay.toFixed(2),
-      expectedAmount: expected.toFixed(2),
-    };
+    return computeBreakdown(client, sessionId);
   }
 }

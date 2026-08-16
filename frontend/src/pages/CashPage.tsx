@@ -13,6 +13,7 @@ import {
   Modal,
   PageHeader,
   Pagination,
+  Select,
   Tabs,
   TBody,
   TD,
@@ -369,6 +370,9 @@ function CloseSessionModal({
   const closeSession = useCloseCashSession();
   const [actual, setActual] = useState('');
   const [withdrawal, setWithdrawal] = useState('');
+  // Where the cash goes as it leaves. Asked here because this is the only
+  // moment anyone actually knows the answer.
+  const [destination, setDestination] = useState<'BANK' | 'KEPT'>('BANK');
   const [notes, setNotes] = useState('');
 
   const expected = num(session.breakdown?.expectedAmount ?? 0);
@@ -392,12 +396,13 @@ function CloseSessionModal({
         id: session.id,
         actualAmount: counted,
         withdrawal: withdrawal === '' ? undefined : takingOut,
+        withdrawalTo: takingOut > 0 && destination === 'BANK' ? 'BANK' : undefined,
         notes: notes.trim() || undefined,
       });
       toast.success(
         'Session closed',
         takingOut > 0
-          ? `${currency(takingOut)} taken out · ${currency(leftInDrawer)} left for the next shift.`
+          ? `${currency(takingOut)} ${destination === 'BANK' ? 'banked' : 'taken out'} · ${currency(leftInDrawer)} left for the next shift.`
           : balanced
             ? 'Drawer balanced.'
             : `Variance ${currency(variance ?? 0)}`,
@@ -448,6 +453,25 @@ function CloseSessionModal({
               disabled={actual === ''}
             />
           </Field>
+          {/* Only worth asking once there is something to send somewhere. */}
+          {takingOut > 0 && !takingTooMuch && (
+            <Field
+              label="Where it is going"
+              hint={
+                destination === 'BANK'
+                  ? 'Recorded on the bank ledger straight away'
+                  : 'Someone is holding it — not recorded anywhere else'
+              }
+            >
+              <Select
+                value={destination}
+                onChange={(e) => setDestination(e.target.value as 'BANK' | 'KEPT')}
+              >
+                <option value="BANK">To the bank</option>
+                <option value="KEPT">Kept by someone</option>
+              </Select>
+            </Field>
+          )}
           <Field label="Notes">
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Explain any variance…" />
           </Field>
@@ -477,7 +501,10 @@ function CloseSessionModal({
               />
             </div>
             {takingOut > 0 && !takingTooMuch && (
-              <LedgerRow label="Taken out" value={`− ${currency(takingOut)}`} />
+              <LedgerRow
+                label={destination === 'BANK' ? 'To the bank' : 'Taken out'}
+                value={`− ${currency(takingOut)}`}
+              />
             )}
             <div className="border-t border-outline-variant pt-2.5">
               <LedgerRow

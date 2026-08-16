@@ -10,6 +10,7 @@ import { paginate } from '../../common/dto/pagination.dto';
 import { add, money, sub, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { assertTillCovers } from '../cash/expected-cash';
 import { requireOpenSession } from '../cash/open-session';
 import { BankService } from './bank.service';
 import { IssueLoanDto, LoanQueryDto, RepayLoanDto } from './dto/banking.dto';
@@ -60,6 +61,7 @@ export class LoansService {
       let cashSessionId: string | null = null;
       if (dto.source === 'HAND') {
         const session = await requireOpenSession(tx, 'lending cash from the till');
+        await assertTillCovers(tx, session.id, amount, 'lending more than it holds');
         cashSessionId = session.id;
       } else {
         await this.bank.assertCovers(tx, amount.negated());

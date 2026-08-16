@@ -54,7 +54,7 @@ describe('CashService.computeBreakdown', () => {
     }) as unknown as Prisma.TransactionClient;
 
   const compute = (s: Scenario) => {
-    const service = new CashService({} as never, {} as never);
+    const service = new CashService({} as never, {} as never, {} as never);
     // computeBreakdown is private; exercise it directly with a mocked client.
     return (service as never as { computeBreakdown: Function }).computeBreakdown(
       makeClient(s),
@@ -151,7 +151,7 @@ describe('CashService.open', () => {
     const prisma = { cashSession: { findFirst, create } };
     const audit = { record: jest.fn().mockResolvedValue(undefined) };
     return {
-      service: new CashService(prisma as never, audit as never),
+      service: new CashService(prisma as never, audit as never, {} as never),
       create,
     };
   };
@@ -196,5 +196,98 @@ describe('CashService.open', () => {
     });
     const session = await service.open({ openingBalance: 10000 }, 'user2');
     expect(session.openingBalance.toString()).toBe('10000');
+  });
+});
+
+/**
+ * Closing takes the count first and moves cash afterwards. Banking the takings
+ * must therefore leave the variance exactly where it was — if it were treated
+ * as an ordinary cash movement it would shift `expected` and turn a balanced
+ * drawer into a shortage.
+ */
+describe('CashService.close — banking the takings', () => {
+  const build = () => {
+    const calls: Record<string, unknown[]> = {};
+    const record = (k: string, v: unknown) => (calls[k] = [...(calls[k] ?? []), v]);
+
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'sess1', userId: 'u1', status: 'OPEN' }]),
+      cashSession: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          openingBalance: new Prisma.Decimal(100000),
+        }),
+        update: jest.fn().mockImplementation(({ data }) => {
+          record('session.update', data);
+          return Promise.resolve({ id: 'sess1', ...data });
+        }),
+      },
+      // Everything the expected-cash formula reads; all quiet but the opening.
+      sale: { aggregate: jest.fn().mockResolvedValue({ _sum: { amountPaid: null } }) },
+      customerPayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) },
+      cashMovement: {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }),
+        create: jest.fn().mockImplementation(({ data }) => {
+          record('cashMovement.create', data);
+          return Promise.resolve({});
+        }),
+      },
+      expense: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) },
+      saleReturn: {
+        aggregate: jest
+          .fn()
+          .mockResolvedValue({ _sum: { totalRefund: null, creditApplied: null } }),
+      },
+      purchase: { aggregate: jest.fn().mockResolvedValue({ _sum: { amountPaid: null } }) },
+      supplierPayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+    } as unknown as Prisma.TransactionClient;
+
+    const prisma = { runSerializable: jest.fn().mockImplementation((cb) => cb(tx)) };
+    const audit = { recordTx: jest.fn().mockResolvedValue(undefined) };
+    const bank = {
+      writeTx: jest.fn().mockImplementation((_tx, e) => {
+        record('bank.write', e);
+        return Promise.resolve({ id: 'bt1' });
+      }),
+    };
+
+    return {
+      service: new CashService(prisma as never, audit as never, bank as never),
+      calls,
+      bank,
+    };
+  };
+
+  it('puts the banked cash on the bank ledger', async () => {
+    const { service, calls } = build();
+    await service.close(
+      'sess1',
+      { actualAmount: 100000, withdrawal: 80000, withdrawalTo: 'BANK' },
+      'u1',
+    );
+
+    const write = calls['bank.write'][0] as { type: string; amount: { toFixed(n: number): string } };
+    expect(write.type).toBe('TRANSFER_IN');
+    expect(write.amount.toFixed(2)).toBe('80000.00');
+  });
+
+  it('leaves the variance untouched — the count came first', async () => {
+    const { service, calls } = build();
+    await service.close(
+      'sess1',
+      { actualAmount: 100000, withdrawal: 80000, withdrawalTo: 'BANK' },
+      'u1',
+    );
+
+    const update = calls['session.update'][0] as { variance: Prisma.Decimal };
+    expect(update.variance.toString()).toBe('0');
+    // Never a cash movement: that would have moved `expected` under the count.
+    expect(calls['cashMovement.create']).toBeUndefined();
+  });
+
+  it('does not touch the bank when the cash is simply held', async () => {
+    const { service, calls } = build();
+    await service.close('sess1', { actualAmount: 100000, withdrawal: 80000 }, 'u1');
+    expect(calls['bank.write']).toBeUndefined();
   });
 });

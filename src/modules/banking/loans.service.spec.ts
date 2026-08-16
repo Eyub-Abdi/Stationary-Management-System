@@ -13,16 +13,28 @@ const D = (n: number) => new Prisma.Decimal(n);
 describe('LoansService', () => {
   const borrower = { id: 'u2', fullName: 'Warda Hamid', isActive: true };
 
-  const build = (opts: { session?: { id: string } | null; loan?: unknown } = {}) => {
+  const build = (
+    opts: { session?: { id: string } | null; loan?: unknown; till?: number } = {},
+  ) => {
     const calls: Record<string, unknown[]> = {};
     const record = (k: string, v: unknown) => (calls[k] = [...(calls[k] ?? []), v]);
+    // What the drawer holds, for the guard that stops us lending more than that.
+    const till = opts.till ?? 1_000_000;
+    const noSum = jest.fn().mockResolvedValue({ _sum: {} });
 
     const tx = {
       cashSession: {
         findFirst: jest.fn().mockResolvedValue(
           opts.session === undefined ? { id: 'sess1' } : opts.session,
         ),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ openingBalance: D(till) }),
       },
+      // The expected-cash formula: an opening float and an otherwise quiet day.
+      sale: { aggregate: noSum },
+      customerPayment: { aggregate: noSum },
+      saleReturn: { aggregate: noSum },
+      purchase: { aggregate: noSum },
+      supplierPayment: { aggregate: noSum },
       loan: {
         create: jest.fn().mockImplementation(({ data }) => {
           record('loan.create', data);
@@ -54,13 +66,15 @@ describe('LoansService', () => {
         }),
       },
       cashMovement: {
+        aggregate: noSum,
         create: jest.fn().mockImplementation(({ data }) => {
           record('cashMovement.create', data);
           return Promise.resolve({ id: 'mv1', ...data });
         }),
       },
-      // Nothing here may ever write one of these.
       expense: {
+        aggregate: noSum,
+        // Nothing here may ever write one of these.
         create: jest.fn().mockImplementation(() => {
           record('expense.create', true);
           return Promise.resolve({});
@@ -115,6 +129,16 @@ describe('LoansService', () => {
   it('refuses to lend cash when no till is open', async () => {
     const { service } = build({ session: null });
     await expect(service.issue(dto(), 'admin1')).rejects.toThrow(/No open cash session/i);
+  });
+
+  // Lending past the drawer would leave it expecting a negative amount, and
+  // every close afterwards reporting a shortage nobody took.
+  it('refuses to lend more cash than the till holds', async () => {
+    const { service, calls } = build({ till: 80_000 });
+    await expect(service.issue(dto({ amount: 200_000 }), 'admin1')).rejects.toThrow(
+      /till holds 80000.00/i,
+    );
+    expect(calls['cashMovement.create']).toBeUndefined();
   });
 
   it('lends from the bank without touching the till', async () => {

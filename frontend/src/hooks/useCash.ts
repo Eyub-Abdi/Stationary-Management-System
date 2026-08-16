@@ -99,15 +99,22 @@ export function useCloseCashSession() {
       id,
       actualAmount,
       withdrawal,
+      withdrawalTo,
       notes,
     }: {
       id: string;
       actualAmount: number;
       withdrawal?: number;
+      withdrawalTo?: 'BANK';
       notes?: string;
     }) =>
       unwrap<CashSession>(
-        api.post(`/cash-sessions/${id}/close`, { actualAmount, withdrawal, notes }),
+        api.post(`/cash-sessions/${id}/close`, {
+          actualAmount,
+          withdrawal,
+          withdrawalTo,
+          notes,
+        }),
       ),
     onSuccess: (_d, { id }) => {
       qc.invalidateQueries({ queryKey: ['cash-sessions'] });
