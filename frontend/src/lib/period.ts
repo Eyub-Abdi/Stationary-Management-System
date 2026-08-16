@@ -11,7 +11,6 @@ export type PeriodKind =
   | '7d'
   | '30d'
   | 'thisMonth'
-  | 'thisYear'
   | 'month'
   | 'year'
   | 'custom'
@@ -43,6 +42,9 @@ export const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
+
+/** For the month grid, where twelve full names would not fit four to a row. */
+export const MONTH_ABBR = MONTH_NAMES.map((m) => m.slice(0, 3));
 
 /** Local-midnight ISO bounds for a whole month. */
 function monthBounds(year: number, month: number) {
@@ -76,13 +78,6 @@ export function resolvePeriod(p: Period): ResolvedPeriod {
         to,
         label: `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`,
         granularity: 'DAILY',
-      };
-    case 'thisYear':
-      return {
-        ...yearBounds(now.getFullYear()),
-        to,
-        label: `${now.getFullYear()} so far`,
-        granularity: 'MONTHLY',
       };
     case 'month': {
       const year = p.year ?? now.getFullYear();
@@ -128,15 +123,7 @@ export function resolvePeriod(p: Period): ResolvedPeriod {
 }
 
 /**
- * Years offered in the pickers. The shop's records start when the system was
- * first used, so there is nothing to see before that — but the list has to keep
- * growing on its own, or it silently stops offering the current year.
+ * How far back the year stepper will go. The shop's records start when the
+ * system was first used, so there is nothing to see before this.
  */
 export const FIRST_YEAR = 2026;
-
-export function yearOptions(): number[] {
-  const current = new Date().getFullYear();
-  const years: number[] = [];
-  for (let y = current; y >= FIRST_YEAR; y--) years.push(y);
-  return years;
-}
