@@ -79,6 +79,30 @@ enum CashMovementType {
 
 // How a sale or purchase is settled. CREDIT leaves an outstanding balance on
 // the customer (receivable) or supplier (payable) that is paid down over time.
+// Where a shilling physically sits. Sales are always cash into the till, so
+// money reaches the bank only by someone carrying it there.
+enum MoneyLocation {
+  HAND
+  BANK
+}
+
+// Every row of the bank ledger. The balance is the sum of their amounts, so the
+// type is the reason for a movement rather than its direction.
+enum BankTransactionType {
+  OPENING_BALANCE
+  TRANSFER_IN // cash carried from the till to the bank
+  TRANSFER_OUT // cash drawn from the bank back into the till
+  LOAN_OUT // lent to a shop member from the bank
+  LOAN_REPAYMENT // a shop member paying back into the bank
+  CHARGE // bank fees
+  CORRECTION // manual fix, e.g. after checking a statement
+}
+
+enum LoanStatus {
+  OUTSTANDING
+  REPAID
+}
+
 enum PaymentMethod {
   CASH
   CREDIT
@@ -131,6 +155,10 @@ model User {
   supplierPayments     SupplierPayment[]
   auditLogs            AuditLog[]
   closedPeriods        AccountingPeriod[]
+  loans                Loan[]             @relation("LoanBorrower")
+  loansIssued          Loan[]             @relation("LoanIssuer")
+  loanRepayments       LoanRepayment[]
+  bankTransactions     BankTransaction[]
 
   @@index([role])
   @@index([isActive])
@@ -919,6 +947,9 @@ model CashSession {
   purchases        Purchase[]
   customerPayments CustomerPayment[]
   supplierPayments SupplierPayment[]
+  bankTransactions BankTransaction[]
+  loans            Loan[]
+  loanRepayments   LoanRepayment[]
 
   @@index([userId])
   @@index([status])
@@ -946,6 +977,96 @@ model CashMovement {
 // Document number sequences (gapless, concurrency-safe via row lock)
 // One row per (type, period) e.g. INVOICE / 2026-06.
 // ----------------------------------------------------------------------------
+
+// ----------------------------------------------------------------------------
+// Bank & shop-member loans
+// ----------------------------------------------------------------------------
+
+/// The bank ledger. `amount` is signed against the balance — positive puts money
+/// in, negative takes it out — so the balance is SUM(amount) and cannot drift
+/// out of step with the rows that produced it. The service is what guarantees
+/// the sign matches the type.
+///
+/// The till side of a transfer is an ordinary CashMovement, so the cash session
+/// keeps reconciling by the formula it already had; these rows only record where
+/// the money went.
+model BankTransaction {
+  id            String              @id @default(uuid()) @db.Uuid
+  type          BankTransactionType
+  amount        Decimal             @db.Decimal(14, 2)
+  occurredAt    DateTime            @default(now())
+  notes         String?
+  userId        String              @db.Uuid
+  // Set when the money moved to or from the drawer.
+  cashSessionId String?             @db.Uuid
+  loanId        String?             @db.Uuid
+  repaymentId   String?             @db.Uuid
+  createdAt     DateTime            @default(now())
+
+  user        User           @relation(fields: [userId], references: [id])
+  cashSession CashSession?   @relation(fields: [cashSessionId], references: [id])
+  loan        Loan?          @relation(fields: [loanId], references: [id])
+  repayment   LoanRepayment? @relation(fields: [repaymentId], references: [id])
+
+  @@index([occurredAt])
+  @@index([type])
+  @@index([cashSessionId])
+  @@map("bank_transactions")
+}
+
+/// Money a shop member has taken for themselves. This is a debt owed TO the
+/// shop, never an expense: profit does not move when it is issued, only the
+/// place the money sits. Outstanding = amount - sum(repayments).
+model Loan {
+  id       String        @id @default(uuid()) @db.Uuid
+  /// The shop member who took the money. Only staff and admins can borrow.
+  userId   String        @db.Uuid
+  amount   Decimal       @db.Decimal(14, 2)
+  source   MoneyLocation
+  issuedAt DateTime      @default(now())
+  dueDate  DateTime
+  status   LoanStatus    @default(OUTSTANDING)
+  notes    String?
+  /// The admin who recorded it — never the borrower themselves.
+  issuedById String   @db.Uuid
+  /// Set when the cash came out of the drawer.
+  cashSessionId String? @db.Uuid
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user             User              @relation("LoanBorrower", fields: [userId], references: [id])
+  issuedBy         User              @relation("LoanIssuer", fields: [issuedById], references: [id])
+  cashSession      CashSession?      @relation(fields: [cashSessionId], references: [id])
+  repayments       LoanRepayment[]
+  bankTransactions BankTransaction[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("loans")
+}
+
+model LoanRepayment {
+  id            String        @id @default(uuid()) @db.Uuid
+  loanId        String        @db.Uuid
+  amount        Decimal       @db.Decimal(14, 2)
+  /// Where the money was paid back to.
+  destination   MoneyLocation
+  paidAt        DateTime      @default(now())
+  notes         String?
+  recordedById  String        @db.Uuid
+  cashSessionId String?       @db.Uuid
+  createdAt     DateTime      @default(now())
+
+  loan             Loan              @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  recordedBy       User              @relation(fields: [recordedById], references: [id])
+  cashSession      CashSession?      @relation(fields: [cashSessionId], references: [id])
+  bankTransactions BankTransaction[]
+
+  @@index([loanId])
+  @@index([paidAt])
+  @@map("loan_repayments")
+}
 
 model DocumentSequence {
   id      String       @id @default(uuid()) @db.Uuid

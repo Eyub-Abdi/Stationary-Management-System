@@ -1,6 +1,8 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
 import { Permission } from '../../common/decorators/permission.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 import {
   ReportRangeDto,
   SalesReportQueryDto,
@@ -18,6 +20,15 @@ export class ReportsController {
   @ApiOperation({ summary: 'Sales time series (daily/weekly/monthly/custom)' })
   salesSeries(@Query() query: SalesReportQueryDto) {
     return this.reports.salesSeries(query);
+  }
+
+  @Get('money-position')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary: 'Where the money is now: in hand, at the bank, held by shop members',
+  })
+  moneyPosition() {
+    return this.reports.moneyPosition();
   }
 
   @Get('financial-summary')

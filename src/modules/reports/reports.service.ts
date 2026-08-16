@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { money, sub } from '../../common/utils/money';
+import { add, money, sub } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CashService } from '../cash/cash.service';
+import { findOpenSession } from '../cash/open-session';
 import {
   ReportGranularity,
   ReportRangeDto,
@@ -16,7 +18,76 @@ const TRUNC_UNIT: Record<ReportGranularity, string> = {
 
 @Injectable()
 export class ReportsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cash: CashService,
+  ) {}
+
+  // ---- Money position ------------------------------------------------------
+
+  /**
+   * Where the shop's money is sitting right now, as opposed to what it earned.
+   *
+   * Profit answers "did we do well"; this answers "where is it". The three are
+   * kept apart on purpose: cash in the drawer, cash at the bank, and cash a shop
+   * member is holding. That last one is a debt owed to the shop — an asset, not
+   * a cost — so it appears here and never in the profit figures.
+   */
+  async moneyPosition() {
+    const openSession = await findOpenSession(this.prisma);
+
+    const [bank, loans, lastClosed] = await Promise.all([
+      this.prisma.bankTransaction.aggregate({ _sum: { amount: true } }),
+      this.prisma.loan.findMany({
+        where: { status: 'OUTSTANDING' },
+        select: {
+          amount: true,
+          dueDate: true,
+          user: { select: { id: true, fullName: true } },
+          repayments: { select: { amount: true } },
+        },
+      }),
+      this.prisma.cashSession.findFirst({
+        where: { status: 'CLOSED', actualAmount: { not: null } },
+        orderBy: { closedAt: 'desc' },
+        select: { actualAmount: true, closingWithdrawal: true, closedAt: true },
+      }),
+    ]);
+
+    // With the till open, cash in hand is what the drawer should hold right now.
+    // With it closed, it is whatever the last shift left behind.
+    const inHand = openSession
+      ? money((await this.cash.summary(openSession.id)).breakdown.expectedAmount)
+      : sub(
+          money(lastClosed?.actualAmount ?? 0),
+          money(lastClosed?.closingWithdrawal ?? 0),
+        );
+
+    const today = new Date();
+    let owed = money(0);
+    let overdue = money(0);
+    for (const loan of loans) {
+      const paid = loan.repayments.reduce((a, r) => add(a, r.amount), money(0));
+      const left = sub(money(loan.amount), paid);
+      if (left.lte(0)) continue;
+      owed = add(owed, left);
+      if (loan.dueDate < today) overdue = add(overdue, left);
+    }
+
+    const atBank = money(bank._sum.amount ?? 0);
+
+    return {
+      inHand: inHand.toFixed(2),
+      atBank: atBank.toFixed(2),
+      // Cash the shop still controls, wherever it sits.
+      liquid: add(inHand, atBank).toFixed(2),
+      owedByMembers: owed.toFixed(2),
+      overdueFromMembers: overdue.toFixed(2),
+      total: add(inHand, atBank, owed).toFixed(2),
+      tillOpen: !!openSession,
+      asOf: new Date().toISOString(),
+    };
+  }
 
   // ---- Sales ---------------------------------------------------------------
 
