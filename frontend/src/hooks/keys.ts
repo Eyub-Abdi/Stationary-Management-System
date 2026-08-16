@@ -40,4 +40,10 @@ export const qk = {
   user: (id: string) => ['user', id] as const,
   audit: (params?: unknown) => ['audit', params] as const,
   report: (name: string, params?: unknown) => ['report', name, params] as const,
+  bankSummary: () => ['bank', 'summary'] as const,
+  bankStatement: (params?: unknown) => ['bank', 'statement', params] as const,
+  loans: (params?: unknown) => ['loans', params] as const,
+  loan: (id: string) => ['loan', id] as const,
+  loanSummary: () => ['loans', 'summary'] as const,
+  moneyPosition: () => ['report', 'money-position'] as const,
 };

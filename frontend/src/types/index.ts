@@ -577,3 +577,83 @@ export interface ProductProfitRow {
   grossProfit: string;
   margin: string;
 }
+
+// ---- Banking & shop-member loans -------------------------------------------
+
+export type MoneyLocation = 'HAND' | 'BANK';
+export type LoanStatus = 'OUTSTANDING' | 'REPAID';
+export type BankTransactionType =
+  | 'OPENING_BALANCE'
+  | 'TRANSFER_IN'
+  | 'TRANSFER_OUT'
+  | 'LOAN_OUT'
+  | 'LOAN_REPAYMENT'
+  | 'CHARGE'
+  | 'CORRECTION';
+
+export interface BankTransaction {
+  id: string;
+  type: BankTransactionType;
+  // Signed against the balance: positive puts money in, negative takes it out.
+  amount: string;
+  occurredAt: string;
+  notes: string | null;
+  user?: { fullName: string };
+  loan?: { id: string; user: { fullName: string } } | null;
+  createdAt: string;
+}
+
+export interface BankSummary {
+  balance: string;
+  transactionCount: number;
+  openingBalanceSet: boolean;
+}
+
+export interface LoanRepayment {
+  id: string;
+  loanId: string;
+  amount: string;
+  destination: MoneyLocation;
+  paidAt: string;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface Loan {
+  id: string;
+  userId: string;
+  user: { id: string; fullName: string; email: string; role: Role };
+  issuedBy: { id: string; fullName: string };
+  amount: string;
+  source: MoneyLocation;
+  issuedAt: string;
+  dueDate: string;
+  status: LoanStatus;
+  notes: string | null;
+  repayments: LoanRepayment[];
+  outstanding: string;
+  isOverdue: boolean;
+}
+
+export interface LoanSummary {
+  outstanding: string;
+  overdue: string;
+  loanCount: number;
+  byMember: {
+    userId: string;
+    fullName: string;
+    outstanding: string;
+    overdue: string;
+  }[];
+}
+
+export interface MoneyPosition {
+  inHand: string;
+  atBank: string;
+  liquid: string;
+  owedByMembers: string;
+  overdueFromMembers: string;
+  total: string;
+  tillOpen: boolean;
+  asOf: string;
+}

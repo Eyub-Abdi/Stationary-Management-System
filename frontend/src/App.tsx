@@ -24,7 +24,9 @@ import SupplierDetailPage from '@/pages/SupplierDetailPage';
 import ExpensesPage from '@/pages/ExpensesPage';
 import OfficePurchasesPage from '@/pages/OfficePurchasesPage';
 import OfficePurchaseDetailPage from '@/pages/OfficePurchaseDetailPage';
+import BankPage from '@/pages/BankPage';
 import CashPage from '@/pages/CashPage';
+import LoansPage from '@/pages/LoansPage';
 import ReportsPage from '@/pages/ReportsPage';
 import ProfitPage from '@/pages/ProfitPage';
 import ClosingPage from '@/pages/ClosingPage';
@@ -152,6 +154,17 @@ export default function App() {
           }
         />
         <Route path="/cash" element={<CashPage />} />
+        <Route
+          path="/bank"
+          element={
+            <AdminRoute>
+              <BankPage />
+            </AdminRoute>
+          }
+        />
+        {/* Not admin-gated: a member needs to see what they owe. The API returns
+            only their own loans unless they are an admin. */}
+        <Route path="/loans" element={<LoansPage />} />
         <Route
           path="/reports"
           element={

@@ -24,7 +24,12 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/suppliers', label: 'Suppliers', icon: 'local_shipping', permission: 'suppliers' },
   { to: '/expenses', label: 'Expenses', icon: 'payments', staffLabel: 'Petty Cash' },
   { to: '/office-purchases', label: 'Office Purchases', icon: 'business_center', permission: 'officePurchases' },
-  { to: '/cash', label: 'Cash Management', icon: 'account_balance' },
+  // Three money entries sit together, so each needs a silhouette of its own:
+  // the drawer, the bank building, the handshake.
+  { to: '/cash', label: 'Cash Management', icon: 'local_atm' },
+  { to: '/bank', label: 'Bank', icon: 'account_balance', adminOnly: true },
+  // Staff see this too, but the API shows them only their own loans.
+  { to: '/loans', label: 'Member Loans', icon: 'handshake', staffLabel: 'My Loans' },
   { to: '/reports', label: 'Reports', icon: 'assessment', permission: 'reports' },
   { to: '/profit', label: 'Profit Analysis', icon: 'trending_up', permission: 'reports' },
   { to: '/movement', label: 'Product Movement', icon: 'insights', permission: 'reports' },
