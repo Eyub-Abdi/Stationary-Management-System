@@ -117,6 +117,28 @@ function capture(cmd) {
   return execSync(cmd, { cwd: ROOT, env: process.env }).toString().trim();
 }
 
+// Git for Windows runs `gc --auto` at the end of a fetch once enough loose
+// objects pile up. It repacks fine, then fails to delete the superseded pack
+// because something still has it open (the running app, an editor, antivirus,
+// Windows Search) and asks "Unlink of file ... failed. Should I try again?" —
+// killing an otherwise healthy pull. A deploy mirror never needs housekeeping,
+// so every git command here runs with auto-gc and background maintenance off.
+const GIT = 'git -c gc.auto=0 -c maintenance.auto=false';
+
+const GIT_LOCK_HINT =
+  'If git complained it could not unlink a file under .git/objects, something is holding the ' +
+  'repo open. Stop the STMS app/service (and close any editor on this folder), then run this again.';
+
+/** Persist the no-housekeeping settings so git invoked by anything else behaves too. */
+function disableGitHousekeeping() {
+  try {
+    execSync('git config gc.auto 0', { cwd: ROOT, env: process.env, stdio: 'ignore' });
+    execSync('git config maintenance.auto false', { cwd: ROOT, env: process.env, stdio: 'ignore' });
+  } catch {
+    /* best-effort */
+  }
+}
+
 /**
  * On Windows, drop a double-clickable desktop icon that opens the app in the
  * browser (no terminal for the shop user). Non-fatal if it can't be created.
@@ -151,27 +173,33 @@ function pullAndUpdate() {
 
   let before;
   try {
-    before = capture('git rev-parse HEAD');
+    before = capture(`${GIT} rev-parse HEAD`);
   } catch {
     console.error('✗ This is not a git repository, or git is not installed.');
     process.exit(1);
   }
 
+  disableGitHousekeeping();
+
   // This box is a read-only mirror: it never edits source, but builds and npm
   // can rewrite tracked artifacts (e.g. lockfiles) and leave local drift that
   // would block a fast-forward pull. Discard that drift first so pull is clean.
   // (Real source is only ever changed and committed on the dev machine.)
-  run('Discard local changes (deploy mirror)', 'git checkout -- .');
+  run('Discard local changes (deploy mirror)', `${GIT} checkout -- .`);
 
-  run(`Pull latest changes (${REPO_BRANCH})`, `git pull --ff-only ${REPO_URL} ${REPO_BRANCH}`);
+  run(
+    `Pull latest changes (${REPO_BRANCH})`,
+    `${GIT} pull --ff-only ${REPO_URL} ${REPO_BRANCH}`,
+    GIT_LOCK_HINT,
+  );
 
-  const after = capture('git rev-parse HEAD');
+  const after = capture(`${GIT} rev-parse HEAD`);
   if (before === after) {
     console.log('\n✓ Already up to date — nothing to build.');
     return;
   }
 
-  const changed = capture(`git diff --name-only ${before} ${after}`)
+  const changed = capture(`${GIT} diff --name-only ${before} ${after}`)
     .split(/\r?\n/)
     .filter(Boolean);
   const touched = (prefix) => changed.some((f) => f === prefix || f.startsWith(prefix));
