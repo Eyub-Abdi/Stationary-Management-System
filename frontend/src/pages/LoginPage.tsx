@@ -170,7 +170,7 @@ export default function LoginPage() {
                 <p className="text-body-sm text-on-surface-variant">
                   Trouble logging in?{' '}
                   <button
-                    onClick={() => toast.info('Support', 'Reach support at klikcelltechnologiesltd@gmail.com')}
+                    onClick={() => toast.info('Support', 'Reach support at ayubabdiy@gmail.com')}
                     className="font-semibold text-secondary hover:underline"
                   >
                     Contact Support
