@@ -6,6 +6,7 @@ import {
 import { Prisma, StockAdjustmentReason } from '@prisma/client';
 import Decimal from 'decimal.js';
 import { paginate } from '../../common/dto/pagination.dto';
+import { resolveOrderBy, SortMap } from '../../common/utils/sort';
 import { add, money, mul, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -35,6 +36,15 @@ interface AdjustmentInput {
  * full audit trail: InventoryAdjustment + InventoryMovement + AuditLog, plus a
  * FIFO batch for positive adjustments / FIFO consumption for negative ones.
  */
+/** Columns the stock-movement log can be ordered by. */
+const MOVEMENT_SORTS: SortMap<Prisma.InventoryMovementOrderByWithRelationInput[]> = {
+  createdAt: (dir) => [{ createdAt: dir }],
+  product: (dir) => [{ product: { name: dir } }],
+  type: (dir) => [{ type: dir }, { createdAt: 'desc' }],
+  quantity: (dir) => [{ quantity: dir }],
+  afterQty: (dir) => [{ afterQty: dir }],
+};
+
 @Injectable()
 export class InventoryAdminService {
   constructor(
@@ -246,7 +256,7 @@ export class InventoryAdminService {
           product: { select: { sku: true, name: true } },
           variant: { select: { sku: true, label: true } },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: resolveOrderBy(query, MOVEMENT_SORTS, [{ createdAt: 'desc' }]),
         skip: query.skip,
         take: query.limit,
       }),

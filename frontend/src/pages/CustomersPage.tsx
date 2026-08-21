@@ -22,7 +22,9 @@ import {
 } from '@/components/ui';
 import { CustomerFormModal } from '@/features/customers/CustomerFormModal';
 import { useCustomerAging, useCustomers } from '@/hooks/useCustomers';
+import { useTableSort } from '@/hooks/useSort';
 import { extractMessage } from '@/lib/api';
+import { PAGE_SIZE } from '@/lib/constants';
 import { currency, formatDate, num } from '@/lib/utils';
 import type { Customer } from '@/types';
 
@@ -34,9 +36,11 @@ export default function CustomersPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
 
+  const { sort, onSort, params } = useTableSort({ by: 'name', dir: 'asc' }, () => setPage(1));
   const { data, isLoading, isError, refetch, error } = useCustomers({
     page,
-    limit: 12,
+    limit: PAGE_SIZE,
+    ...params,
     search: search || undefined,
     withBalance: filter === 'owing' || undefined,
   });
@@ -120,11 +124,11 @@ export default function CustomersPage() {
         ) : (
           <>
             <Table>
-              <THead>
-                <TH>Name</TH>
-                <TH>Phone</TH>
+              <THead sort={sort} onSort={onSort}>
+                <TH sortKey="name">Name</TH>
+                <TH sortKey="phone">Phone</TH>
                 <TH>Last credit sale</TH>
-                <TH align="right">Balance owed</TH>
+                <TH align="right" sortKey="balance" sortDefault="desc">Balance owed</TH>
                 <TH align="right">Action</TH>
               </THead>
               <TBody>

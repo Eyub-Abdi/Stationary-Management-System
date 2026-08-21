@@ -25,9 +25,11 @@ import {
 } from '@/components/ui';
 import { DocLink } from '@/components/DocLink';
 import { useSales } from '@/hooks/useSales';
+import { useClientSort, useTableSort } from '@/hooks/useSort';
 import { useSalesSeries } from '@/hooks/useReports';
 import { useAuth } from '@/providers/AuthProvider';
 import { extractMessage } from '@/lib/api';
+import { PAGE_SIZE } from '@/lib/constants';
 import { cn, currency, formatDate, formatDateTime, humanize, num } from '@/lib/utils';
 import { monthKeyOf, rangeFor, toDateInput, type RangeKey } from '@/lib/dateRange';
 import type { SalesSeriesPoint, SaleStatus } from '@/types';
@@ -75,9 +77,11 @@ export default function SalesPage() {
     status: status || undefined,
     ...range,
   };
+  const sales = useTableSort({ by: 'createdAt', dir: 'desc' }, () => setPage(1));
   const { data, isLoading, isError, refetch, error } = useSales({
     page,
-    limit: 15,
+    limit: PAGE_SIZE,
+    ...sales.params,
     ...commonFilters,
   });
 
@@ -96,7 +100,14 @@ export default function SalesPage() {
     canSeeDaily && view === 'daily',
   );
   // salesSeries comes back oldest-first (for charts); show newest day on top here.
-  const dailyRows = [...(daily.data ?? [])].sort((a, b) => b.period.localeCompare(a.period));
+  const dailySort = useClientSort(daily.data, { by: 'period', dir: 'desc' }, {
+    period: (r) => r.period,
+    saleCount: (r) => r.saleCount,
+    revenue: (r) => num(r.revenue),
+    expenses: (r) => num(r.expenses),
+    purchases: (r) => num(r.purchases),
+  });
+  const dailyRows = dailySort.rows;
   const dailyRevenue = dailyRows.reduce((a, r) => a + num(r.revenue), 0);
   const dailyCount = dailyRows.reduce((a, r) => a + r.saleCount, 0);
   const dailyExpenses = dailyRows.reduce((a, r) => a + num(r.expenses), 0);
@@ -107,7 +118,16 @@ export default function SalesPage() {
     { granularity: 'MONTHLY', from: range.from, to: range.to },
     canSeeDaily && view === 'monthly',
   );
-  const monthlyRows = [...(monthly.data ?? [])].sort((a, b) => b.period.localeCompare(a.period));
+  const monthlySort = useClientSort(monthly.data, { by: 'period', dir: 'desc' }, {
+    period: (r) => r.period,
+    saleCount: (r) => r.saleCount,
+    revenue: (r) => num(r.revenue),
+    grossProfit: (r) => num(r.grossProfit),
+    expenses: (r) => num(r.expenses),
+    purchases: (r) => num(r.purchases),
+    net: (r) => monthNet(r),
+  });
+  const monthlyRows = monthlySort.rows;
   const monthlyTotals = monthlyRows.reduce(
     (a, r) => ({
       count: a.count + r.saleCount,
@@ -286,14 +306,14 @@ export default function SalesPage() {
             />
           ) : (
             <Table>
-              <THead>
-                <TH>Month</TH>
-                <TH align="center">Transactions</TH>
-                <TH align="right">Total sales</TH>
-                <TH align="right">Gross profit</TH>
-                <TH align="right">Expenses</TH>
-                <TH align="right">Purchases</TH>
-                <TH align="right">Net profit</TH>
+              <THead sort={monthlySort.sort} onSort={monthlySort.onSort}>
+                <TH sortKey="period" sortDefault="desc">Month</TH>
+                <TH align="center" sortKey="saleCount" sortDefault="desc">Transactions</TH>
+                <TH align="right" sortKey="revenue" sortDefault="desc">Total sales</TH>
+                <TH align="right" sortKey="grossProfit" sortDefault="desc">Gross profit</TH>
+                <TH align="right" sortKey="expenses" sortDefault="desc">Expenses</TH>
+                <TH align="right" sortKey="purchases" sortDefault="desc">Purchases</TH>
+                <TH align="right" sortKey="net" sortDefault="desc">Net profit</TH>
                 <TH align="right">Action</TH>
               </THead>
               <TBody>
@@ -364,12 +384,12 @@ export default function SalesPage() {
             />
           ) : (
             <Table>
-              <THead>
-                <TH>Date</TH>
-                <TH align="center">Transactions</TH>
-                <TH align="right">Total sales</TH>
-                <TH align="right">Expenses</TH>
-                <TH align="right">Purchases</TH>
+              <THead sort={dailySort.sort} onSort={dailySort.onSort}>
+                <TH sortKey="period" sortDefault="desc">Date</TH>
+                <TH align="center" sortKey="saleCount" sortDefault="desc">Transactions</TH>
+                <TH align="right" sortKey="revenue" sortDefault="desc">Total sales</TH>
+                <TH align="right" sortKey="expenses" sortDefault="desc">Expenses</TH>
+                <TH align="right" sortKey="purchases" sortDefault="desc">Purchases</TH>
                 <TH align="right">Action</TH>
               </THead>
               <TBody>
@@ -440,13 +460,13 @@ export default function SalesPage() {
         ) : (
           <>
             <Table>
-              <THead>
-                <TH>Invoice</TH>
-                <TH>Date &amp; time</TH>
-                <TH>Cashier</TH>
-                <TH align="center">Items</TH>
-                <TH align="right">Total</TH>
-                <TH align="center">Status</TH>
+              <THead sort={sales.sort} onSort={sales.onSort}>
+                <TH sortKey="invoiceNumber">Invoice</TH>
+                <TH sortKey="createdAt" sortDefault="desc">Date &amp; time</TH>
+                <TH sortKey="cashier">Cashier</TH>
+                <TH align="center" sortKey="items" sortDefault="desc">Items</TH>
+                <TH align="right" sortKey="total" sortDefault="desc">Total</TH>
+                <TH align="center" sortKey="status">Status</TH>
                 <TH align="right">Action</TH>
               </THead>
               <TBody>

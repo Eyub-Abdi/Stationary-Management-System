@@ -26,6 +26,7 @@ import {
   useMonthlyStatement,
   useReopenPeriod,
 } from '@/hooks/useAccountingPeriods';
+import { useClientSort } from '@/hooks/useSort';
 import { extractMessage } from '@/lib/api';
 import { currency, formatDate, num } from '@/lib/utils';
 import type { AccountingPeriod } from '@/types';
@@ -43,6 +44,18 @@ export default function ClosingPage() {
   const nextToClose = [...periods].reverse().find((p) => !p.isClosed);
   // Likewise only the most recent closed month may be reopened.
   const latestClosed = periods.find((p) => p.isClosed);
+
+  // Only the rows on screen get reordered — which month is next to close is
+  // fixed by the calendar, not by how the table happens to be sorted.
+  const { rows, sort, onSort } = useClientSort(periods, { by: 'month', dir: 'desc' }, {
+    month: (p) => p.year * 12 + p.month,
+    saleCount: (p) => p.saleCount,
+    revenue: (p) => num(p.revenue),
+    grossProfit: (p) => num(p.grossProfit),
+    expenses: (p) => num(p.expenses),
+    netProfit: (p) => num(p.netProfit),
+    status: (p) => (p.isClosed ? 1 : 0),
+  });
 
   const closedCount = periods.filter((p) => p.isClosed).length;
   const openCount = periods.length - closedCount;
@@ -97,18 +110,18 @@ export default function ClosingPage() {
           />
         ) : (
           <Table>
-            <THead>
-              <TH>Month</TH>
-              <TH align="center">Sales</TH>
-              <TH align="right">Revenue</TH>
-              <TH align="right">Gross Profit</TH>
-              <TH align="right">Expenses</TH>
-              <TH align="right">Net Profit</TH>
-              <TH>Status</TH>
+            <THead sort={sort} onSort={onSort}>
+              <TH sortKey="month" sortDefault="desc">Month</TH>
+              <TH align="center" sortKey="saleCount" sortDefault="desc">Sales</TH>
+              <TH align="right" sortKey="revenue" sortDefault="desc">Revenue</TH>
+              <TH align="right" sortKey="grossProfit" sortDefault="desc">Gross Profit</TH>
+              <TH align="right" sortKey="expenses" sortDefault="desc">Expenses</TH>
+              <TH align="right" sortKey="netProfit" sortDefault="desc">Net Profit</TH>
+              <TH sortKey="status">Status</TH>
               <TH align="right">Action</TH>
             </THead>
             <TBody>
-              {periods.map((p) => {
+              {rows.map((p) => {
                 const net = num(p.netProfit);
                 const canClose = !p.isClosed && nextToClose?.label === p.label;
                 const canReopen = p.isClosed && latestClosed?.label === p.label;

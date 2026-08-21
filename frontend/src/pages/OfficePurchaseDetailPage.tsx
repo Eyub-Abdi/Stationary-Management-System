@@ -13,13 +13,21 @@ import {
   Table,
 } from '@/components/ui';
 import { useOfficePurchase } from '@/hooks/useExpenses';
+import { useClientSort } from '@/hooks/useSort';
 import { extractMessage } from '@/lib/api';
-import { currency, formatDate } from '@/lib/utils';
+import { currency, formatDate, num } from '@/lib/utils';
 
 export default function OfficePurchaseDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data, isLoading, isError, error, refetch } = useOfficePurchase(id);
   const items = data?.items ?? [];
+  // Lines open in the order they were entered; the headers can regroup them.
+  const lines = useClientSort(items, { by: 'none', dir: 'asc' }, {
+    name: (i) => i.name,
+    quantity: (i) => i.quantity,
+    unitCost: (i) => num(i.unitCost),
+    lineTotal: (i) => num(i.lineTotal),
+  });
 
   return (
     <div className="flex flex-col gap-gutter">
@@ -51,14 +59,14 @@ export default function OfficePurchaseDetailPage() {
           </div>
           <Card className="overflow-hidden">
             <Table>
-              <THead>
-                <TH>Item</TH>
-                <TH align="center">Qty</TH>
-                <TH align="right">Unit Cost</TH>
-                <TH align="right">Line Total</TH>
+              <THead sort={lines.sort} onSort={lines.onSort}>
+                <TH sortKey="name">Item</TH>
+                <TH align="center" sortKey="quantity" sortDefault="desc">Qty</TH>
+                <TH align="right" sortKey="unitCost" sortDefault="desc">Unit Cost</TH>
+                <TH align="right" sortKey="lineTotal" sortDefault="desc">Line Total</TH>
               </THead>
               <TBody>
-                {items.map((i) => (
+                {lines.rows.map((i) => (
                   <TR key={i.id}>
                     <TD>{i.name}</TD>
                     <TD align="center" className="font-mono-data">{i.quantity}</TD>

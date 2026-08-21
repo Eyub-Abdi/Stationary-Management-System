@@ -1,7 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { qk } from './keys';
-import type { DailyTotalPoint, Paginated, PaymentMethod, Purchase, SellUnit } from '@/types';
+import type {
+  DailyTotalPoint,
+  Paginated,
+  PaymentMethod,
+  Purchase,
+  SellUnit,
+  SortParams,
+} from '@/types';
 
 const clean = (p: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined && v !== '' && v !== null));
@@ -30,7 +37,7 @@ export interface CreatePurchaseInput {
   items: PurchaseItemInput[];
 }
 
-export interface PurchaseFilters {
+export interface PurchaseFilters extends SortParams {
   page?: number;
   limit?: number;
   search?: string;

@@ -6,12 +6,15 @@ import type {
   CashSession,
   CashSessionStatus,
   Paginated,
+  SortParams,
 } from '@/types';
 
 const clean = (p: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined && v !== '' && v !== null));
 
-export function useCashSessions(filters: { page?: number; limit?: number; status?: CashSessionStatus }) {
+export function useCashSessions(
+  filters: { page?: number; limit?: number; status?: CashSessionStatus } & SortParams,
+) {
   return useQuery({
     queryKey: qk.cashSessions(filters),
     queryFn: async () => {
@@ -23,7 +26,7 @@ export function useCashSessions(filters: { page?: number; limit?: number; status
   });
 }
 
-export function useCashVariances(filters: { page?: number; limit?: number }) {
+export function useCashVariances(filters: { page?: number; limit?: number } & SortParams) {
   return useQuery({
     queryKey: qk.cashVariances(filters),
     queryFn: async () => {

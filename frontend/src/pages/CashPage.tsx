@@ -34,7 +34,9 @@ import {
   useOpenCashSession,
   useSuggestedOpeningFloat,
 } from '@/hooks/useCash';
+import { useTableSort } from '@/hooks/useSort';
 import { extractMessage } from '@/lib/api';
+import { PAGE_SIZE } from '@/lib/constants';
 import { cn, currency, formatDateTime, num } from '@/lib/utils';
 import type { CashMovementType, CashSession } from '@/types';
 
@@ -178,7 +180,12 @@ function Cell({
 
 function SessionsTable() {
   const [page, setPage] = useState(1);
-  const { data, isLoading, isError, refetch, error } = useCashSessions({ page, limit: 10 });
+  const { sort, onSort, params } = useTableSort({ by: 'openedAt', dir: 'desc' }, () => setPage(1));
+  const { data, isLoading, isError, refetch, error } = useCashSessions({
+    page,
+    limit: PAGE_SIZE,
+    ...params,
+  });
   return (
     <Card>
       {isLoading ? (
@@ -190,14 +197,14 @@ function SessionsTable() {
       ) : (
         <>
           <Table>
-            <THead>
-              <TH>Opened</TH>
-              <TH>Cashier</TH>
-              <TH align="center">Status</TH>
-              <TH align="right">Opening</TH>
-              <TH align="right">Expected</TH>
-              <TH align="right">Actual</TH>
-              <TH align="right">Variance</TH>
+            <THead sort={sort} onSort={onSort}>
+              <TH sortKey="openedAt" sortDefault="desc">Opened</TH>
+              <TH sortKey="user">Cashier</TH>
+              <TH align="center" sortKey="status">Status</TH>
+              <TH align="right" sortKey="openingBalance" sortDefault="desc">Opening</TH>
+              <TH align="right" sortKey="expectedAmount" sortDefault="desc">Expected</TH>
+              <TH align="right" sortKey="actualAmount" sortDefault="desc">Actual</TH>
+              <TH align="right" sortKey="variance" sortDefault="desc">Variance</TH>
             </THead>
             <TBody>
               {data!.data.map((s) => (
@@ -224,7 +231,12 @@ function SessionsTable() {
 
 function VariancesTable() {
   const [page, setPage] = useState(1);
-  const { data, isLoading, isError, refetch, error } = useCashVariances({ page, limit: 10 });
+  const { sort, onSort, params } = useTableSort({ by: 'closedAt', dir: 'desc' }, () => setPage(1));
+  const { data, isLoading, isError, refetch, error } = useCashVariances({
+    page,
+    limit: PAGE_SIZE,
+    ...params,
+  });
   return (
     <Card>
       {isLoading ? (
@@ -236,12 +248,12 @@ function VariancesTable() {
       ) : (
         <>
           <Table>
-            <THead>
-              <TH>Closed</TH>
-              <TH>Cashier</TH>
-              <TH align="right">Expected</TH>
-              <TH align="right">Actual</TH>
-              <TH align="right">Variance</TH>
+            <THead sort={sort} onSort={onSort}>
+              <TH sortKey="closedAt" sortDefault="desc">Closed</TH>
+              <TH sortKey="user">Cashier</TH>
+              <TH align="right" sortKey="expectedAmount" sortDefault="desc">Expected</TH>
+              <TH align="right" sortKey="actualAmount" sortDefault="desc">Actual</TH>
+              <TH align="right" sortKey="variance" sortDefault="desc">Variance</TH>
             </THead>
             <TBody>
               {data!.data.map((s) => (

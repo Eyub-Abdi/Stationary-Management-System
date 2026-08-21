@@ -19,6 +19,7 @@ import {
   Tabs,
 } from '@/components/ui';
 import { useProductMovement } from '@/hooks/useReports';
+import { useClientSort } from '@/hooks/useSort';
 import { extractMessage } from '@/lib/api';
 import { cn, daysAgo, endOfToday, formatDate } from '@/lib/utils';
 import type { ProductMovementRow } from '@/types';
@@ -45,6 +46,9 @@ const CLASS_META: Record<MoveClass, { label: string; tone: 'success' | 'info' | 
   SLOW: { label: 'Slow', tone: 'warning', icon: 'trending_down' },
   DEAD: { label: 'Dead', tone: 'error', icon: 'do_not_disturb_on' },
 };
+
+/** Fast to dead, so the Movement column sorts by pace and not by label. */
+const CLASS_ORDER: Record<MoveClass, number> = { FAST: 0, MEDIUM: 1, SLOW: 2, DEAD: 3 };
 
 interface Enriched extends ProductMovementRow {
   klass: MoveClass;
@@ -110,6 +114,17 @@ export default function MovementPage() {
       .filter((r) => !q || r.name.toLowerCase().includes(q) || r.sku.toLowerCase().includes(q));
   }, [enriched, filter, search]);
 
+  // Units sold is what the classification itself is built on, so it leads.
+  const { rows, sort, onSort } = useClientSort(visible, { by: 'unitsSold', dir: 'desc' }, {
+    name: (r) => r.name,
+    klass: (r) => CLASS_ORDER[r.klass],
+    unitsSold: (r) => r.unitsSold,
+    velocity: (r) => r.velocity,
+    currentStock: (r) => r.currentStock,
+    daysOfCover: (r) => r.daysOfCover,
+    lastSoldAt: (r) => r.lastSoldAt,
+  });
+
   // Dead stock with units sitting on the shelf is the costly case — surface it.
   const deadWithStock = enriched.filter((r) => r.klass === 'DEAD' && r.currentStock > 0).length;
 
@@ -171,17 +186,17 @@ export default function MovementPage() {
           />
         ) : (
           <Table>
-            <THead>
-              <TH>Product</TH>
-              <TH align="center">Movement</TH>
-              <TH align="right">Sold</TH>
-              <TH align="right">Per day</TH>
-              <TH align="right">In stock</TH>
-              <TH align="right">Days of cover</TH>
-              <TH align="right">Last sold</TH>
+            <THead sort={sort} onSort={onSort}>
+              <TH sortKey="name">Product</TH>
+              <TH align="center" sortKey="klass">Movement</TH>
+              <TH align="right" sortKey="unitsSold" sortDefault="desc">Sold</TH>
+              <TH align="right" sortKey="velocity" sortDefault="desc">Per day</TH>
+              <TH align="right" sortKey="currentStock" sortDefault="desc">In stock</TH>
+              <TH align="right" sortKey="daysOfCover">Days of cover</TH>
+              <TH align="right" sortKey="lastSoldAt" sortDefault="desc">Last sold</TH>
             </THead>
             <TBody>
-              {visible.map((r) => (
+              {rows.map((r) => (
                 <MovementRow key={r.productId} row={r} />
               ))}
             </TBody>

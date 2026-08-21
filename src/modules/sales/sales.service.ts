@@ -8,6 +8,7 @@ import {
 import { Prisma, SaleItemType } from '@prisma/client';
 import Decimal from 'decimal.js';
 import { paginate } from '../../common/dto/pagination.dto';
+import { resolveOrderBy, SortMap } from '../../common/utils/sort';
 import { add, money, mul, round, sub, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountingPeriodsService } from '../accounting/accounting-periods.service';
@@ -49,6 +50,16 @@ const SALE_INCLUDE = {
   user: { select: { id: true, fullName: true } },
   customer: { select: { id: true, name: true, phone: true } },
 } satisfies Prisma.SaleInclude;
+
+/** Columns the sales list can be ordered by, keyed as the UI names them. */
+const SALE_SORTS: SortMap<Prisma.SaleOrderByWithRelationInput[]> = {
+  invoiceNumber: (dir) => [{ invoiceNumber: dir }],
+  createdAt: (dir) => [{ createdAt: dir }],
+  cashier: (dir) => [{ user: { fullName: dir } }],
+  items: (dir) => [{ items: { _count: dir } }],
+  total: (dir) => [{ total: dir }],
+  status: (dir) => [{ status: dir }, { createdAt: 'desc' }],
+};
 
 @Injectable()
 export class SalesService {
@@ -640,7 +651,7 @@ export class SalesService {
           customer: { select: { name: true } },
           _count: { select: { items: true } },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: resolveOrderBy(query, SALE_SORTS, [{ createdAt: 'desc' }]),
         skip: query.skip,
         take: query.limit,
       }),

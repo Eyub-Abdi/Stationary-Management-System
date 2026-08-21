@@ -22,7 +22,9 @@ import {
 } from '@/components/ui';
 import { SupplierFormModal } from '@/features/suppliers/SupplierFormModal';
 import { useSuppliers, useSupplierSummary } from '@/hooks/useCatalog';
+import { useTableSort } from '@/hooks/useSort';
 import { extractMessage } from '@/lib/api';
+import { PAGE_SIZE } from '@/lib/constants';
 import { currency, formatDate, num } from '@/lib/utils';
 import type { Supplier } from '@/types';
 
@@ -34,9 +36,11 @@ export default function SuppliersPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Supplier | null>(null);
 
+  const { sort, onSort, params } = useTableSort({ by: 'name', dir: 'asc' }, () => setPage(1));
   const { data, isLoading, isError, refetch, error } = useSuppliers({
     page,
-    limit: 12,
+    limit: PAGE_SIZE,
+    ...params,
     search: search || undefined,
     withBalance: filter === 'owing' || undefined,
   });
@@ -133,12 +137,12 @@ export default function SuppliersPage() {
         ) : (
           <>
             <Table>
-              <THead>
-                <TH>Name</TH>
-                <TH>Phone</TH>
-                <TH>Address</TH>
+              <THead sort={sort} onSort={onSort}>
+                <TH sortKey="name">Name</TH>
+                <TH sortKey="phone">Phone</TH>
+                <TH sortKey="address">Address</TH>
                 <TH>Last credit purchase</TH>
-                <TH align="right">We owe</TH>
+                <TH align="right" sortKey="balance" sortDefault="desc">We owe</TH>
                 <TH align="right">Action</TH>
               </THead>
               <TBody>

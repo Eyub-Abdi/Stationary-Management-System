@@ -7,6 +7,7 @@ import {
 import { Prisma } from '@prisma/client';
 import Decimal from 'decimal.js';
 import { paginate } from '../../common/dto/pagination.dto';
+import { resolveOrderBy, SortMap } from '../../common/utils/sort';
 import { add, money, sub, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -33,6 +34,17 @@ const LOAN_INCLUDE = {
  * writes a CashMovement, which the close-of-day reconciliation already accounts
  * for, so a loan cannot quietly turn into a shortage at the count.
  */
+/** Columns the loan list can be ordered by. The outstanding balance is worked
+ *  out per row from the repayments, so it is sorted on the client instead. */
+const LOAN_SORTS: SortMap<Prisma.LoanOrderByWithRelationInput[]> = {
+  user: (dir) => [{ user: { fullName: dir } }],
+  issuedAt: (dir) => [{ issuedAt: dir }],
+  dueDate: (dir) => [{ dueDate: dir }],
+  source: (dir) => [{ source: dir }, { dueDate: 'asc' }],
+  amount: (dir) => [{ amount: dir }],
+  status: (dir) => [{ status: dir }, { dueDate: 'asc' }],
+};
+
 @Injectable()
 export class LoansService {
   constructor(
@@ -218,7 +230,7 @@ export class LoansService {
       this.prisma.loan.findMany({
         where,
         include: LOAN_INCLUDE,
-        orderBy: [{ status: 'asc' }, { dueDate: 'asc' }],
+        orderBy: resolveOrderBy(query, LOAN_SORTS, [{ status: 'asc' }, { dueDate: 'asc' }]),
         skip: query.skip,
         take: query.limit,
       }),

@@ -1,12 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { qk } from './keys';
-import type { Paginated, PaymentMethod, Sale, SaleItemType, SalesSummary, SaleStatus, SellUnit } from '@/types';
+import type {
+  Paginated,
+  PaymentMethod,
+  Sale,
+  SaleItemType,
+  SalesSummary,
+  SaleStatus,
+  SellUnit,
+  SortParams,
+} from '@/types';
 
 const clean = (p: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined && v !== '' && v !== null));
 
-export interface SaleFilters {
+export interface SaleFilters extends SortParams {
   page?: number;
   limit?: number;
   search?: string;

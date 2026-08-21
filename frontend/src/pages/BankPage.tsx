@@ -31,7 +31,9 @@ import {
   useTransferToBank,
   useTransferToTill,
 } from '@/hooks/useBanking';
+import { useTableSort } from '@/hooks/useSort';
 import { extractMessage } from '@/lib/api';
+import { PAGE_SIZE } from '@/lib/constants';
 import { cn, currency, formatDateTime, num } from '@/lib/utils';
 import type { BankTransactionType } from '@/types';
 
@@ -54,7 +56,8 @@ export default function BankPage() {
 
   const summary = useBankSummary();
   const position = useMoneyPosition();
-  const statement = useBankStatement({ page, limit: 15 });
+  const { sort, onSort, params } = useTableSort({ by: 'occurredAt', dir: 'desc' }, () => setPage(1));
+  const statement = useBankStatement({ page, limit: PAGE_SIZE, ...params });
 
   const balance = num(summary.data?.balance ?? 0);
 
@@ -147,12 +150,14 @@ export default function BankPage() {
         ) : (
           <>
             <Table>
-              <THead>
-                <TH>Date</TH>
-                <TH>Movement</TH>
+              <THead sort={sort} onSort={onSort}>
+                <TH sortKey="occurredAt" sortDefault="desc">Date</TH>
+                <TH sortKey="type">Movement</TH>
+                {/* Details is a note on some rows and a borrower on others —
+                    one column, two sources, nothing to order it by. */}
                 <TH>Details</TH>
-                <TH>By</TH>
-                <TH align="right">Amount</TH>
+                <TH sortKey="user">By</TH>
+                <TH align="right" sortKey="amount" sortDefault="desc">Amount</TH>
               </THead>
               <TBody>
                 {statement.data!.data.map((t) => {

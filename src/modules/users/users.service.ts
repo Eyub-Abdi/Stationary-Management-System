@@ -8,6 +8,7 @@ import {
 import { Prisma, Role, User } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { PaginationQueryDto, paginate } from '../../common/dto/pagination.dto';
+import { resolveOrderBy, SortMap } from '../../common/utils/sort';
 import { isPermissionKey } from '../../common/permissions';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -27,6 +28,15 @@ const SAFE_SELECT = {
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.UserSelect;
+
+/** Columns the user list can be ordered by. */
+const USER_SORTS: SortMap<Prisma.UserOrderByWithRelationInput[]> = {
+  fullName: (dir) => [{ fullName: dir }],
+  role: (dir) => [{ role: dir }, { fullName: 'asc' }],
+  isActive: (dir) => [{ isActive: dir }, { fullName: 'asc' }],
+  lastLoginAt: (dir) => [{ lastLoginAt: dir }],
+  createdAt: (dir) => [{ createdAt: dir }],
+};
 
 @Injectable()
 export class UsersService {
@@ -71,7 +81,7 @@ export class UsersService {
       this.prisma.user.findMany({
         where,
         select: SAFE_SELECT,
-        orderBy: { createdAt: 'desc' },
+        orderBy: resolveOrderBy(query, USER_SORTS, [{ createdAt: 'desc' }]),
         skip: query.skip,
         take: query.limit,
       }),

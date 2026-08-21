@@ -29,9 +29,11 @@ import { useToast } from '@/providers/ToastProvider';
 import { useAdjustStock, useMovements } from '@/hooks/useInventory';
 import { useStockLevels } from '@/hooks/useReports';
 import { useProducts, useLowStockProducts } from '@/hooks/useProducts';
+import { useClientSort, useTableSort } from '@/hooks/useSort';
 import { extractMessage } from '@/lib/api';
 import {
   ADJUSTMENT_REASONS,
+  PAGE_SIZE,
   STOCK_IN_REASONS,
   STOCK_OUT_REASONS,
 } from '@/lib/constants';
@@ -124,9 +126,11 @@ function MovementsTab() {
   const [type, setType] = useState<InventoryMovementType | ''>('');
   const [productId, setProductId] = useState('');
   const { data: products } = useProducts({ limit: 100 });
+  const { sort, onSort, params } = useTableSort({ by: 'createdAt', dir: 'desc' }, () => setPage(1));
   const { data, isLoading, isError, refetch, error } = useMovements({
     page,
-    limit: 15,
+    limit: PAGE_SIZE,
+    ...params,
     type: type || undefined,
     productId: productId || undefined,
   });
@@ -158,12 +162,12 @@ function MovementsTab() {
       ) : (
         <>
           <Table>
-            <THead>
-              <TH>Date</TH>
-              <TH>Product</TH>
-              <TH align="center">Type</TH>
-              <TH align="right">Change</TH>
-              <TH align="center">Before → After</TH>
+            <THead sort={sort} onSort={onSort}>
+              <TH sortKey="createdAt" sortDefault="desc">Date</TH>
+              <TH sortKey="product">Product</TH>
+              <TH align="center" sortKey="type">Type</TH>
+              <TH align="right" sortKey="quantity" sortDefault="desc">Change</TH>
+              <TH align="center" sortKey="afterQty" sortDefault="desc">Before → After</TH>
               <TH>By</TH>
             </THead>
             <TBody>
@@ -199,6 +203,14 @@ function MovementsTab() {
 
 function LowStockTab() {
   const { data, isLoading, isError, refetch, error } = useLowStockProducts();
+  // The shortfall is what this list is for, so it leads — deepest first.
+  const { rows, sort, onSort } = useClientSort(data, { by: 'shortfall', dir: 'desc' }, {
+    name: (p) => p.name,
+    sku: (p) => p.sku,
+    currentStock: (p) => p.currentStock,
+    minStockLevel: (p) => p.minStockLevel,
+    shortfall: (p) => Math.max(0, p.minStockLevel - p.currentStock),
+  });
   return (
     <Card>
       {isLoading ? (
@@ -209,15 +221,15 @@ function LowStockTab() {
         <EmptyState icon="check_circle" title="Stock levels healthy" description="No products are below their minimum stock level." />
       ) : (
         <Table>
-          <THead>
-            <TH>Product</TH>
-            <TH>SKU</TH>
-            <TH align="center">Current</TH>
-            <TH align="center">Minimum</TH>
-            <TH align="center">Shortfall</TH>
+          <THead sort={sort} onSort={onSort}>
+            <TH sortKey="name">Product</TH>
+            <TH sortKey="sku">SKU</TH>
+            <TH align="center" sortKey="currentStock" sortDefault="desc">Current</TH>
+            <TH align="center" sortKey="minStockLevel" sortDefault="desc">Minimum</TH>
+            <TH align="center" sortKey="shortfall" sortDefault="desc">Shortfall</TH>
           </THead>
           <TBody>
-            {data!.map((p) => (
+            {rows.map((p) => (
               <TR key={p.sku}>
                 <TD className="font-medium">{p.name}</TD>
                 <TD className="font-mono-data text-on-surface-variant">{p.sku}</TD>
@@ -237,6 +249,13 @@ function LowStockTab() {
 
 function ValuationTab() {
   const { data, isLoading, isError, refetch, error } = useStockLevels();
+  const { rows, sort, onSort } = useClientSort(data, { by: 'valuation', dir: 'desc' }, {
+    name: (r) => r.name,
+    sku: (r) => r.sku,
+    currentStock: (r) => r.currentStock,
+    minStockLevel: (r) => r.minStockLevel,
+    valuation: (r) => num(r.valuation),
+  });
   return (
     <Card>
       {isLoading ? (
@@ -247,15 +266,15 @@ function ValuationTab() {
         <EmptyState icon="paid" title="No inventory" description="Valuation appears once you have stock on hand." />
       ) : (
         <Table>
-          <THead>
-            <TH>Product</TH>
-            <TH>SKU</TH>
-            <TH align="center">Stock</TH>
-            <TH align="center">Min</TH>
-            <TH align="right">Valuation</TH>
+          <THead sort={sort} onSort={onSort}>
+            <TH sortKey="name">Product</TH>
+            <TH sortKey="sku">SKU</TH>
+            <TH align="center" sortKey="currentStock" sortDefault="desc">Stock</TH>
+            <TH align="center" sortKey="minStockLevel" sortDefault="desc">Min</TH>
+            <TH align="right" sortKey="valuation" sortDefault="desc">Valuation</TH>
           </THead>
           <TBody>
-            {data!.map((r) => (
+            {rows.map((r) => (
               <TR key={r.sku}>
                 <TD className="font-medium">{r.name}</TD>
                 <TD className="font-mono-data text-on-surface-variant">{r.sku}</TD>

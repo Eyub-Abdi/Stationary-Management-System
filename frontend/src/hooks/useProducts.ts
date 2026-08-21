@@ -1,9 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { qk } from './keys';
-import type { LowStockRow, Paginated, Product, ProductStatus, ProductVariant } from '@/types';
+import type {
+  LowStockRow,
+  Paginated,
+  Product,
+  ProductStatus,
+  ProductVariant,
+  SortParams,
+} from '@/types';
 
-export interface ProductFilters {
+export interface ProductFilters extends SortParams {
   page?: number;
   limit?: number;
   search?: string;

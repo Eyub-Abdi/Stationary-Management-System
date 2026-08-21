@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { paginate } from '../../common/dto/pagination.dto';
+import { resolveOrderBy, SortMap } from '../../common/utils/sort';
 import { add, money, mul, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountingPeriodsService } from '../accounting/accounting-periods.service';
@@ -26,6 +27,24 @@ import {
 const CATEGORY_SELECT = {
   select: { id: true, name: true, icon: true, staffAllowed: true, systemKey: true },
 } as const;
+
+/** Columns the expense list can be ordered by. */
+const EXPENSE_SORTS: SortMap<Prisma.ExpenseOrderByWithRelationInput[]> = {
+  category: (dir) => [{ category: { name: dir } }],
+  description: (dir) => [{ description: dir }],
+  expenseDate: (dir) => [{ expenseDate: dir }, { createdAt: dir }],
+  user: (dir) => [{ user: { fullName: dir } }],
+  amount: (dir) => [{ amount: dir }],
+};
+
+/** Columns the office-purchase list can be ordered by. */
+const OFFICE_PURCHASE_SORTS: SortMap<Prisma.ExpenseOrderByWithRelationInput[]> = {
+  expenseDate: (dir) => [{ expenseDate: dir }, { createdAt: dir }],
+  supplierName: (dir) => [{ supplierName: dir }],
+  items: (dir) => [{ items: { _count: dir } }],
+  user: (dir) => [{ user: { fullName: dir } }],
+  amount: (dir) => [{ amount: dir }],
+};
 
 @Injectable()
 export class ExpensesService {
@@ -286,7 +305,10 @@ export class ExpensesService {
           category: CATEGORY_SELECT,
           user: { select: { fullName: true } },
         },
-        orderBy: [{ expenseDate: 'desc' }, { createdAt: 'desc' }],
+        orderBy: resolveOrderBy(query, OFFICE_PURCHASE_SORTS, [
+          { expenseDate: 'desc' },
+          { createdAt: 'desc' },
+        ]),
         skip: query.skip,
         take: query.limit,
       }),
@@ -334,7 +356,10 @@ export class ExpensesService {
           // The UI greys out entries frozen by a closed till.
           cashSession: { select: { status: true } },
         },
-        orderBy: [{ expenseDate: 'desc' }, { createdAt: 'desc' }],
+        orderBy: resolveOrderBy(query, EXPENSE_SORTS, [
+          { expenseDate: 'desc' },
+          { createdAt: 'desc' },
+        ]),
         skip: query.skip,
         take: query.limit,
       }),

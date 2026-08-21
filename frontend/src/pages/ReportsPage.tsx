@@ -35,6 +35,7 @@ import {
 } from '@/hooks/useReports';
 import { useSupplierSummary } from '@/hooks/useCatalog';
 import { useCustomerAging } from '@/hooks/useCustomers';
+import { useClientSort } from '@/hooks/useSort';
 import { ADJUSTMENT_REASONS, CHART_COLORS } from '@/lib/constants';
 import { cn, currency, formatDate, formatDateTime, num } from '@/lib/utils';
 import { resolvePeriod, type Period } from '@/lib/period';
@@ -82,6 +83,71 @@ export default function ReportsPage() {
   const wastageEntries = useWastageEntries(r, tab === 'wastage');
   const cash = useCashReport(tab === 'cash');
   const staff = useUserActivityReport(r, tab === 'staff');
+
+  // Every report table opens on the figure it exists to rank by, and each
+  // header can reorder the rows that table holds.
+  const productSort = useClientSort(topProducts.data, { by: 'units_sold', dir: 'desc' }, {
+    name: (p) => p.name,
+    units_sold: (p) => num(p.units_sold),
+    revenue: (p) => num(p.revenue),
+  });
+  const serviceSort = useClientSort(topServices.data, { by: 'revenue', dir: 'desc' }, {
+    name: (x) => x.name,
+    jobs: (x) => x.jobs,
+    revenue: (x) => num(x.revenue),
+  });
+  const mixSort = useClientSort(expenseMix.data, { by: 'total', dir: 'desc' }, {
+    category: (e) => e.category,
+    count: (e) => e.count,
+    total: (e) => num(e.total),
+  });
+  const stockSort = useClientSort(stockLevels.data, { by: 'valuation', dir: 'desc' }, {
+    name: (x) => x.name,
+    currentStock: (x) => x.currentStock,
+    valuation: (x) => num(x.valuation),
+  });
+  const lowStockSort = useClientSort(lowStock.data, { by: 'currentStock', dir: 'asc' }, {
+    name: (x) => x.name,
+    currentStock: (x) => x.currentStock,
+    minStockLevel: (x) => x.minStockLevel,
+  });
+  const reasonSort = useClientSort(wastage.data?.byReason, { by: 'cost', dir: 'desc' }, {
+    reason: (w) => w.reason,
+    unitsOut: (w) => w.unitsOut,
+    cost: (w) => num(w.cost),
+  });
+  const wasteProductSort = useClientSort(wastage.data?.byProduct, { by: 'cost', dir: 'desc' }, {
+    name: (w) => w.name,
+    units: (w) => w.units,
+    entries: (w) => w.entries,
+    cost: (w) => num(w.cost),
+  });
+  const wasteServiceSort = useClientSort(wastage.data?.byService, { by: 'cost', dir: 'desc' }, {
+    name: (w) => w.name,
+    units: (w) => w.units,
+    cost: (w) => num(w.cost),
+  });
+  const entriesSort = useClientSort(wastageEntries.data, { by: 'createdAt', dir: 'desc' }, {
+    createdAt: (w) => w.createdAt,
+    name: (w) => w.name,
+    quantityChange: (w) => w.quantityChange,
+    cost: (w) => num(w.cost),
+    user: (w) => w.user,
+  });
+  const cashSort = useClientSort(cash.data, { by: 'openedAt', dir: 'desc' }, {
+    openedAt: (x) => x.openedAt,
+    user: (x) => x.user?.fullName,
+    status: (x) => x.status,
+    expectedAmount: (x) => (x.expectedAmount ? num(x.expectedAmount) : null),
+    actualAmount: (x) => (x.actualAmount ? num(x.actualAmount) : null),
+    variance: (x) => (x.variance != null ? num(x.variance) : null),
+  });
+  const staffSort = useClientSort(staff.data, { by: 'revenue', dir: 'desc' }, {
+    name: (u) => u.name,
+    role: (u) => u.role,
+    sale_count: (u) => num(u.sale_count),
+    revenue: (u) => num(u.revenue),
+  });
 
   // Debt position — live balances, independent of the selected date range.
   const aging = useCustomerAging();
@@ -268,9 +334,13 @@ export default function ReportsPage() {
               <EmptyState icon="trophy" title="No product sales" />
             ) : (
               <Table>
-                <THead><TH>Product</TH><TH align="center">Units</TH><TH align="right">Revenue</TH></THead>
+                <THead sort={productSort.sort} onSort={productSort.onSort}>
+                  <TH sortKey="name">Product</TH>
+                  <TH align="center" sortKey="units_sold" sortDefault="desc">Units</TH>
+                  <TH align="right" sortKey="revenue" sortDefault="desc">Revenue</TH>
+                </THead>
                 <TBody>
-                  {topProducts.data!.map((p) => (
+                  {productSort.rows.map((p) => (
                     <TR key={p.productId}>
                       <TD className="font-medium">{p.name}</TD>
                       <TD align="center" className="font-mono-data">{num(p.units_sold)}</TD>
@@ -287,9 +357,13 @@ export default function ReportsPage() {
               <EmptyState icon="print" title="No service sales" />
             ) : (
               <Table>
-                <THead><TH>Service / option</TH><TH align="center">Jobs</TH><TH align="right">Revenue</TH></THead>
+                <THead sort={serviceSort.sort} onSort={serviceSort.onSort}>
+                  <TH sortKey="name">Service / option</TH>
+                  <TH align="center" sortKey="jobs" sortDefault="desc">Jobs</TH>
+                  <TH align="right" sortKey="revenue" sortDefault="desc">Revenue</TH>
+                </THead>
                 <TBody>
-                  {topServices.data!.map((s) => (
+                  {serviceSort.rows.map((s) => (
                     <TR key={s.serviceVariantId}>
                       <TD className="font-medium">{s.name}</TD>
                       <TD align="center" className="font-mono-data">{s.jobs}</TD>
@@ -308,9 +382,15 @@ export default function ReportsPage() {
           <CardHeader title="Expenses by Category" subtitle={range.label} />
           {expenseMix.isLoading ? <LoadingState /> : mixData.length === 0 ? <EmptyState icon="pie_chart" title="No expenses" /> : (
             <Table>
-              <THead><TH>Category</TH><TH align="center">Entries</TH><TH align="right">Total</TH><TH align="right">Share</TH></THead>
+              <THead sort={mixSort.sort} onSort={mixSort.onSort}>
+                <TH sortKey="category">Category</TH>
+                <TH align="center" sortKey="count" sortDefault="desc">Entries</TH>
+                <TH align="right" sortKey="total" sortDefault="desc">Total</TH>
+                {/* Share runs in the same order as Total, which already sorts it. */}
+                <TH align="right">Share</TH>
+              </THead>
               <TBody>
-                {expenseMix.data!.map((e) => (
+                {mixSort.rows.map((e) => (
                   <TR key={e.categoryId}>
                     <TD className="font-medium">{e.category}</TD>
                     <TD align="center" className="font-mono-data">{e.count}</TD>
@@ -330,9 +410,13 @@ export default function ReportsPage() {
             <CardHeader title="Stock Levels & Valuation" />
             {stockLevels.isLoading ? <LoadingState /> : (stockLevels.data?.length ?? 0) === 0 ? <EmptyState icon="inventory" title="No inventory" /> : (
               <Table>
-                <THead><TH>Product</TH><TH align="center">Stock</TH><TH align="right">Value</TH></THead>
+                <THead sort={stockSort.sort} onSort={stockSort.onSort}>
+                  <TH sortKey="name">Product</TH>
+                  <TH align="center" sortKey="currentStock" sortDefault="desc">Stock</TH>
+                  <TH align="right" sortKey="valuation" sortDefault="desc">Value</TH>
+                </THead>
                 <TBody>
-                  {stockLevels.data!.map((s) => (
+                  {stockSort.rows.map((s) => (
                     <TR key={s.sku}>
                       <TD className="font-medium">{s.name}</TD>
                       <TD align="center" className="font-mono-data">{s.currentStock}</TD>
@@ -347,9 +431,13 @@ export default function ReportsPage() {
             <CardHeader title="Low Stock" />
             {lowStock.isLoading ? <LoadingState /> : (lowStock.data?.length ?? 0) === 0 ? <EmptyState icon="check_circle" title="Stock healthy" /> : (
               <Table>
-                <THead><TH>Product</TH><TH align="center">Current</TH><TH align="center">Min</TH></THead>
+                <THead sort={lowStockSort.sort} onSort={lowStockSort.onSort}>
+                  <TH sortKey="name">Product</TH>
+                  <TH align="center" sortKey="currentStock">Current</TH>
+                  <TH align="center" sortKey="minStockLevel" sortDefault="desc">Min</TH>
+                </THead>
                 <TBody>
-                  {lowStock.data!.map((s) => (
+                  {lowStockSort.rows.map((s) => (
                     <TR key={s.sku}>
                       <TD className="font-medium">{s.name}</TD>
                       <TD align="center" className="font-mono-data font-bold text-error">{s.currentStock}</TD>
@@ -374,9 +462,13 @@ export default function ReportsPage() {
               <EmptyState icon="check_circle" title="Nothing written off" />
             ) : (
               <Table>
-                <THead><TH>Reason</TH><TH align="center">Units out</TH><TH align="right">Cost</TH></THead>
+                <THead sort={reasonSort.sort} onSort={reasonSort.onSort}>
+                  <TH sortKey="reason">Reason</TH>
+                  <TH align="center" sortKey="unitsOut" sortDefault="desc">Units out</TH>
+                  <TH align="right" sortKey="cost" sortDefault="desc">Cost</TH>
+                </THead>
                 <TBody>
-                  {wastage.data!.byReason.map((w) => (
+                  {reasonSort.rows.map((w) => (
                     <TR key={w.reasonCode}>
                       <TD className="font-medium">
                         <span className="flex items-center gap-2">
@@ -410,9 +502,14 @@ export default function ReportsPage() {
               <EmptyState icon="inventory_2" title="Nothing written off" />
             ) : (
               <Table>
-                <THead><TH>Product</TH><TH align="center">Units</TH><TH align="center">Entries</TH><TH align="right">Cost</TH></THead>
+                <THead sort={wasteProductSort.sort} onSort={wasteProductSort.onSort}>
+                  <TH sortKey="name">Product</TH>
+                  <TH align="center" sortKey="units" sortDefault="desc">Units</TH>
+                  <TH align="center" sortKey="entries" sortDefault="desc">Entries</TH>
+                  <TH align="right" sortKey="cost" sortDefault="desc">Cost</TH>
+                </THead>
                 <TBody>
-                  {wastage.data!.byProduct.map((w) => (
+                  {wasteProductSort.rows.map((w) => (
                     <TR key={w.variantId}>
                       <TD className="font-medium">{w.name}</TD>
                       <TD align="center" className="font-mono-data">
@@ -439,9 +536,13 @@ export default function ReportsPage() {
               />
             ) : (
               <Table>
-                <THead><TH>Service / option</TH><TH align="center">Units</TH><TH align="right">Cost</TH></THead>
+                <THead sort={wasteServiceSort.sort} onSort={wasteServiceSort.onSort}>
+                  <TH sortKey="name">Service / option</TH>
+                  <TH align="center" sortKey="units" sortDefault="desc">Units</TH>
+                  <TH align="right" sortKey="cost" sortDefault="desc">Cost</TH>
+                </THead>
                 <TBody>
-                  {wastage.data!.byService.map((w) => (
+                  {wasteServiceSort.rows.map((w) => (
                     <TR key={w.serviceVariantId}>
                       <TD className="font-medium">{w.name}</TD>
                       <TD align="center" className="font-mono-data">{w.units.toLocaleString()}</TD>
@@ -459,9 +560,15 @@ export default function ReportsPage() {
               <EmptyState icon="history" title="No entries" />
             ) : (
               <Table>
-                <THead><TH>When</TH><TH>Item</TH><TH align="center">Units</TH><TH align="right">Cost</TH><TH>By</TH></THead>
+                <THead sort={entriesSort.sort} onSort={entriesSort.onSort}>
+                  <TH sortKey="createdAt" sortDefault="desc">When</TH>
+                  <TH sortKey="name">Item</TH>
+                  <TH align="center" sortKey="quantityChange" sortDefault="desc">Units</TH>
+                  <TH align="right" sortKey="cost" sortDefault="desc">Cost</TH>
+                  <TH sortKey="user">By</TH>
+                </THead>
                 <TBody>
-                  {wastageEntries.data!.map((w) => (
+                  {entriesSort.rows.map((w) => (
                     <TR key={w.id}>
                       <TD className="whitespace-nowrap text-on-surface-variant">{formatDateTime(w.createdAt)}</TD>
                       <TD>
@@ -497,9 +604,16 @@ export default function ReportsPage() {
           <CardHeader title="Cash Sessions" subtitle="Recent reconciliations" />
           {cash.isLoading ? <LoadingState /> : (cash.data?.length ?? 0) === 0 ? <EmptyState icon="account_balance" title="No sessions" /> : (
             <Table>
-              <THead><TH>Opened</TH><TH>Cashier</TH><TH align="center">Status</TH><TH align="right">Expected</TH><TH align="right">Actual</TH><TH align="right">Variance</TH></THead>
+              <THead sort={cashSort.sort} onSort={cashSort.onSort}>
+                <TH sortKey="openedAt" sortDefault="desc">Opened</TH>
+                <TH sortKey="user">Cashier</TH>
+                <TH align="center" sortKey="status">Status</TH>
+                <TH align="right" sortKey="expectedAmount" sortDefault="desc">Expected</TH>
+                <TH align="right" sortKey="actualAmount" sortDefault="desc">Actual</TH>
+                <TH align="right" sortKey="variance" sortDefault="desc">Variance</TH>
+              </THead>
               <TBody>
-                {cash.data!.map((s) => (
+                {cashSort.rows.map((s) => (
                   <TR key={s.id}>
                     <TD className="whitespace-nowrap text-on-surface-variant">{formatDateTime(s.openedAt)}</TD>
                     <TD className="font-medium">{s.user?.fullName ?? '—'}</TD>
@@ -520,9 +634,14 @@ export default function ReportsPage() {
           <CardHeader title="Staff Activity" subtitle={`Sales performance · ${range.label}`} />
           {staff.isLoading ? <LoadingState /> : (staff.data?.length ?? 0) === 0 ? <EmptyState icon="groups" title="No activity" /> : (
             <Table>
-              <THead><TH>Staff</TH><TH align="center">Role</TH><TH align="center">Sales</TH><TH align="right">Revenue</TH></THead>
+              <THead sort={staffSort.sort} onSort={staffSort.onSort}>
+                <TH sortKey="name">Staff</TH>
+                <TH align="center" sortKey="role">Role</TH>
+                <TH align="center" sortKey="sale_count" sortDefault="desc">Sales</TH>
+                <TH align="right" sortKey="revenue" sortDefault="desc">Revenue</TH>
+              </THead>
               <TBody>
-                {staff.data!.map((u) => (
+                {staffSort.rows.map((u) => (
                   <TR key={u.userId}>
                     <TD className="font-medium">{u.name}</TD>
                     <TD align="center">{u.role}</TD>

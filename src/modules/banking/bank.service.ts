@@ -6,6 +6,7 @@ import {
 import { BankTransactionType, Prisma } from '@prisma/client';
 import Decimal from 'decimal.js';
 import { paginate } from '../../common/dto/pagination.dto';
+import { resolveOrderBy, SortMap } from '../../common/utils/sort';
 import { money, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -30,6 +31,15 @@ type Client = Prisma.TransactionClient | PrismaService;
  * understands) and a BankTransaction here. Neither half touches profit — the
  * money has changed pockets, not left the business.
  */
+/** Columns the bank statement can be ordered by. */
+const BANK_SORTS: SortMap<Prisma.BankTransactionOrderByWithRelationInput[]> = {
+  occurredAt: (dir) => [{ occurredAt: dir }, { createdAt: dir }],
+  type: (dir) => [{ type: dir }, { occurredAt: 'desc' }],
+  notes: (dir) => [{ notes: dir }],
+  user: (dir) => [{ user: { fullName: dir } }],
+  amount: (dir) => [{ amount: dir }],
+};
+
 @Injectable()
 export class BankService {
   constructor(
@@ -67,7 +77,10 @@ export class BankService {
           user: { select: { fullName: true } },
           loan: { select: { id: true, user: { select: { fullName: true } } } },
         },
-        orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
+        orderBy: resolveOrderBy(query, BANK_SORTS, [
+          { occurredAt: 'desc' },
+          { createdAt: 'desc' },
+        ]),
         skip: query.skip,
         take: query.limit,
       }),

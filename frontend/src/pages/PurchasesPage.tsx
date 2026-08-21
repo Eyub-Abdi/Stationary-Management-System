@@ -27,6 +27,7 @@ import {
 } from '@/components/ui';
 import { useToast } from '@/providers/ToastProvider';
 import { usePurchases, usePurchasesDaily } from '@/hooks/usePurchases';
+import { useClientSort, useTableSort } from '@/hooks/useSort';
 import {
   useCreateUnit,
   useDeleteUnit,
@@ -35,6 +36,7 @@ import {
 } from '@/hooks/useCatalog';
 import { DocLink } from '@/components/DocLink';
 import { extractMessage } from '@/lib/api';
+import { PAGE_SIZE } from '@/lib/constants';
 import { currency, formatDate, num } from '@/lib/utils';
 import { rangeFor, toDateInput, type RangeKey } from '@/lib/dateRange';
 import type { Unit } from '@/types';
@@ -60,15 +62,22 @@ export default function PurchasesPage() {
   }, [view]);
 
   const range = rangeFor(rangeKey, customFrom, customTo);
+  const list = useTableSort({ by: 'purchaseDate', dir: 'desc' }, () => setPage(1));
   const { data, isLoading, isError, refetch, error } = usePurchases({
     page,
-    limit: 12,
+    limit: PAGE_SIZE,
+    ...list.params,
     search: search || undefined,
     ...range,
   });
 
   const daily = usePurchasesDaily(range, view === 'daily');
-  const dailyRows = daily.data ?? [];
+  const dailySort = useClientSort(daily.data, { by: 'period', dir: 'desc' }, {
+    period: (r) => r.period,
+    count: (r) => r.count,
+    total: (r) => num(r.total),
+  });
+  const dailyRows = dailySort.rows;
   const dailyTotal = dailyRows.reduce((a, r) => a + num(r.total), 0);
   const dailyCount = dailyRows.reduce((a, r) => a + r.count, 0);
 
@@ -178,10 +187,10 @@ export default function PurchasesPage() {
             />
           ) : (
             <Table>
-              <THead>
-                <TH>Date</TH>
-                <TH align="center">Purchases</TH>
-                <TH align="right">Total cost</TH>
+              <THead sort={dailySort.sort} onSort={dailySort.onSort}>
+                <TH sortKey="period" sortDefault="desc">Date</TH>
+                <TH align="center" sortKey="count" sortDefault="desc">Purchases</TH>
+                <TH align="right" sortKey="total" sortDefault="desc">Total cost</TH>
                 <TH align="right">Action</TH>
               </THead>
               <TBody>
@@ -218,14 +227,16 @@ export default function PurchasesPage() {
         ) : (
           <>
             <Table>
-              <THead>
-                <TH>Purchase #</TH>
+              <THead sort={list.sort} onSort={list.onSort}>
+                <TH sortKey="purchaseNumber">Purchase #</TH>
+                {/* A purchase covers several products, so the column shows the
+                    first with a count — nothing single to order on. */}
                 <TH>Product</TH>
-                <TH>Supplier</TH>
-                <TH>Date</TH>
-                <TH>Payment</TH>
-                <TH align="right">Total Cost</TH>
-                <TH align="right">Owing</TH>
+                <TH sortKey="supplier">Supplier</TH>
+                <TH sortKey="purchaseDate" sortDefault="desc">Date</TH>
+                <TH sortKey="paymentMethod">Payment</TH>
+                <TH align="right" sortKey="totalCost" sortDefault="desc">Total Cost</TH>
+                <TH align="right" sortKey="amountDue" sortDefault="desc">Owing</TH>
                 <TH align="right">Action</TH>
               </THead>
               <TBody>

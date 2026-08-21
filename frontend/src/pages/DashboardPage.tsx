@@ -26,6 +26,7 @@ import { useSales } from '@/hooks/useSales';
 import { useExpenses } from '@/hooks/useExpenses';
 import { useCustomerAging } from '@/hooks/useCustomers';
 import { useLowStockProducts } from '@/hooks/useProducts';
+import { useClientSort } from '@/hooks/useSort';
 import { useExpensesByCategory, useFinancialSummary, useSalesSeries } from '@/hooks/useReports';
 import {
   cn,
@@ -57,6 +58,14 @@ export default function DashboardPage() {
   const expensesToday = useExpenses({ ...todayRange, limit: 100 }, isAdmin);
   const recentSales = useSales({ limit: 6 });
   const recentExpenses = useExpenses({ limit: 5 }, isAdmin);
+  // Newest first, as "recent" implies — the headers reorder just these rows.
+  const recent = useClientSort(recentSales.data?.data, { by: 'createdAt', dir: 'desc' }, {
+    invoiceNumber: (s) => s.invoiceNumber,
+    cashier: (s) => s.user?.fullName,
+    total: (s) => num(s.total),
+    status: (s) => s.status,
+    createdAt: (s) => s.createdAt,
+  });
   const lowStock = useLowStockProducts();
   // Receivables (what customers owe us) — surfaced for staff handling credit.
   const aging = useCustomerAging(!isAdmin);
@@ -243,15 +252,15 @@ export default function DashboardPage() {
             <EmptyState icon="receipt_long" title="No transactions yet" description="Completed sales will show up here." />
           ) : (
             <Table>
-              <THead>
-                <TH>Invoice</TH>
-                <TH>Cashier</TH>
-                <TH align="right">Amount</TH>
-                <TH align="center">Status</TH>
-                <TH align="right">Time</TH>
+              <THead sort={recent.sort} onSort={recent.onSort}>
+                <TH sortKey="invoiceNumber">Invoice</TH>
+                <TH sortKey="cashier">Cashier</TH>
+                <TH align="right" sortKey="total" sortDefault="desc">Amount</TH>
+                <TH align="center" sortKey="status">Status</TH>
+                <TH align="right" sortKey="createdAt" sortDefault="desc">Time</TH>
               </THead>
               <TBody>
-                {recentSales.data!.data.map((s) => (
+                {recent.rows.map((s) => (
                   <TR key={s.id}>
                     <TD>
                       <DocLink kind="sale" id={s.id}>{s.invoiceNumber}</DocLink>

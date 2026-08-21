@@ -1,6 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+
+/** Direction a list is ordered in. */
+export type SortDir = 'asc' | 'desc';
 
 /** Standard cursor-less paged query params shared by all list endpoints. */
 export class PaginationQueryDto {
@@ -23,6 +26,19 @@ export class PaginationQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Column to order by. Each list accepts its own set of names; anything else falls back to the default order for that list.',
+  })
+  @IsOptional()
+  @IsString()
+  sortBy?: string;
+
+  @ApiPropertyOptional({ enum: ['asc', 'desc'] })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortDir?: SortDir;
 
   get skip(): number {
     return (this.page - 1) * this.limit;

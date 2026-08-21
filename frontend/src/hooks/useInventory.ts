@@ -1,12 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { qk } from './keys';
-import type { InventoryMovement, InventoryMovementType, Paginated, StockAdjustmentReason, StockLevelRow } from '@/types';
+import type {
+  InventoryMovement,
+  InventoryMovementType,
+  Paginated,
+  SortParams,
+  StockAdjustmentReason,
+  StockLevelRow,
+} from '@/types';
 
 const clean = (p: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined && v !== '' && v !== null));
 
-export interface MovementFilters {
+export interface MovementFilters extends SortParams {
   page?: number;
   limit?: number;
   productId?: string;

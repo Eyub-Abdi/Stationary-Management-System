@@ -1,12 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { qk } from './keys';
-import type { DailyTotalPoint, Expense, Paginated } from '@/types';
+import type {
+  DailyTotalPoint,
+  Expense,
+  Paginated,
+  SortParams,
+} from '@/types';
 
 const clean = (p: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined && v !== '' && v !== null));
 
-export interface ExpenseFilters {
+export interface ExpenseFilters extends SortParams {
   page?: number;
   limit?: number;
   search?: string;
@@ -85,7 +90,7 @@ export function useDeleteExpense() {
 
 // --- Office / internal-use purchases (itemized expenses) --------------------
 
-export interface OfficePurchaseFilters {
+export interface OfficePurchaseFilters extends SortParams {
   page?: number;
   limit?: number;
   from?: string;

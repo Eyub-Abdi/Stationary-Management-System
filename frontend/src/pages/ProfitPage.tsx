@@ -19,6 +19,7 @@ import {
   Table,
 } from '@/components/ui';
 import { useProductProfitability } from '@/hooks/useReports';
+import { useClientSort } from '@/hooks/useSort';
 import { extractMessage } from '@/lib/api';
 import { cn, currency, num } from '@/lib/utils';
 import { resolvePeriod, type Period } from '@/lib/period';
@@ -61,6 +62,18 @@ export default function ProfitPage() {
       (r) => r.name.toLowerCase().includes(q) || r.sku.toLowerCase().includes(q),
     );
   }, [rows, search]);
+
+  // Profit is what the page is for, so the biggest earner opens the list.
+  const sorted = useClientSort(filtered, { by: 'grossProfit', dir: 'desc' }, {
+    name: (r) => r.name,
+    qtyBase: (r) => r.qtyBase,
+    buyingPrice: (r) => num(r.buyingPrice),
+    sellingPrice: (r) => num(r.sellingPrice),
+    revenue: (r) => num(r.revenue),
+    cogs: (r) => num(r.cogs),
+    grossProfit: (r) => num(r.grossProfit),
+    margin: (r) => num(r.margin),
+  });
 
   const totals = useMemo(() => {
     const revenue = rows.reduce((a, r) => a + num(r.revenue), 0);
@@ -145,18 +158,18 @@ export default function ProfitPage() {
           />
         ) : (
           <Table>
-            <THead>
-              <TH>Product</TH>
-              <TH align="right">Sold</TH>
-              <TH align="right">Unit cost</TH>
-              <TH align="right">Unit price</TH>
-              <TH align="right">Revenue</TH>
-              <TH align="right">Cost</TH>
-              <TH align="right">Profit</TH>
-              <TH align="center">Margin</TH>
+            <THead sort={sorted.sort} onSort={sorted.onSort}>
+              <TH sortKey="name">Product</TH>
+              <TH align="right" sortKey="qtyBase" sortDefault="desc">Sold</TH>
+              <TH align="right" sortKey="buyingPrice" sortDefault="desc">Unit cost</TH>
+              <TH align="right" sortKey="sellingPrice" sortDefault="desc">Unit price</TH>
+              <TH align="right" sortKey="revenue" sortDefault="desc">Revenue</TH>
+              <TH align="right" sortKey="cogs" sortDefault="desc">Cost</TH>
+              <TH align="right" sortKey="grossProfit" sortDefault="desc">Profit</TH>
+              <TH align="center" sortKey="margin" sortDefault="desc">Margin</TH>
             </THead>
             <TBody>
-              {filtered.map((r) => (
+              {sorted.rows.map((r) => (
                 <ProfitRow key={r.productId} row={r} />
               ))}
             </TBody>

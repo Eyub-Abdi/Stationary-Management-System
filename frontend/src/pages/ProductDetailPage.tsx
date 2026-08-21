@@ -27,7 +27,9 @@ import {
   useUpdateProduct,
 } from '@/hooks/useProducts';
 import { useMovements } from '@/hooks/useInventory';
+import { useClientSort } from '@/hooks/useSort';
 import { extractMessage } from '@/lib/api';
+import { PAGE_SIZE } from '@/lib/constants';
 import { cn, currency, formatDateTime, humanize, imageSrc, num } from '@/lib/utils';
 
 const MOVE_TONE: Record<string, 'success' | 'error' | 'warning' | 'neutral'> = {
@@ -45,7 +47,7 @@ export default function ProductDetailPage() {
   const toast = useToast();
 
   const { data, isLoading, isError, error, refetch } = useProduct(id);
-  const movements = useMovements({ productId: id, limit: 15 });
+  const movements = useMovements({ productId: id, limit: PAGE_SIZE });
   const update = useUpdateProduct();
   const del = useDeleteProduct();
   const remove = useRemoveProduct();
@@ -54,6 +56,24 @@ export default function ProductDetailPage() {
   const [removeOpen, setRemoveOpen] = useState(false);
 
   const variants = data?.variants ?? [];
+  const variantSort = useClientSort(variants, { by: 'label', dir: 'asc' }, {
+    label: (v) => v.label,
+    sku: (v) => v.sku,
+    buyingPrice: (v) => num(v.buyingPrice),
+    sellingPrice: (v) => num(v.sellingPrice),
+    wholesalePrice: (v) => (v.wholesalePrice ? num(v.wholesalePrice) : null),
+    currentStock: (v) => v.currentStock,
+    minStockLevel: (v) => v.minStockLevel,
+    status: (v) => v.status,
+  });
+  const moveSort = useClientSort(movements.data?.data, { by: 'createdAt', dir: 'desc' }, {
+    createdAt: (m) => m.createdAt,
+    variant: (m) => m.variant?.label ?? m.variant?.sku,
+    type: (m) => m.type,
+    delta: (m) => m.afterQty - m.beforeQty,
+    afterQty: (m) => m.afterQty,
+    user: (m) => m.user?.fullName,
+  });
   const totalStock = variants.reduce((a, v) => a + v.currentStock, 0);
   const stockValue = variants.reduce((a, v) => a + v.currentStock * num(v.buyingPrice), 0);
   const lowStock = variants.some((v) => v.status === 'ACTIVE' && v.currentStock <= v.minStockLevel);
@@ -168,18 +188,18 @@ export default function ProductDetailPage() {
             <p className="mb-2 text-label-caps uppercase tracking-wide text-on-surface-variant">Variants</p>
             <Card className="overflow-hidden">
               <Table>
-                <THead>
-                  <TH>Variant</TH>
-                  <TH>SKU</TH>
-                  <TH align="right">Buying</TH>
-                  <TH align="right">Selling</TH>
-                  <TH align="right">Wholesale</TH>
-                  <TH align="center">Stock</TH>
-                  <TH align="center">Min</TH>
-                  <TH align="center">Status</TH>
+                <THead sort={variantSort.sort} onSort={variantSort.onSort}>
+                  <TH sortKey="label">Variant</TH>
+                  <TH sortKey="sku">SKU</TH>
+                  <TH align="right" sortKey="buyingPrice" sortDefault="desc">Buying</TH>
+                  <TH align="right" sortKey="sellingPrice" sortDefault="desc">Selling</TH>
+                  <TH align="right" sortKey="wholesalePrice" sortDefault="desc">Wholesale</TH>
+                  <TH align="center" sortKey="currentStock" sortDefault="desc">Stock</TH>
+                  <TH align="center" sortKey="minStockLevel" sortDefault="desc">Min</TH>
+                  <TH align="center" sortKey="status">Status</TH>
                 </THead>
                 <TBody>
-                  {variants.map((v) => {
+                  {variantSort.rows.map((v) => {
                     const low = v.status === 'ACTIVE' && v.currentStock <= v.minStockLevel;
                     return (
                       <TR key={v.id}>
@@ -218,16 +238,16 @@ export default function ProductDetailPage() {
             ) : (
               <Card className="overflow-hidden">
                 <Table>
-                  <THead>
-                    <TH>When</TH>
-                    <TH>Variant</TH>
-                    <TH align="center">Type</TH>
-                    <TH align="right">Change</TH>
-                    <TH align="right">Balance</TH>
-                    <TH>By</TH>
+                  <THead sort={moveSort.sort} onSort={moveSort.onSort}>
+                    <TH sortKey="createdAt" sortDefault="desc">When</TH>
+                    <TH sortKey="variant">Variant</TH>
+                    <TH align="center" sortKey="type">Type</TH>
+                    <TH align="right" sortKey="delta" sortDefault="desc">Change</TH>
+                    <TH align="right" sortKey="afterQty" sortDefault="desc">Balance</TH>
+                    <TH sortKey="user">By</TH>
                   </THead>
                   <TBody>
-                    {movements.data!.data.map((m) => {
+                    {moveSort.rows.map((m) => {
                       const delta = m.afterQty - m.beforeQty;
                       return (
                         <TR key={m.id}>

@@ -6,6 +6,7 @@ import {
 import { Prisma } from '@prisma/client';
 import Decimal from 'decimal.js';
 import { paginate, PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { resolveOrderBy, SortMap } from '../../common/utils/sort';
 import { add, money, mul, round, sub, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountingPeriodsService } from '../accounting/accounting-periods.service';
@@ -15,6 +16,16 @@ import { InventoryService } from '../inventory/inventory.service';
 import { assertCostPerBaseUnit } from '../inventory/unit-cost-guard';
 import { SequenceService } from '../shared/sequence.service';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
+
+/** Columns the purchases list can be ordered by, keyed as the UI names them. */
+const PURCHASE_SORTS: SortMap<Prisma.PurchaseOrderByWithRelationInput[]> = {
+  purchaseNumber: (dir) => [{ purchaseNumber: dir }],
+  supplier: (dir) => [{ supplier: { name: dir } }],
+  purchaseDate: (dir) => [{ purchaseDate: dir }, { createdAt: dir }],
+  paymentMethod: (dir) => [{ paymentMethod: dir }, { purchaseDate: 'desc' }],
+  totalCost: (dir) => [{ totalCost: dir }],
+  amountDue: (dir) => [{ amountDue: dir }],
+};
 
 @Injectable()
 export class PurchasesService {
@@ -285,7 +296,10 @@ export class PurchasesService {
           supplier: true,
           items: { select: { productNameSnapshot: true } },
         },
-        orderBy: [{ purchaseDate: 'desc' }, { createdAt: 'desc' }],
+        orderBy: resolveOrderBy(query, PURCHASE_SORTS, [
+          { purchaseDate: 'desc' },
+          { createdAt: 'desc' },
+        ]),
         skip: query.skip,
         take: query.limit,
       }),

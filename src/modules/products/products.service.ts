@@ -5,6 +5,17 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { paginate } from '../../common/dto/pagination.dto';
+import { resolveOrderBy, SortMap } from '../../common/utils/sort';
+
+/** Columns the product list can be ordered by. Price and stock live on the
+ *  variants, which a single product row summarises, so they are not offered. */
+const PRODUCT_SORTS: SortMap<Prisma.ProductOrderByWithRelationInput[]> = {
+  name: (dir) => [{ name: dir }],
+  sku: (dir) => [{ sku: dir }],
+  category: (dir) => [{ category: { name: dir } }],
+  status: (dir) => [{ status: dir }, { name: 'asc' }],
+  createdAt: (dir) => [{ createdAt: dir }],
+};
 import { toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -156,7 +167,7 @@ export class ProductsService {
       this.prisma.product.findMany({
         where,
         include: PRODUCT_INCLUDE,
-        orderBy: { name: 'asc' },
+        orderBy: resolveOrderBy(query, PRODUCT_SORTS, [{ name: 'asc' }]),
         skip: query.skip,
         take: query.limit,
       }),

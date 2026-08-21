@@ -22,8 +22,10 @@ import {
 import { CategoryManagerModal } from '@/features/products/CategoryManagerModal';
 import { useAuth } from '@/providers/AuthProvider';
 import { useProducts } from '@/hooks/useProducts';
+import { useTableSort } from '@/hooks/useSort';
 import { useCategories } from '@/hooks/useCatalog';
 import { extractMessage } from '@/lib/api';
+import { PAGE_SIZE } from '@/lib/constants';
 import { cn, currency, imageSrc, num } from '@/lib/utils';
 import type { Product, ProductStatus } from '@/types';
 
@@ -38,9 +40,11 @@ export default function ProductsPage() {
   const [lowStock, setLowStock] = useState(false);
   const [catManagerOpen, setCatManagerOpen] = useState(false);
 
+  const { sort, onSort, params } = useTableSort({ by: 'name', dir: 'asc' }, () => setPage(1));
   const filters = {
     page,
-    limit: 12,
+    limit: PAGE_SIZE,
+    ...params,
     search: search || undefined,
     status: status || undefined,
     categoryId: categoryId || undefined,
@@ -137,14 +141,16 @@ export default function ProductsPage() {
         ) : (
           <>
             <Table>
-              <THead>
-                <TH>Product</TH>
-                <TH>SKU</TH>
-                <TH>Category</TH>
+              <THead sort={sort} onSort={onSort}>
+                <TH sortKey="name">Product</TH>
+                <TH sortKey="sku">SKU</TH>
+                <TH sortKey="category">Category</TH>
+                {/* Buying, selling and stock are summed across a product's
+                    variants, so there is no single column to order on. */}
                 <TH align="right">Buying</TH>
                 <TH align="right">Selling</TH>
                 <TH align="center">Stock</TH>
-                <TH align="center">Status</TH>
+                <TH align="center" sortKey="status">Status</TH>
               </THead>
               <TBody>
                 {data!.data.map((p) => {

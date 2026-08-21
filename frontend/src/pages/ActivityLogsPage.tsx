@@ -13,6 +13,7 @@ import {
 import { docPath, type DocKind } from '@/components/DocLink';
 import { useAuditLogs } from '@/hooks/useAudit';
 import { extractMessage } from '@/lib/api';
+import { PAGE_SIZE } from '@/lib/constants';
 import { cn, currency, formatDateTime, humanize, initials, num } from '@/lib/utils';
 import type { AuditLog } from '@/types';
 
@@ -271,7 +272,7 @@ export default function ActivityLogsPage() {
 
   const { data, isLoading, isError, refetch, error } = useAuditLogs({
     page,
-    limit: 20,
+    limit: PAGE_SIZE,
     entityType: entityType || undefined,
   });
 

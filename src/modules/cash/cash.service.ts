@@ -7,6 +7,7 @@ import {
 import { Prisma } from '@prisma/client';
 import Decimal from 'decimal.js';
 import { paginate } from '../../common/dto/pagination.dto';
+import { resolveOrderBy, SortMap } from '../../common/utils/sort';
 import { add, money, sub, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -20,6 +21,18 @@ import {
 import { CashBreakdown, computeBreakdown } from './expected-cash';
 
 export type { CashBreakdown } from './expected-cash';
+
+/** Columns the till-session history can be ordered by. */
+const SESSION_SORTS: SortMap<Prisma.CashSessionOrderByWithRelationInput[]> = {
+  openedAt: (dir) => [{ openedAt: dir }],
+  closedAt: (dir) => [{ closedAt: dir }],
+  user: (dir) => [{ user: { fullName: dir } }],
+  status: (dir) => [{ status: dir }, { openedAt: 'desc' }],
+  openingBalance: (dir) => [{ openingBalance: dir }],
+  expectedAmount: (dir) => [{ expectedAmount: dir }],
+  actualAmount: (dir) => [{ actualAmount: dir }],
+  variance: (dir) => [{ variance: dir }],
+};
 
 @Injectable()
 export class CashService {
@@ -250,7 +263,7 @@ export class CashService {
       this.prisma.cashSession.findMany({
         where,
         include: { user: { select: { fullName: true } } },
-        orderBy: { openedAt: 'desc' },
+        orderBy: resolveOrderBy(query, SESSION_SORTS, [{ openedAt: 'desc' }]),
         skip: query.skip,
         take: query.limit,
       }),
@@ -269,7 +282,7 @@ export class CashService {
       this.prisma.cashSession.findMany({
         where,
         include: { user: { select: { fullName: true } } },
-        orderBy: { closedAt: 'desc' },
+        orderBy: resolveOrderBy(query, SESSION_SORTS, [{ closedAt: 'desc' }]),
         skip: query.skip,
         take: query.limit,
       }),

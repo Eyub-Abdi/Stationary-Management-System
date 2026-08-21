@@ -6,6 +6,7 @@ import {
 import { Prisma } from '@prisma/client';
 import Decimal from 'decimal.js';
 import { paginate, PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { resolveOrderBy, SortMap } from '../../common/utils/sort';
 import { money, sub, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -21,6 +22,14 @@ export interface InvoiceAllocation {
   saleId: string;
   amount: Decimal;
 }
+
+/** Columns the customer list can be ordered by. */
+const CUSTOMER_SORTS: SortMap<Prisma.CustomerOrderByWithRelationInput[]> = {
+  name: (dir) => [{ name: dir }],
+  phone: (dir) => [{ phone: dir }],
+  balance: (dir) => [{ balance: dir }],
+  createdAt: (dir) => [{ createdAt: dir }],
+};
 
 @Injectable()
 export class CustomersService {
@@ -96,7 +105,7 @@ export class CustomersService {
     const [data, total] = await this.prisma.$transaction([
       this.prisma.customer.findMany({
         where,
-        orderBy: { name: 'asc' },
+        orderBy: resolveOrderBy(query, CUSTOMER_SORTS, [{ name: 'asc' }]),
         skip: query.skip,
         take: query.limit,
         include: {
@@ -126,7 +135,8 @@ export class CustomersService {
         sales: {
           where: { paymentMethod: 'CREDIT' },
           orderBy: { createdAt: 'desc' },
-          take: 20,
+          // One table's worth, matching what the lists show per page.
+          take: 50,
           select: {
             id: true,
             invoiceNumber: true,

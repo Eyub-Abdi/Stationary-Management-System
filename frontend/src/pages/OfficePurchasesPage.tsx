@@ -27,7 +27,9 @@ import {
   useOfficePurchases,
   type OfficePurchaseItemInput,
 } from '@/hooks/useExpenses';
+import { useTableSort } from '@/hooks/useSort';
 import { extractMessage } from '@/lib/api';
+import { PAGE_SIZE } from '@/lib/constants';
 import { currency, endOfToday, formatDate, num, startOfMonth } from '@/lib/utils';
 import type { Expense } from '@/types';
 
@@ -36,7 +38,12 @@ export default function OfficePurchasesPage() {
   const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
 
-  const { data, isLoading, isError, refetch, error } = useOfficePurchases({ page, limit: 12 });
+  const { sort, onSort, params } = useTableSort({ by: 'expenseDate', dir: 'desc' }, () => setPage(1));
+  const { data, isLoading, isError, refetch, error } = useOfficePurchases({
+    page,
+    limit: PAGE_SIZE,
+    ...params,
+  });
 
   const month = useOfficePurchases({ from: startOfMonth(), to: endOfToday(), limit: 100 });
   const monthRows = month.data?.data ?? [];
@@ -97,12 +104,12 @@ export default function OfficePurchasesPage() {
         ) : (
           <>
             <Table>
-              <THead>
-                <TH>Date</TH>
-                <TH>Supplier</TH>
-                <TH>Items</TH>
-                <TH>Recorded by</TH>
-                <TH align="right">Total</TH>
+              <THead sort={sort} onSort={onSort}>
+                <TH sortKey="expenseDate" sortDefault="desc">Date</TH>
+                <TH sortKey="supplierName">Supplier</TH>
+                <TH sortKey="items" sortDefault="desc">Items</TH>
+                <TH sortKey="user">Recorded by</TH>
+                <TH align="right" sortKey="amount" sortDefault="desc">Total</TH>
               </THead>
               <TBody>
                 {data!.data.map((e) => (

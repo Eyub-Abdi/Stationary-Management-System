@@ -25,8 +25,10 @@ import {
 import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { useIssueLoan, useLoanSummary, useLoans, useRepayLoan } from '@/hooks/useBanking';
+import { useTableSort } from '@/hooks/useSort';
 import { useUsers } from '@/hooks/useUsers';
 import { extractMessage } from '@/lib/api';
+import { PAGE_SIZE } from '@/lib/constants';
 import { cn, currency, formatDate, num } from '@/lib/utils';
 import type { Loan, LoanStatus, MoneyLocation } from '@/types';
 
@@ -37,7 +39,13 @@ export default function LoansPage() {
   const [issueOpen, setIssueOpen] = useState(false);
   const [repaying, setRepaying] = useState<Loan | null>(null);
 
-  const loans = useLoans({ page, limit: 15, status: status || undefined });
+  const { sort, onSort, params } = useTableSort({ by: 'dueDate', dir: 'asc' }, () => setPage(1));
+  const loans = useLoans({
+    page,
+    limit: PAGE_SIZE,
+    ...params,
+    status: status || undefined,
+  });
   const summary = useLoanSummary(isAdmin);
 
   return (
@@ -144,12 +152,14 @@ export default function LoansPage() {
         ) : (
           <>
             <Table>
-              <THead>
-                {isAdmin && <TH>Member</TH>}
-                <TH>Taken</TH>
-                <TH>Due</TH>
-                <TH>From</TH>
-                <TH align="right">Amount</TH>
+              <THead sort={sort} onSort={onSort}>
+                {isAdmin && <TH sortKey="user">Member</TH>}
+                <TH sortKey="issuedAt" sortDefault="desc">Taken</TH>
+                <TH sortKey="dueDate">Due</TH>
+                <TH sortKey="source">From</TH>
+                <TH align="right" sortKey="amount" sortDefault="desc">Amount</TH>
+                {/* What is still owed is worked out from each loan's repayments,
+                    so there is no stored column to order the whole list by. */}
                 <TH align="right">Still owed</TH>
                 {isAdmin && <TH align="center">Action</TH>}
               </THead>

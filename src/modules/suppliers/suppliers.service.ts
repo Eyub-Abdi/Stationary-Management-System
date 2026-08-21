@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { paginate, PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { resolveOrderBy, SortMap } from '../../common/utils/sort';
 import { money, sub, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -14,6 +15,15 @@ import {
   RecordSupplierPaymentDto,
   UpdateSupplierDto,
 } from './dto/supplier.dto';
+
+/** Columns the supplier list can be ordered by. */
+const SUPPLIER_SORTS: SortMap<Prisma.SupplierOrderByWithRelationInput[]> = {
+  name: (dir) => [{ name: dir }],
+  phone: (dir) => [{ phone: dir }],
+  address: (dir) => [{ address: dir }],
+  balance: (dir) => [{ balance: dir }],
+  createdAt: (dir) => [{ createdAt: dir }],
+};
 
 @Injectable()
 export class SuppliersService {
@@ -36,7 +46,7 @@ export class SuppliersService {
     const [data, total] = await this.prisma.$transaction([
       this.prisma.supplier.findMany({
         where,
-        orderBy: { name: 'asc' },
+        orderBy: resolveOrderBy(query, SUPPLIER_SORTS, [{ name: 'asc' }]),
         skip: query.skip,
         take: query.limit,
         include: {

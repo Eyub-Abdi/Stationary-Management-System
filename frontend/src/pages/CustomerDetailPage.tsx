@@ -22,6 +22,7 @@ import { DocLink } from '@/components/DocLink';
 import { CustomerFormModal } from '@/features/customers/CustomerFormModal';
 import { useToast } from '@/providers/ToastProvider';
 import { useCustomer, useRecordCustomerPayment } from '@/hooks/useCustomers';
+import { useClientSort } from '@/hooks/useSort';
 import { extractMessage } from '@/lib/api';
 import { currency, formatDate, num } from '@/lib/utils';
 
@@ -44,6 +45,13 @@ export default function CustomerDetailPage() {
   const sales = data?.sales ?? [];
   // Default the selection to the most recent credit sale until the user picks one.
   const selectedSale = sales.find((s) => s.id === selectedSaleId) ?? sales[0] ?? null;
+  const saleSort = useClientSort(sales, { by: 'createdAt', dir: 'desc' }, {
+    invoiceNumber: (s) => s.invoiceNumber,
+    createdAt: (s) => s.createdAt,
+    user: (s) => s.user?.fullName,
+    total: (s) => num(s.total),
+    amountDue: (s) => num(s.amountDue),
+  });
 
   const balance = data ? num(data.balance) : 0;
   const limit = data?.creditLimit ? num(data.creditLimit) : null;
@@ -186,15 +194,15 @@ export default function CustomerDetailPage() {
             {sales.length > 0 ? (
               <Card className="overflow-hidden">
                 <Table>
-                  <THead>
-                    <TH>Invoice</TH>
-                    <TH>Date</TH>
-                    <TH>Sold by</TH>
-                    <TH align="right">Total</TH>
-                    <TH align="right">Owing</TH>
+                  <THead sort={saleSort.sort} onSort={saleSort.onSort}>
+                    <TH sortKey="invoiceNumber">Invoice</TH>
+                    <TH sortKey="createdAt" sortDefault="desc">Date</TH>
+                    <TH sortKey="user">Sold by</TH>
+                    <TH align="right" sortKey="total" sortDefault="desc">Total</TH>
+                    <TH align="right" sortKey="amountDue" sortDefault="desc">Owing</TH>
                   </THead>
                   <TBody>
-                    {sales.map((s) => {
+                    {saleSort.rows.map((s) => {
                       const active = selectedSale?.id === s.id;
                       return (
                         <TR

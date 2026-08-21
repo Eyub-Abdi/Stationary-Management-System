@@ -15,6 +15,7 @@ export { Popover } from './Popover';
 export { ConfirmDialog } from './ConfirmDialog';
 export { EmptyState, LoadingState, ErrorState, Skeleton } from './States';
 export { Table, THead, TH, TBody, TR, TD } from './Table';
+export type { SortDir, SortState } from './Table';
 export { Pagination } from './Pagination';
 export { PageHeader } from './PageHeader';
 export { Breadcrumbs } from './Breadcrumbs';

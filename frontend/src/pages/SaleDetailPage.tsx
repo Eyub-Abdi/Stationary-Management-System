@@ -24,6 +24,7 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { useActiveCashSession } from '@/providers/CashSessionProvider';
 import { useReturnSale, useSale, useVoidSale } from '@/hooks/useSales';
+import { useClientSort } from '@/hooks/useSort';
 import { extractMessage } from '@/lib/api';
 import { currency, formatDateTime, humanize, num } from '@/lib/utils';
 import type { Sale, SaleStatus } from '@/types';
@@ -37,6 +38,13 @@ export default function SaleDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { isAdmin } = useAuth();
   const { data: sale, isLoading, isError, error, refetch } = useSale(id);
+  // Lines open in the order they were rung up; the headers can regroup them.
+  const lines = useClientSort(sale?.items, { by: 'none', dir: 'asc' }, {
+    nameSnapshot: (it) => it.nameSnapshot,
+    quantity: (it) => it.quantity,
+    unitPriceSnapshot: (it) => num(it.unitPriceSnapshot),
+    lineTotal: (it) => num(it.lineTotal),
+  });
   const [returnOpen, setReturnOpen] = useState(false);
   const [voidOpen, setVoidOpen] = useState(false);
 
@@ -97,14 +105,14 @@ export default function SaleDetailPage() {
 
           <Card className="overflow-hidden">
             <Table>
-              <THead>
-                <TH>Item</TH>
-                <TH align="center">Qty</TH>
-                <TH align="right">Unit</TH>
-                <TH align="right">Line total</TH>
+              <THead sort={lines.sort} onSort={lines.onSort}>
+                <TH sortKey="nameSnapshot">Item</TH>
+                <TH align="center" sortKey="quantity" sortDefault="desc">Qty</TH>
+                <TH align="right" sortKey="unitPriceSnapshot" sortDefault="desc">Unit</TH>
+                <TH align="right" sortKey="lineTotal" sortDefault="desc">Line total</TH>
               </THead>
               <TBody>
-                {sale.items?.map((it) => (
+                {lines.rows.map((it) => (
                   <TR key={it.id}>
                     <TD>
                       <div className="flex items-center gap-2">

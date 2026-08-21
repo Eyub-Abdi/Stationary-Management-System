@@ -101,3 +101,6 @@ export const POS_WASTAGE_REASONS: StockAdjustmentReason[] = [
   'SPOILED',
   'DAMAGED',
 ];
+
+/** Rows a paged table shows before you have to turn the page. */
+export const PAGE_SIZE = 50;

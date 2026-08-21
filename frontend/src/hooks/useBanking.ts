@@ -10,6 +10,7 @@ import type {
   MoneyLocation,
   MoneyPosition,
   Paginated,
+  SortParams,
 } from '@/types';
 
 const clean = (p: Record<string, unknown>) =>
@@ -44,7 +45,7 @@ export function useBankSummary(enabled = true) {
   });
 }
 
-export function useBankStatement(filters: { page?: number; limit?: number }) {
+export function useBankStatement(filters: { page?: number; limit?: number } & SortParams) {
   return useQuery({
     queryKey: qk.bankStatement(filters),
     queryFn: async () => {
@@ -82,12 +83,14 @@ export function useBankCorrection() {
 
 // ---- Loans ------------------------------------------------------------------
 
-export function useLoans(filters: {
-  page?: number;
-  limit?: number;
-  status?: LoanStatus;
-  userId?: string;
-}) {
+export function useLoans(
+  filters: {
+    page?: number;
+    limit?: number;
+    status?: LoanStatus;
+    userId?: string;
+  } & SortParams,
+) {
   return useQuery({
     queryKey: qk.loans(filters),
     queryFn: async () => {

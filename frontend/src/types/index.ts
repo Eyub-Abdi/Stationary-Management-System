@@ -32,6 +32,13 @@ export interface ApiEnvelope<T> {
   timestamp: string;
 }
 
+/** Ordering a list endpoint accepts. Column names are decided per endpoint;
+ *  one it does not recognise leaves that list in its own default order. */
+export interface SortParams {
+  sortBy?: string;
+  sortDir?: 'asc' | 'desc';
+}
+
 export interface PageMeta {
   total: number;
   page: number;

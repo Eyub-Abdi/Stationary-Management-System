@@ -22,8 +22,10 @@ import {
 import { UserFormModal, PasswordModal } from '@/features/users/UserModals';
 import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/providers/ToastProvider';
+import { useTableSort } from '@/hooks/useSort';
 import { useDeleteUser, useToggleUserActive, useUsers } from '@/hooks/useUsers';
 import { extractMessage } from '@/lib/api';
+import { PAGE_SIZE } from '@/lib/constants';
 import { formatDate, initials, timeAgo } from '@/lib/utils';
 import type { User } from '@/types';
 
@@ -39,7 +41,13 @@ export default function UsersPage() {
   const [toggle, setToggle] = useState<User | null>(null);
   const [deleting, setDeleting] = useState<User | null>(null);
 
-  const { data, isLoading, isError, refetch, error } = useUsers({ page, limit: 12, search: search || undefined });
+  const { sort, onSort, params } = useTableSort({ by: 'createdAt', dir: 'desc' }, () => setPage(1));
+  const { data, isLoading, isError, refetch, error } = useUsers({
+    page,
+    limit: PAGE_SIZE,
+    ...params,
+    search: search || undefined,
+  });
   const toggleActive = useToggleUserActive();
   const del = useDeleteUser();
 
@@ -91,12 +99,12 @@ export default function UsersPage() {
         ) : (
           <>
             <Table>
-              <THead>
-                <TH>User</TH>
-                <TH align="center">Role</TH>
-                <TH align="center">Status</TH>
-                <TH>Last login</TH>
-                <TH>Created</TH>
+              <THead sort={sort} onSort={onSort}>
+                <TH sortKey="fullName">User</TH>
+                <TH align="center" sortKey="role">Role</TH>
+                <TH align="center" sortKey="isActive" sortDefault="desc">Status</TH>
+                <TH sortKey="lastLoginAt" sortDefault="desc">Last login</TH>
+                <TH sortKey="createdAt" sortDefault="desc">Created</TH>
                 <TH align="right">Actions</TH>
               </THead>
               <TBody>

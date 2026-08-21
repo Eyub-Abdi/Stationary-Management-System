@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { qk } from './keys';
-import type { Paginated, Role, User } from '@/types';
+import type { Paginated, Role, SortParams, User } from '@/types';
 
 const clean = (p: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined && v !== '' && v !== null));
 
-export function useUsers(filters: { page?: number; limit?: number; search?: string } = {}) {
+export function useUsers(
+  filters: { page?: number; limit?: number; search?: string } & SortParams = {},
+) {
   return useQuery({
     queryKey: qk.users(filters),
     queryFn: async () => {

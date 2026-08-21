@@ -36,8 +36,9 @@ import {
   useUpdateExpense,
 } from '@/hooks/useExpenses';
 import { useExpenseCategories } from '@/hooks/useExpenseCategories';
+import { useClientSort, useTableSort } from '@/hooks/useSort';
 import { ExpenseCategoryManagerModal } from '@/features/expenses/ExpenseCategoryManagerModal';
-import { DEFAULT_EXPENSE_ICON } from '@/lib/constants';
+import { DEFAULT_EXPENSE_ICON, PAGE_SIZE } from '@/lib/constants';
 import { extractMessage } from '@/lib/api';
 import { currency, endOfToday, formatDate, num, startOfMonth } from '@/lib/utils';
 import { rangeFor, toDateInput, type RangeKey } from '@/lib/dateRange';
@@ -85,9 +86,11 @@ export default function ExpensesPage() {
   }, [view]);
 
   const range = rangeFor(rangeKey, customFrom, customTo);
+  const list = useTableSort({ by: 'expenseDate', dir: 'desc' }, () => setPage(1));
   const { data, isLoading, isError, refetch, error } = useExpenses({
     page,
-    limit: 12,
+    limit: PAGE_SIZE,
+    ...list.params,
     search: search || undefined,
     categoryId: categoryId || undefined,
     ...range,
@@ -95,7 +98,12 @@ export default function ExpensesPage() {
   const { data: categories } = useExpenseCategories();
 
   const daily = useExpensesDaily(range, view === 'daily');
-  const dailyRows = daily.data ?? [];
+  const dailySort = useClientSort(daily.data, { by: 'period', dir: 'desc' }, {
+    period: (r) => r.period,
+    count: (r) => r.count,
+    total: (r) => num(r.total),
+  });
+  const dailyRows = dailySort.rows;
   const dailyTotal = dailyRows.reduce((a, r) => a + num(r.total), 0);
   const dailyCount = dailyRows.reduce((a, r) => a + r.count, 0);
 
@@ -251,10 +259,10 @@ export default function ExpensesPage() {
             />
           ) : (
             <Table>
-              <THead>
-                <TH>Date</TH>
-                <TH align="center">Entries</TH>
-                <TH align="right">Total</TH>
+              <THead sort={dailySort.sort} onSort={dailySort.onSort}>
+                <TH sortKey="period" sortDefault="desc">Date</TH>
+                <TH align="center" sortKey="count" sortDefault="desc">Entries</TH>
+                <TH align="right" sortKey="total" sortDefault="desc">Total</TH>
                 <TH align="right">Action</TH>
               </THead>
               <TBody>
@@ -291,12 +299,12 @@ export default function ExpensesPage() {
         ) : (
           <>
             <Table>
-              <THead>
-                <TH>Category</TH>
-                <TH>Description</TH>
-                <TH>Date</TH>
-                <TH>Recorded by</TH>
-                <TH align="right">Amount</TH>
+              <THead sort={list.sort} onSort={list.onSort}>
+                <TH sortKey="category">Category</TH>
+                <TH sortKey="description">Description</TH>
+                <TH sortKey="expenseDate" sortDefault="desc">Date</TH>
+                <TH sortKey="user">Recorded by</TH>
+                <TH align="right" sortKey="amount" sortDefault="desc">Amount</TH>
                 <TH align="right">Actions</TH>
               </THead>
               <TBody>
