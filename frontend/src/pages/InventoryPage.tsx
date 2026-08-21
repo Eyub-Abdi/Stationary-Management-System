@@ -30,8 +30,13 @@ import { useAdjustStock, useMovements } from '@/hooks/useInventory';
 import { useStockLevels } from '@/hooks/useReports';
 import { useProducts, useLowStockProducts } from '@/hooks/useProducts';
 import { extractMessage } from '@/lib/api';
+import {
+  ADJUSTMENT_REASONS,
+  STOCK_IN_REASONS,
+  STOCK_OUT_REASONS,
+} from '@/lib/constants';
 import { cn, currency, formatDateTime, humanize, num } from '@/lib/utils';
-import type { InventoryMovementType } from '@/types';
+import type { InventoryMovementType, StockAdjustmentReason } from '@/types';
 
 type TabKey = 'movements' | 'low' | 'valuation';
 
@@ -293,6 +298,7 @@ function AdjustStockModal({ open, onClose }: { open: boolean; onClose: () => voi
   const [variantId, setVariantId] = useState('');
   const [direction, setDirection] = useState<'in' | 'out'>('in');
   const [quantity, setQuantity] = useState('');
+  const [reasonCode, setReasonCode] = useState<StockAdjustmentReason>('FOUND');
   const [reason, setReason] = useState('');
   const [unitCost, setUnitCost] = useState('');
 
@@ -301,10 +307,20 @@ function AdjustStockModal({ open, onClose }: { open: boolean; onClose: () => voi
       setVariantId('');
       setDirection('in');
       setQuantity('');
+      setReasonCode('FOUND');
       setReason('');
       setUnitCost('');
     }
   }, [open]);
+
+  // The reasons that make sense depend on which way the stock is going: you
+  // cannot find paper by taking it off the shelf.
+  const reasonChoices = direction === 'in' ? STOCK_IN_REASONS : STOCK_OUT_REASONS;
+  useEffect(() => {
+    setReasonCode((current) =>
+      reasonChoices.includes(current) ? current : reasonChoices[0],
+    );
+  }, [direction]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selected = variantOptions.find((o) => o.variantId === variantId);
   const unit = selected?.baseUnit ?? 'unit';
@@ -322,7 +338,9 @@ function AdjustStockModal({ open, onClose }: { open: boolean; onClose: () => voi
     if (!variantId) return toast.error('Select a product variant');
     const qty = parseInt(quantity, 10);
     if (!qty || qty <= 0) return toast.error('Enter a quantity greater than zero');
-    if (!reason.trim()) return toast.error('A reason is required');
+    if (reasonCode === 'OTHER' && !reason.trim()) {
+      return toast.error('Say what happened', '"Other" needs a note explaining it.');
+    }
     if (costTooHigh) {
       return toast.error(
         'Unit cost looks like a pack price',
@@ -334,10 +352,16 @@ function AdjustStockModal({ open, onClose }: { open: boolean; onClose: () => voi
       await adjust.mutateAsync({
         variantId,
         quantityChange,
-        reason: reason.trim(),
+        reasonCode,
+        reason: reason.trim() || undefined,
         unitCost: direction === 'in' && unitCost ? num(unitCost) : undefined,
       });
-      toast.success('Stock adjusted', `${direction === 'in' ? '+' : '-'}${qty} units recorded.`);
+      toast.success(
+        'Stock adjusted',
+        direction === 'out'
+          ? `−${qty} ${unit} written off. The cost lands in this month's profit.`
+          : `+${qty} ${unit} recorded.`,
+      );
       onClose();
     } catch (e) {
       toast.error('Adjustment failed', extractMessage(e));
@@ -427,9 +451,49 @@ function AdjustStockModal({ open, onClose }: { open: boolean; onClose: () => voi
             )}
           </>
         )}
-        <Field label="Reason" required>
-          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Stock count correction / damaged goods" />
+        <Field
+          label="Reason"
+          required
+          hint="Grouped in the wastage report, so pick the closest match"
+        >
+          <Select
+            value={reasonCode}
+            onChange={(e) => setReasonCode(e.target.value as StockAdjustmentReason)}
+          >
+            {reasonChoices.map((code) => (
+              <option key={code} value={code}>
+                {ADJUSTMENT_REASONS[code].label}
+              </option>
+            ))}
+          </Select>
         </Field>
+        <Field
+          label="Note"
+          required={reasonCode === 'OTHER'}
+          hint={reasonCode === 'OTHER' ? undefined : 'Optional detail'}
+        >
+          <Textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder={
+              reasonCode === 'OTHER'
+                ? 'Say what happened'
+                : `e.g. ${ADJUSTMENT_REASONS[reasonCode].label.toLowerCase()} — anything worth remembering`
+            }
+          />
+        </Field>
+        {/* Taking stock out costs the shop what that stock cost to buy, and
+            that is now what the profit figures say. Worth stating plainly at
+            the point the entry is made. */}
+        {direction === 'out' && selected && qtyNum > 0 && (
+          <div className="flex items-start gap-2 rounded-xl bg-surface-container-low px-3 py-2.5 text-[13px] text-on-surface-variant">
+            <Icon name="trending_down" size={16} className="mt-0.5 shrink-0" />
+            <span>
+              Writing off {qtyNum.toLocaleString()} {unit} removes them from stock
+              and books their cost against profit for today.
+            </span>
+          </div>
+        )}
       </div>
     </Modal>
   );

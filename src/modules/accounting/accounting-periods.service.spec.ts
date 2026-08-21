@@ -30,6 +30,10 @@ describe('AccountingPeriodsService', () => {
       purchase: {
         aggregate: jest.fn().mockResolvedValue({ _sum: { totalCost: D(30000) } }),
       },
+      // costImpact is signed like the quantity, so a write-off is negative.
+      inventoryAdjustment: {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { costImpact: D(-4000) } }),
+      },
       accountingPeriod: {
         findUnique: jest.fn().mockResolvedValue(null),
         findFirst: jest.fn().mockResolvedValue(null),
@@ -56,7 +60,9 @@ describe('AccountingPeriodsService', () => {
       expect(f.revenue.toFixed(2)).toBe('90000.00'); // 100000 − 10000
       expect(f.cogs.toFixed(2)).toBe('54000.00'); // 60000 − 6000
       expect(f.grossProfit.toFixed(2)).toBe('36000.00'); // 90000 − 54000
-      expect(f.netProfit.toFixed(2)).toBe('16000.00'); // 36000 − 20000 expenses
+      expect(f.stockLoss.toFixed(2)).toBe('4000.00'); // written off by hand
+      // 36000 − 20000 expenses − 4000 spoiled stock
+      expect(f.netProfit.toFixed(2)).toBe('12000.00');
       expect(f.purchases.toFixed(2)).toBe('30000.00');
     });
 
@@ -98,7 +104,8 @@ describe('AccountingPeriodsService', () => {
 
       const { create } = prisma.accountingPeriod.upsert.mock.calls[0][0];
       expect(create.status).toBe('CLOSED');
-      expect(create.netProfit.toString()).toBe('16000');
+      expect(create.netProfit.toString()).toBe('12000');
+      expect(create.stockLoss.toString()).toBe('4000');
       expect(create.saleCount).toBe(12);
       expect(create.notes).toBe('reviewed');
       expect(audit.record).toHaveBeenCalledWith(

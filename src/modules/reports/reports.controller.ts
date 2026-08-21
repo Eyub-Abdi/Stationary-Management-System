@@ -86,6 +86,20 @@ export class ReportsController {
     return this.reports.cashSessions(status);
   }
 
+  @Get('wastage')
+  @ApiOperation({
+    summary: 'Stock written off: totals by reason, by product and by service job',
+  })
+  wastage(@Query() query: ReportRangeDto) {
+    return this.reports.wastageReport(query);
+  }
+
+  @Get('wastage/entries')
+  @ApiOperation({ summary: 'Individual stock write-offs, newest first' })
+  wastageEntries(@Query() query: ReportRangeDto) {
+    return this.reports.wastageEntries(query);
+  }
+
   @Get('user-activity')
   @ApiOperation({ summary: 'Per-staff sales activity for a range' })
   userActivity(@Query() query: ReportRangeDto) {

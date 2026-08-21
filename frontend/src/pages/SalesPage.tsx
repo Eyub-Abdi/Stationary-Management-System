@@ -11,6 +11,7 @@ import {
   LoadingState,
   PageHeader,
   Pagination,
+  RangeOptions,
   SearchInput,
   SegmentedControl,
   Select,
@@ -27,16 +28,24 @@ import { useSales } from '@/hooks/useSales';
 import { useSalesSeries } from '@/hooks/useReports';
 import { useAuth } from '@/providers/AuthProvider';
 import { extractMessage } from '@/lib/api';
-import { currency, formatDate, formatDateTime, humanize, num } from '@/lib/utils';
-import { rangeFor, toDateInput, type RangeKey } from '@/lib/dateRange';
-import type { SaleStatus } from '@/types';
+import { cn, currency, formatDate, formatDateTime, humanize, num } from '@/lib/utils';
+import { monthKeyOf, rangeFor, toDateInput, type RangeKey } from '@/lib/dateRange';
+import type { SalesSeriesPoint, SaleStatus } from '@/types';
 
-type ViewKey = 'transactions' | 'daily';
+type ViewKey = 'transactions' | 'daily' | 'monthly';
 
 const STATUS_TONE: Record<SaleStatus, 'success' | 'error'> = {
   COMPLETED: 'success',
   VOIDED: 'error',
 };
+
+/** What the month actually left behind: gross profit less what was spent
+ *  running the shop and less stock spoiled. Purchases are not subtracted —
+ *  buying stock moves money into inventory, it does not consume it. Matches
+ *  the net profit on the Reports and month-end statements. */
+function monthNet(r: SalesSeriesPoint): number {
+  return num(r.grossProfit) - num(r.expenses) - num(r.stockLoss);
+}
 
 export default function SalesPage() {
   const navigate = useNavigate();
@@ -48,15 +57,16 @@ export default function SalesPage() {
   const [rangeKey, setRangeKey] = useState<RangeKey>('all');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
-  const [view, setView] = useState<ViewKey>(() =>
-    localStorage.getItem('sales-view') === 'daily' ? 'daily' : 'transactions',
-  );
+  const [view, setView] = useState<ViewKey>(() => {
+    const saved = localStorage.getItem('sales-view');
+    return saved === 'daily' || saved === 'monthly' ? saved : 'transactions';
+  });
   useEffect(() => {
     localStorage.setItem('sales-view', view);
   }, [view]);
   // Never leave a non-reports user stuck on the (hidden) daily view.
   useEffect(() => {
-    if (!canSeeDaily && view === 'daily') setView('transactions');
+    if (!canSeeDaily && view !== 'transactions') setView('transactions');
   }, [canSeeDaily, view]);
 
   const range = rangeFor(rangeKey, customFrom, customTo);
@@ -71,14 +81,14 @@ export default function SalesPage() {
     ...commonFilters,
   });
 
-  // Lightweight aggregate over the matching sales for the summary cards.
-  const stats = useSales({ ...commonFilters, page: 1, limit: 100 });
-  const statRows = stats.data?.data ?? [];
-  const completed = statRows.filter((s) => s.status === 'COMPLETED');
-  const revenue = completed.reduce((a, s) => a + num(s.total), 0);
-  const voided = statRows.filter((s) => s.status === 'VOIDED').length;
-  const txCount = stats.data?.meta.total ?? 0;
-  const avgSale = completed.length ? revenue / completed.length : 0;
+  // The API totals every sale the filters match. Adding up the rows on screen
+  // would only ever describe the current page.
+  const summary = data?.summary;
+  const revenue = num(summary?.revenue ?? 0);
+  const completedCount = summary?.completedCount ?? 0;
+  const voided = summary?.voidedCount ?? 0;
+  const txCount = data?.meta.total ?? 0;
+  const avgSale = num(summary?.averageSale ?? 0);
 
   // Per-day completed-sales totals for the "Daily totals" view (respects the date range).
   const daily = useSalesSeries(
@@ -91,6 +101,44 @@ export default function SalesPage() {
   const dailyCount = dailyRows.reduce((a, r) => a + r.saleCount, 0);
   const dailyExpenses = dailyRows.reduce((a, r) => a + num(r.expenses), 0);
   const dailyPurchases = dailyRows.reduce((a, r) => a + num(r.purchases), 0);
+
+  // Per-month totals. Same series, bucketed monthly — "what did we do in June".
+  const monthly = useSalesSeries(
+    { granularity: 'MONTHLY', from: range.from, to: range.to },
+    canSeeDaily && view === 'monthly',
+  );
+  const monthlyRows = [...(monthly.data ?? [])].sort((a, b) => b.period.localeCompare(a.period));
+  const monthlyTotals = monthlyRows.reduce(
+    (a, r) => ({
+      count: a.count + r.saleCount,
+      revenue: a.revenue + num(r.revenue),
+      grossProfit: a.grossProfit + num(r.grossProfit),
+      expenses: a.expenses + num(r.expenses),
+      purchases: a.purchases + num(r.purchases),
+      net: a.net + monthNet(r),
+    }),
+    { count: 0, revenue: 0, grossProfit: 0, expenses: 0, purchases: 0, net: 0 },
+  );
+
+  // Every month the shop has traded, for the range picker. Deliberately NOT
+  // filtered by the current range — otherwise picking June would shrink the
+  // list to June and there would be no way back to July.
+  const tradedMonths = useSalesSeries({ granularity: 'MONTHLY' }, canSeeDaily);
+  const monthChoices = [...(tradedMonths.data ?? [])]
+    .map((p) => monthKeyOf(p.period))
+    .filter((k): k is RangeKey => !!k)
+    .reverse();
+
+  // Drill from a month into its days, which then drill into transactions.
+  const openMonth = (period: string) => {
+    const key = monthKeyOf(period);
+    if (!key) return;
+    setRangeKey(key);
+    setStatus('');
+    setSearch('');
+    setPage(1);
+    setView('daily');
+  };
 
   // Drill into a single day: filter the transactions list to that date.
   const openDay = (period: string) => {
@@ -114,7 +162,7 @@ export default function SalesPage() {
           label="Transactions"
           icon="receipt_long"
           accent="primary"
-          loading={stats.isLoading}
+          loading={isLoading}
           value={txCount.toLocaleString()}
           hint="Matching current filters"
         />
@@ -122,15 +170,15 @@ export default function SalesPage() {
           label="Revenue"
           icon="payments"
           accent="secondary"
-          loading={stats.isLoading}
+          loading={isLoading}
           value={currency(revenue)}
-          hint={`${completed.length} completed`}
+          hint={`${completedCount} completed`}
         />
         <StatCard
           label="Avg. Sale"
           icon="trending_up"
           accent="tertiary"
-          loading={stats.isLoading}
+          loading={isLoading}
           value={currency(avgSale)}
           hint="Per completed sale"
         />
@@ -138,9 +186,9 @@ export default function SalesPage() {
           label="Voided"
           icon="block"
           accent="error"
-          loading={stats.isLoading}
+          loading={isLoading}
           value={voided}
-          hint="In current view"
+          hint="Excluded from revenue"
         />
       </div>
 
@@ -167,6 +215,7 @@ export default function SalesPage() {
                 items={[
                   { value: 'transactions', label: 'Transactions' },
                   { value: 'daily', label: 'Daily totals' },
+                  { value: 'monthly', label: 'Monthly totals' },
                 ]}
               />
             )}
@@ -176,13 +225,9 @@ export default function SalesPage() {
                 setRangeKey(e.target.value as RangeKey);
                 setPage(1);
               }}
-              className="w-40"
+              className="w-44"
             >
-              <option value="all">All time</option>
-              <option value="today">Today</option>
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-              <option value="custom">Custom range</option>
+              <RangeOptions months={monthChoices} />
             </Select>
             {rangeKey === 'custom' && (
               <div className="flex items-center gap-2">
@@ -228,7 +273,85 @@ export default function SalesPage() {
           </div>
         </div>
 
-        {view === 'daily' ? (
+        {view === 'monthly' ? (
+          monthly.isLoading ? (
+            <LoadingState label="Loading monthly totals…" />
+          ) : monthly.isError ? (
+            <ErrorState message={extractMessage(monthly.error)} onRetry={monthly.refetch} />
+          ) : monthlyRows.length === 0 ? (
+            <EmptyState
+              icon="calendar_month"
+              title="No sales in this range"
+              description="Pick a different date range to see monthly totals."
+            />
+          ) : (
+            <Table>
+              <THead>
+                <TH>Month</TH>
+                <TH align="center">Transactions</TH>
+                <TH align="right">Total sales</TH>
+                <TH align="right">Gross profit</TH>
+                <TH align="right">Expenses</TH>
+                <TH align="right">Purchases</TH>
+                <TH align="right">Net profit</TH>
+                <TH align="right">Action</TH>
+              </THead>
+              <TBody>
+                {monthlyRows.map((r) => {
+                  const net = monthNet(r);
+                  return (
+                    <TR key={r.period} onClick={() => openMonth(r.period)}>
+                      <TD className="whitespace-nowrap font-medium">
+                        {formatDate(r.period, 'MMMM yyyy')}
+                      </TD>
+                      <TD align="center" className="font-mono-data">{r.saleCount}</TD>
+                      <TD align="right" className="font-mono-data font-semibold">{currency(r.revenue)}</TD>
+                      <TD align="right" className="font-mono-data">{currency(r.grossProfit)}</TD>
+                      <TD align="right" className="font-mono-data">
+                        {num(r.expenses) ? (
+                          <span className="text-error">−{currency(r.expenses)}</span>
+                        ) : (
+                          <span className="text-on-surface-variant">—</span>
+                        )}
+                      </TD>
+                      <TD align="right" className="font-mono-data">
+                        {num(r.purchases) ? currency(r.purchases) : <span className="text-on-surface-variant">—</span>}
+                      </TD>
+                      <TD
+                        align="right"
+                        className={cn(
+                          'font-mono-data font-bold',
+                          net < 0 ? 'text-error' : 'text-on-surface',
+                        )}
+                      >
+                        {net < 0 ? `−${currency(Math.abs(net))}` : currency(net)}
+                      </TD>
+                      <TD align="right">
+                        <Icon name="chevron_right" size={20} className="text-on-surface-variant" />
+                      </TD>
+                    </TR>
+                  );
+                })}
+                <TR className="bg-surface-container-low">
+                  <TD className="font-semibold">Total</TD>
+                  <TD align="center" className="font-mono-data font-semibold">{monthlyTotals.count}</TD>
+                  <TD align="right" className="font-mono-data font-semibold">{currency(monthlyTotals.revenue)}</TD>
+                  <TD align="right" className="font-mono-data font-semibold">{currency(monthlyTotals.grossProfit)}</TD>
+                  <TD align="right" className="font-mono-data font-semibold text-error">
+                    −{currency(monthlyTotals.expenses)}
+                  </TD>
+                  <TD align="right" className="font-mono-data font-semibold">{currency(monthlyTotals.purchases)}</TD>
+                  <TD align="right" className="font-mono-data font-bold">
+                    {monthlyTotals.net < 0
+                      ? `−${currency(Math.abs(monthlyTotals.net))}`
+                      : currency(monthlyTotals.net)}
+                  </TD>
+                  <TD />
+                </TR>
+              </TBody>
+            </Table>
+          )
+        ) : view === 'daily' ? (
           daily.isLoading ? (
             <LoadingState label="Loading daily totals…" />
           ) : daily.isError ? (

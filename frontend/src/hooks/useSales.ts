@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { qk } from './keys';
-import type { Paginated, PaymentMethod, Sale, SaleItemType, SaleStatus, SellUnit } from '@/types';
+import type { Paginated, PaymentMethod, Sale, SaleItemType, SalesSummary, SaleStatus, SellUnit } from '@/types';
 
 const clean = (p: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined && v !== '' && v !== null));
@@ -41,7 +41,9 @@ export function useSales(filters: SaleFilters) {
   return useQuery({
     queryKey: qk.sales(filters),
     queryFn: async () => {
-      const res = await api.get<Paginated<Sale>>('/sales', { params: clean({ ...filters }) });
+      const res = await api.get<Paginated<Sale> & { summary: SalesSummary }>('/sales', {
+        params: clean({ ...filters }),
+      });
       return res.data;
     },
   });

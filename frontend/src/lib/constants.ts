@@ -1,4 +1,4 @@
-import type { PricingType, Role } from '@/types';
+import type { PricingType, Role, StockAdjustmentReason } from '@/types';
 
 /** Icon used for all services in the UI (services no longer carry their own). */
 export const DEFAULT_SERVICE_ICON = 'design_services';
@@ -55,4 +55,49 @@ export const CHART_COLORS = [
   '#e8590c', // orange
   '#e64980', // pink
   '#4cb944', // green
+];
+
+// ---- Stock adjustment reasons ---------------------------------------------
+
+/** Display name and icon per adjustment reason. Mirrors the server's labels. */
+export const ADJUSTMENT_REASONS: Record<
+  StockAdjustmentReason,
+  { label: string; icon: string }
+> = {
+  JAM: { label: 'Printer jam / misprint', icon: 'print_disabled' },
+  SPOILED: { label: 'Spoiled in handling', icon: 'water_drop' },
+  DAMAGED: { label: 'Damaged goods', icon: 'broken_image' },
+  EXPIRED: { label: 'Expired', icon: 'schedule' },
+  LOST: { label: 'Lost / missing', icon: 'help' },
+  THEFT: { label: 'Theft', icon: 'lock_open' },
+  COUNT_CORRECTION: { label: 'Stock count correction', icon: 'fact_check' },
+  FOUND: { label: 'Stock found', icon: 'add_box' },
+  OTHER: { label: 'Other', icon: 'more_horiz' },
+};
+
+/** Offered when stock is going out — a loss or a downward recount. */
+export const STOCK_OUT_REASONS: StockAdjustmentReason[] = [
+  'JAM',
+  'SPOILED',
+  'DAMAGED',
+  'EXPIRED',
+  'LOST',
+  'THEFT',
+  'COUNT_CORRECTION',
+  'OTHER',
+];
+
+/** Offered when stock is coming back on. */
+export const STOCK_IN_REASONS: StockAdjustmentReason[] = [
+  'FOUND',
+  'COUNT_CORRECTION',
+  'OTHER',
+];
+
+/** What a cashier may record from the POS. Kept in step with the API, which
+ *  rejects anything wider from that endpoint. */
+export const POS_WASTAGE_REASONS: StockAdjustmentReason[] = [
+  'JAM',
+  'SPOILED',
+  'DAMAGED',
 ];

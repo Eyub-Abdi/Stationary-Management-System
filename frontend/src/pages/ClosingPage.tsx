@@ -198,6 +198,9 @@ function StatementModal({ target, onClose }: { target: Target | null; onClose: (
         { label: 'Cost of goods sold', value: `−${currency(data.cogs)}`, negative: true },
         { label: 'Gross profit', value: currency(data.grossProfit), strong: true },
         { label: 'Operating expenses', value: `−${currency(data.expenses)}`, negative: true },
+        // Stock destroyed or written off during the month. Shown on its own
+        // line or the arithmetic from gross to net profit would not read.
+        { label: 'Stock written off', value: `−${currency(data.stockLoss)}`, negative: true },
         { label: 'Net profit', value: currency(data.netProfit), strong: true },
       ]
     : [];
@@ -331,6 +334,10 @@ function ClosePeriodModal({
             <li className="flex justify-between px-4 py-2.5">
               <span className="text-on-surface-variant">Expenses</span>
               <span className="font-mono-data text-error">−{currency(period.expenses)}</span>
+            </li>
+            <li className="flex justify-between px-4 py-2.5">
+              <span className="text-on-surface-variant">Stock written off</span>
+              <span className="font-mono-data text-error">−{currency(period.stockLoss)}</span>
             </li>
             <li className="flex justify-between bg-surface-container-low px-4 py-2.5">
               <span className="font-semibold text-on-surface">Net profit</span>

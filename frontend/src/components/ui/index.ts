@@ -5,6 +5,7 @@ export type { ButtonProps } from './Button';
 export { Card, CardHeader, CardBody } from './Card';
 export { Field, Label, Input, Textarea, Select, Checkbox } from './Field';
 export { PeriodPicker } from './PeriodPicker';
+export { RangeOptions } from './RangeOptions';
 export { Combobox } from './Combobox';
 export type { ComboOption } from './Combobox';
 export { Badge } from './Badge';

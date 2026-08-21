@@ -13,6 +13,8 @@ import type {
   TopProductRow,
   TopServiceRow,
   UserActivityRow,
+  WastageEntry,
+  WastageReport,
 } from '@/types';
 
 const clean = (p: Record<string, unknown>) =>
@@ -102,6 +104,26 @@ export function useTopServices(range: DateRange, enabled = true) {
     queryKey: qk.report('top-services', range),
     enabled,
     queryFn: () => unwrap<TopServiceRow[]>(api.get('/reports/top-services', { params: clean({ ...range }) })),
+  });
+}
+
+export function useWastageReport(range: DateRange, enabled = true) {
+  return useQuery({
+    queryKey: qk.report('wastage', range),
+    enabled,
+    queryFn: () =>
+      unwrap<WastageReport>(api.get('/reports/wastage', { params: clean({ ...range }) })),
+  });
+}
+
+export function useWastageEntries(range: DateRange, enabled = true) {
+  return useQuery({
+    queryKey: qk.report('wastage-entries', range),
+    enabled,
+    queryFn: () =>
+      unwrap<WastageEntry[]>(
+        api.get('/reports/wastage/entries', { params: clean({ ...range }) }),
+      ),
   });
 }
 

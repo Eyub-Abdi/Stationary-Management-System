@@ -13,6 +13,7 @@ import {
   Modal,
   PageHeader,
   Pagination,
+  RangeOptions,
   SearchInput,
   SegmentedControl,
   Select,
@@ -194,13 +195,9 @@ export default function ExpensesPage() {
             <Select
               value={rangeKey}
               onChange={(e) => { setRangeKey(e.target.value as RangeKey); setPage(1); }}
-              className="w-40"
+              className="w-44"
             >
-              <option value="all">All time</option>
-              <option value="today">Today</option>
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-              <option value="custom">Custom range</option>
+              <RangeOptions />
             </Select>
             {rangeKey === 'custom' && (
               <div className="flex items-center gap-2">

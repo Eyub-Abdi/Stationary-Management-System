@@ -42,7 +42,7 @@ export class AccountingPeriodsService {
     const { from, to } = monthRange(year, month);
     const range = { gte: from, lt: to };
 
-    const [sales, returns, expenses, purchases] = await Promise.all([
+    const [sales, returns, expenses, purchases, adjustments] = await Promise.all([
       this.prisma.sale.aggregate({
         where: { status: 'COMPLETED', createdAt: range },
         _sum: { total: true, totalCogs: true },
@@ -60,6 +60,13 @@ export class AccountingPeriodsService {
         where: { purchaseDate: range },
         _sum: { totalCost: true },
       }),
+      // Stock written off (and back on) by hand. costImpact is signed like the
+      // quantity, so summing it gives the net change in the value of stock and
+      // negating it gives the cost.
+      this.prisma.inventoryAdjustment.aggregate({
+        where: { createdAt: range },
+        _sum: { costImpact: true },
+      }),
     ]);
 
     const grossSales = money(sales._sum.total ?? 0);
@@ -71,7 +78,8 @@ export class AccountingPeriodsService {
     );
     const grossProfit = sub(revenue, cogs);
     const totalExpenses = money(expenses._sum.amount ?? 0);
-    const netProfit = sub(grossProfit, totalExpenses);
+    const stockLoss = money(adjustments._sum.costImpact ?? 0).negated();
+    const netProfit = sub(sub(grossProfit, totalExpenses), stockLoss);
 
     return {
       grossSales,
@@ -80,6 +88,7 @@ export class AccountingPeriodsService {
       cogs,
       grossProfit,
       expenses: totalExpenses,
+      stockLoss,
       netProfit,
       purchases: money(purchases._sum.totalCost ?? 0),
       saleCount: sales._count,
@@ -124,6 +133,7 @@ export class AccountingPeriodsService {
             revenue: money(period.revenue),
             grossProfit: money(period.grossProfit),
             expenses: money(period.expenses),
+            stockLoss: money(period.stockLoss),
             netProfit: money(period.netProfit),
             saleCount: period.saleCount,
           }
@@ -140,6 +150,7 @@ export class AccountingPeriodsService {
         revenue: figures.revenue.toFixed(2),
         grossProfit: figures.grossProfit.toFixed(2),
         expenses: figures.expenses.toFixed(2),
+        stockLoss: figures.stockLoss.toFixed(2),
         netProfit: figures.netProfit.toFixed(2),
         saleCount: figures.saleCount,
       });
@@ -167,6 +178,7 @@ export class AccountingPeriodsService {
           cogs: money(period.cogs),
           grossProfit: money(period.grossProfit),
           expenses: money(period.expenses),
+          stockLoss: money(period.stockLoss),
           netProfit: money(period.netProfit),
           purchases: money(period.purchases),
           saleCount: period.saleCount,
@@ -228,6 +240,7 @@ export class AccountingPeriodsService {
       cogs: toPrisma(f.cogs),
       grossProfit: toPrisma(f.grossProfit),
       expenses: toPrisma(f.expenses),
+      stockLoss: toPrisma(f.stockLoss),
       netProfit: toPrisma(f.netProfit),
       purchases: toPrisma(f.purchases),
       saleCount: f.saleCount,
@@ -381,6 +394,7 @@ export class AccountingPeriodsService {
       cogs: f.cogs.toFixed(2),
       grossProfit: f.grossProfit.toFixed(2),
       expenses: f.expenses.toFixed(2),
+      stockLoss: f.stockLoss.toFixed(2),
       netProfit: f.netProfit.toFixed(2),
       purchases: f.purchases.toFixed(2),
       saleCount: f.saleCount,

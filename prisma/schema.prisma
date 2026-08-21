@@ -62,6 +62,22 @@ enum InventoryMovementType {
   RETURN
 }
 
+// Why stock was adjusted by hand. Categorised (rather than free text) so losses
+// can be counted: "how much paper went to jams last month" is a report, not a
+// reading exercise. Negative adjustments are a real cost to the shop whatever
+// the reason; the code only says which kind.
+enum StockAdjustmentReason {
+  JAM // printer jam / misprint — sheets destroyed mid-job
+  SPOILED // ruined in handling (water, creased, dirty)
+  DAMAGED // broken or unsellable goods
+  EXPIRED // past usable date
+  LOST // unaccounted for / gone missing
+  THEFT // known or suspected theft
+  COUNT_CORRECTION // physical count disagreed with the system
+  FOUND // stock discovered that the system did not know about
+  OTHER
+}
+
 enum CashSessionStatus {
   OPEN
   CLOSED
@@ -128,18 +144,18 @@ enum SequenceType {
 // ----------------------------------------------------------------------------
 
 model User {
-  id           String   @id @default(uuid()) @db.Uuid
-  email        String   @unique
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
   passwordHash String
   fullName     String
-  role         Role     @default(STAFF)
-  isActive     Boolean  @default(true)
+  role         Role      @default(STAFF)
+  isActive     Boolean   @default(true)
   // Per-staff grants (admins always have full access regardless of this list).
   // Values come from common/permissions.ts, e.g. ["products","reports"].
   permissions  String[]
   lastLoginAt  DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   // relations
   refreshTokens        RefreshToken[]
@@ -155,8 +171,8 @@ model User {
   supplierPayments     SupplierPayment[]
   auditLogs            AuditLog[]
   closedPeriods        AccountingPeriod[]
-  loans                Loan[]             @relation("LoanBorrower")
-  loansIssued          Loan[]             @relation("LoanIssuer")
+  loans                Loan[]                @relation("LoanBorrower")
+  loansIssued          Loan[]                @relation("LoanIssuer")
   loanRepayments       LoanRepayment[]
   bankTransactions     BankTransaction[]
 
@@ -167,16 +183,16 @@ model User {
 
 // Refresh-token rotation: store only a hash, support revocation & reuse-detection.
 model RefreshToken {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @db.Uuid
-  tokenHash String    @unique
-  expiresAt DateTime
-  revokedAt DateTime?
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @db.Uuid
+  tokenHash    String    @unique
+  expiresAt    DateTime
+  revokedAt    DateTime?
   // points to the token that replaced this one (rotation chain / reuse detection)
-  replacedById String? @db.Uuid
+  replacedById String?   @db.Uuid
   createdByIp  String?
   userAgent    String?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -190,11 +206,11 @@ model RefreshToken {
 // ----------------------------------------------------------------------------
 
 model Category {
-  id          String        @id @default(uuid()) @db.Uuid
-  name        String        @unique
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String    @unique
   description String?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   products    Product[]
 
   @@map("categories")
@@ -216,24 +232,24 @@ model Unit {
 // Every product has at least one variant (a single-variant product behaves like
 // a plain product).
 model Product {
-  id            String        @id @default(uuid()) @db.Uuid
-  sku           String        @unique // product group code; each variant has its own sku
-  name          String
-  imageUrl      String?
-  categoryId    String?       @db.Uuid
+  id         String  @id @default(uuid()) @db.Uuid
+  sku        String  @unique // product group code; each variant has its own sku
+  name       String
+  imageUrl   String?
+  categoryId String? @db.Uuid
 
   // --- Dual unit of measure (shared by all variants) ------------------------
   // Stock & COGS are ALWAYS tracked internally in base units (pieces). A product
   // may optionally be sold/bought in a larger "bulk" unit (box, carton, ream).
-  baseUnit         String   @default("pcs") // name of the smallest sellable unit
-  bulkUnit         String?  // larger packaging unit name; null = single-unit product
-  unitSize         Int      @default(1) // base units contained in one bulk unit
+  baseUnit String  @default("pcs") // name of the smallest sellable unit
+  bulkUnit String? // larger packaging unit name; null = single-unit product
+  unitSize Int     @default(1) // base units contained in one bulk unit
 
-  status        ProductStatus @default(ACTIVE)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  status    ProductStatus @default(ACTIVE)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
 
-  category           Category?           @relation(fields: [categoryId], references: [id])
+  category           Category?             @relation(fields: [categoryId], references: [id])
   variants           ProductVariant[]
   saleItems          SaleItem[]
   purchaseItems      PurchaseItem[]
@@ -251,29 +267,29 @@ model Product {
 // price, live stock (base units) and reference cost. Inventory batches, sales,
 // purchases, movements and adjustments all key on the variant.
 model ProductVariant {
-  id            String        @id @default(uuid()) @db.Uuid
-  productId     String        @db.Uuid
-  sku           String        @unique
-  label         String // human label shown at the counter, e.g. "Blue"
+  id               String        @id @default(uuid()) @db.Uuid
+  productId        String        @db.Uuid
+  sku              String        @unique
+  label            String // human label shown at the counter, e.g. "Blue"
   // Reference selling price PER BASE UNIT (piece). Snapshotted at sale time.
-  sellingPrice  Decimal       @db.Decimal(14, 2)
+  sellingPrice     Decimal       @db.Decimal(14, 2)
   // Optional wholesale price PER BASE UNIT (piece). Null = no wholesale tier.
-  wholesalePrice Decimal?     @db.Decimal(14, 2)
+  wholesalePrice   Decimal?      @db.Decimal(14, 2)
   // Reference/last buying price PER BASE UNIT — true COGS comes from batches.
-  buyingPrice   Decimal       @db.Decimal(14, 2) @default(0)
+  buyingPrice      Decimal       @default(0) @db.Decimal(14, 2)
   // Legacy: selling price for one whole bulk unit (no longer set; sells are per piece).
-  bulkSellingPrice Decimal?   @db.Decimal(14, 2)
+  bulkSellingPrice Decimal?      @db.Decimal(14, 2)
   // Denormalized live stock IN BASE UNITS; kept consistent with batches.
-  currentStock  Int           @default(0)
-  minStockLevel Int           @default(0)
+  currentStock     Int           @default(0)
+  minStockLevel    Int           @default(0)
   // The variant created from the original product on migration / the implicit
   // variant of a single-variant product.
-  isDefault     Boolean       @default(false)
-  status        ProductStatus @default(ACTIVE)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  isDefault        Boolean       @default(false)
+  status           ProductStatus @default(ACTIVE)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
-  product            Product             @relation(fields: [productId], references: [id])
+  product            Product               @relation(fields: [productId], references: [id])
   saleItems          SaleItem[]
   purchaseItems      PurchaseItem[]
   inventoryBatches   InventoryBatch[]
@@ -325,9 +341,10 @@ model ServiceVariant {
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
-  service    Service            @relation(fields: [serviceId], references: [id])
-  components ServiceComponent[]
-  saleItems  SaleItem[]
+  service          Service               @relation(fields: [serviceId], references: [id])
+  components       ServiceComponent[]
+  saleItems        SaleItem[]
+  stockAdjustments InventoryAdjustment[]
 
   @@index([serviceId])
   @@index([status])
@@ -338,12 +355,12 @@ model ServiceVariant {
 // consumes and how much. qty is a whole count of BASE units (pieces); fractional
 // consumption is modelled by the product's unitSize yield, not fractional stock.
 model ServiceComponent {
-  id               String  @id @default(uuid()) @db.Uuid
-  serviceVariantId String  @db.Uuid
-  variantId        String  @db.Uuid
+  id               String   @id @default(uuid()) @db.Uuid
+  serviceVariantId String   @db.Uuid
+  variantId        String   @db.Uuid
   // Base units consumed per page (perPage=true) or per job (perPage=false).
-  qty              Int     @default(1)
-  perPage          Boolean @default(true)
+  qty              Int      @default(1)
+  perPage          Boolean  @default(true)
   createdAt        DateTime @default(now())
 
   serviceVariant ServiceVariant @relation(fields: [serviceVariantId], references: [id], onDelete: Cascade)
@@ -359,17 +376,17 @@ model ServiceComponent {
 // ----------------------------------------------------------------------------
 
 model Supplier {
-  id        String     @id @default(uuid()) @db.Uuid
+  id        String            @id @default(uuid()) @db.Uuid
   name      String
   phone     String?
   email     String?
   address   String?
-  isActive  Boolean    @default(true)
+  isActive  Boolean           @default(true)
   // Outstanding amount we OWE this supplier (accounts payable). Updated atomically
   // when recording credit purchases and supplier payments.
-  balance   Decimal    @db.Decimal(14, 2) @default(0)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  balance   Decimal           @default(0) @db.Decimal(14, 2)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
   purchases Purchase[]
   payments  SupplierPayment[]
 
@@ -382,19 +399,19 @@ model Supplier {
 // ----------------------------------------------------------------------------
 
 model Customer {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String
-  phone     String?
-  email     String?
-  address   String?
-  isActive  Boolean  @default(true)
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  phone       String?
+  email       String?
+  address     String?
+  isActive    Boolean  @default(true)
   // Outstanding amount this customer OWES us (accounts receivable). Invariant:
   // balance == SUM(amountDue) over the customer's COMPLETED credit sales.
-  balance   Decimal  @db.Decimal(14, 2) @default(0)
+  balance     Decimal  @default(0) @db.Decimal(14, 2)
   // Maximum receivable allowed. NULL = unlimited credit.
   creditLimit Decimal? @db.Decimal(14, 2)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   sales    Sale[]
   payments CustomerPayment[]
@@ -405,20 +422,20 @@ model Customer {
 
 // A repayment received from a customer against their outstanding balance.
 model CustomerPayment {
-  id            String   @id @default(uuid()) @db.Uuid
-  customerId    String   @db.Uuid
-  userId        String   @db.Uuid
-  cashSessionId String?  @db.Uuid
-  saleId        String?  @db.Uuid // optional: payment earmarked to a specific sale
-  amount        Decimal  @db.Decimal(14, 2)
-  notes         String?
-  idempotencyKey String? @unique
-  createdAt     DateTime @default(now())
+  id             String   @id @default(uuid()) @db.Uuid
+  customerId     String   @db.Uuid
+  userId         String   @db.Uuid
+  cashSessionId  String?  @db.Uuid
+  saleId         String?  @db.Uuid // optional: payment earmarked to a specific sale
+  amount         Decimal  @db.Decimal(14, 2)
+  notes          String?
+  idempotencyKey String?  @unique
+  createdAt      DateTime @default(now())
 
-  customer    Customer     @relation(fields: [customerId], references: [id])
-  user        User         @relation(fields: [userId], references: [id])
-  cashSession CashSession? @relation(fields: [cashSessionId], references: [id])
-  sale        Sale?        @relation(fields: [saleId], references: [id])
+  customer    Customer                    @relation(fields: [customerId], references: [id])
+  user        User                        @relation(fields: [userId], references: [id])
+  cashSession CashSession?                @relation(fields: [cashSessionId], references: [id])
+  sale        Sale?                       @relation(fields: [saleId], references: [id])
   allocations CustomerPaymentAllocation[]
 
   @@index([customerId])
@@ -446,15 +463,15 @@ model CustomerPaymentAllocation {
 
 // A payment made TO a supplier against what we owe them.
 model SupplierPayment {
-  id            String   @id @default(uuid()) @db.Uuid
-  supplierId    String   @db.Uuid
-  userId        String   @db.Uuid
-  cashSessionId String?  @db.Uuid
-  purchaseId    String?  @db.Uuid
-  amount        Decimal  @db.Decimal(14, 2)
-  notes         String?
-  idempotencyKey String? @unique
-  createdAt     DateTime @default(now())
+  id             String   @id @default(uuid()) @db.Uuid
+  supplierId     String   @db.Uuid
+  userId         String   @db.Uuid
+  cashSessionId  String?  @db.Uuid
+  purchaseId     String?  @db.Uuid
+  amount         Decimal  @db.Decimal(14, 2)
+  notes          String?
+  idempotencyKey String?  @unique
+  createdAt      DateTime @default(now())
 
   supplier    Supplier     @relation(fields: [supplierId], references: [id])
   user        User         @relation(fields: [userId], references: [id])
@@ -468,25 +485,25 @@ model SupplierPayment {
 }
 
 model Purchase {
-  id             String   @id @default(uuid()) @db.Uuid
-  purchaseNumber String   @unique
-  supplierId     String?  @db.Uuid
-  userId         String   @db.Uuid
-  cashSessionId  String?  @db.Uuid // session the cash portion was paid from
+  id             String        @id @default(uuid()) @db.Uuid
+  purchaseNumber String        @unique
+  supplierId     String?       @db.Uuid
+  userId         String        @db.Uuid
+  cashSessionId  String?       @db.Uuid // session the cash portion was paid from
   purchaseDate   DateTime
-  totalCost      Decimal  @db.Decimal(14, 2)
+  totalCost      Decimal       @db.Decimal(14, 2)
   // Payment settlement. CREDIT requires a supplier and leaves amountDue payable.
   paymentMethod  PaymentMethod @default(CASH)
-  amountPaid     Decimal  @db.Decimal(14, 2) @default(0)
-  amountDue      Decimal  @db.Decimal(14, 2) @default(0)
+  amountPaid     Decimal       @default(0) @db.Decimal(14, 2)
+  amountDue      Decimal       @default(0) @db.Decimal(14, 2)
   notes          String?
   // Idempotency: a repeated request with the same key returns the original row.
-  idempotencyKey String?  @unique
-  createdAt      DateTime @default(now())
+  idempotencyKey String?       @unique
+  createdAt      DateTime      @default(now())
 
-  supplier    Supplier?        @relation(fields: [supplierId], references: [id])
-  user        User             @relation(fields: [userId], references: [id])
-  cashSession CashSession?     @relation(fields: [cashSessionId], references: [id])
+  supplier    Supplier?         @relation(fields: [supplierId], references: [id])
+  user        User              @relation(fields: [userId], references: [id])
+  cashSession CashSession?      @relation(fields: [cashSessionId], references: [id])
   items       PurchaseItem[]
   batches     InventoryBatch[]
   payments    SupplierPayment[]
@@ -499,18 +516,18 @@ model Purchase {
 }
 
 model PurchaseItem {
-  id                  String   @id @default(uuid()) @db.Uuid
-  purchaseId          String   @db.Uuid
-  productId           String   @db.Uuid
-  variantId           String   @db.Uuid
+  id                  String  @id @default(uuid()) @db.Uuid
+  purchaseId          String  @db.Uuid
+  productId           String  @db.Uuid
+  variantId           String  @db.Uuid
   productNameSnapshot String
   // quantity is expressed in the transacted unit (unitLabel); unitSize converts
   // to base units for inventory. quantity * unitSize = base units (pieces) received.
   quantity            Int
-  unitLabel           String   @default("pcs")
-  unitSize            Int      @default(1)
-  unitCost            Decimal  @db.Decimal(14, 2) // cost per transacted unit
-  lineTotal           Decimal  @db.Decimal(14, 2)
+  unitLabel           String  @default("pcs")
+  unitSize            Int     @default(1)
+  unitCost            Decimal @db.Decimal(14, 2) // cost per transacted unit
+  lineTotal           Decimal @db.Decimal(14, 2)
 
   purchase Purchase        @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
   product  Product         @relation(fields: [productId], references: [id])
@@ -558,44 +575,44 @@ model InventoryBatch {
 // ----------------------------------------------------------------------------
 
 model Sale {
-  id                String     @id @default(uuid()) @db.Uuid
-  invoiceNumber     String     @unique
-  transactionNumber String     @unique
-  userId            String     @db.Uuid
-  cashSessionId     String?    @db.Uuid
-  customerId        String?    @db.Uuid
-  subtotal          Decimal    @db.Decimal(14, 2) // sum of line totals before discount
-  discountTotal     Decimal    @db.Decimal(14, 2) @default(0)
-  total             Decimal    @db.Decimal(14, 2) // payable
+  id                String        @id @default(uuid()) @db.Uuid
+  invoiceNumber     String        @unique
+  transactionNumber String        @unique
+  userId            String        @db.Uuid
+  cashSessionId     String?       @db.Uuid
+  customerId        String?       @db.Uuid
+  subtotal          Decimal       @db.Decimal(14, 2) // sum of line totals before discount
+  discountTotal     Decimal       @default(0) @db.Decimal(14, 2)
+  total             Decimal       @db.Decimal(14, 2) // payable
   // Payment settlement. CREDIT requires a customer; amountDue becomes receivable.
   paymentMethod     PaymentMethod @default(CASH)
   // Portion of `total` settled in cash at sale time (the till intake).
-  amountPaid        Decimal    @db.Decimal(14, 2) @default(0)
+  amountPaid        Decimal       @default(0) @db.Decimal(14, 2)
   // Outstanding receivable for this sale (total - amountPaid). 0 for cash sales.
-  amountDue         Decimal    @db.Decimal(14, 2) @default(0)
-  cashReceived      Decimal    @db.Decimal(14, 2) // physical cash tendered
-  changeGiven       Decimal    @db.Decimal(14, 2) @default(0)
+  amountDue         Decimal       @default(0) @db.Decimal(14, 2)
+  cashReceived      Decimal       @db.Decimal(14, 2) // physical cash tendered
+  changeGiven       Decimal       @default(0) @db.Decimal(14, 2)
   // Snapshot of total COGS at sale time (sum of product line COGS).
-  totalCogs         Decimal    @db.Decimal(14, 2) @default(0)
-  status            SaleStatus @default(COMPLETED)
+  totalCogs         Decimal       @default(0) @db.Decimal(14, 2)
+  status            SaleStatus    @default(COMPLETED)
   notes             String?
   // Idempotency: optional client-supplied key prevents duplicate processing.
-  idempotencyKey    String?    @unique
-  createdAt         DateTime   @default(now())
+  idempotencyKey    String?       @unique
+  createdAt         DateTime      @default(now())
 
   // Void linkage (corrections never mutate the original sale).
-  voidedAt       DateTime?
-  voidReason     String?
-  reversalOfId   String?   @unique @db.Uuid
-  reversalOf     Sale?     @relation("SaleReversal", fields: [reversalOfId], references: [id])
-  reversedBy     Sale?     @relation("SaleReversal")
+  voidedAt     DateTime?
+  voidReason   String?
+  reversalOfId String?   @unique @db.Uuid
+  reversalOf   Sale?     @relation("SaleReversal", fields: [reversalOfId], references: [id])
+  reversedBy   Sale?     @relation("SaleReversal")
 
-  user        User        @relation(fields: [userId], references: [id])
-  cashSession CashSession? @relation(fields: [cashSessionId], references: [id])
-  customer    Customer?    @relation(fields: [customerId], references: [id])
-  items       SaleItem[]
-  returns     SaleReturn[]
-  payments    CustomerPayment[]
+  user               User                        @relation(fields: [userId], references: [id])
+  cashSession        CashSession?                @relation(fields: [cashSessionId], references: [id])
+  customer           Customer?                   @relation(fields: [customerId], references: [id])
+  items              SaleItem[]
+  returns            SaleReturn[]
+  payments           CustomerPayment[]
   paymentAllocations CustomerPaymentAllocation[]
 
   @@index([userId])
@@ -607,36 +624,36 @@ model Sale {
 }
 
 model SaleItem {
-  id        String       @id @default(uuid()) @db.Uuid
-  saleId    String       @db.Uuid
-  itemType  SaleItemType
-  productId String?      @db.Uuid
-  variantId String?      @db.Uuid
-  serviceId String?      @db.Uuid
-  serviceVariantId String? @db.Uuid
+  id               String       @id @default(uuid()) @db.Uuid
+  saleId           String       @db.Uuid
+  itemType         SaleItemType
+  productId        String?      @db.Uuid
+  variantId        String?      @db.Uuid
+  serviceId        String?      @db.Uuid
+  serviceVariantId String?      @db.Uuid
 
   // --- immutable historical snapshots ---
   nameSnapshot      String
-  unitPriceSnapshot Decimal  @db.Decimal(14, 2) // price per transacted unit
+  unitPriceSnapshot Decimal @db.Decimal(14, 2) // price per transacted unit
   // quantity is in the transacted unit (unitLabel). Base units (pieces) consumed
   // from inventory = quantity * unitSize.
   quantity          Int
-  unitLabel         String   @default("pcs")
-  unitSize          Int      @default(1)
+  unitLabel         String  @default("pcs")
+  unitSize          Int     @default(1)
   pages             Int? // for PER_PAGE services
-  discount          Decimal  @db.Decimal(14, 2) @default(0)
-  lineTotal         Decimal  @db.Decimal(14, 2)
+  discount          Decimal @default(0) @db.Decimal(14, 2)
+  lineTotal         Decimal @db.Decimal(14, 2)
   // COGS for product lines (FIFO). For services that consume products, holds
   // the sum of those products' FIFO cost too.
-  lineCogs          Decimal  @db.Decimal(14, 2) @default(0)
+  lineCogs          Decimal @default(0) @db.Decimal(14, 2)
   // Units already returned across all partial returns of this line.
-  returnedQuantity  Int      @default(0)
+  returnedQuantity  Int     @default(0)
 
-  sale        Sale             @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  product        Product?        @relation(fields: [productId], references: [id])
-  variant        ProductVariant? @relation(fields: [variantId], references: [id])
-  service        Service?        @relation(fields: [serviceId], references: [id])
-  serviceVariant ServiceVariant? @relation(fields: [serviceVariantId], references: [id])
+  sale           Sale                  @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product        Product?              @relation(fields: [productId], references: [id])
+  variant        ProductVariant?       @relation(fields: [variantId], references: [id])
+  service        Service?              @relation(fields: [serviceId], references: [id])
+  serviceVariant ServiceVariant?       @relation(fields: [serviceVariantId], references: [id])
   allocations    CogsAllocation[]
   // For service lines: snapshot of each product consumed, so a void can restore
   // every product this line drew down (a service may consume several products).
@@ -653,20 +670,20 @@ model SaleItem {
 
 // FIFO consumption detail: how each sold unit drew from which batch & at what cost.
 model CogsAllocation {
-  id               String  @id @default(uuid()) @db.Uuid
-  saleItemId       String  @db.Uuid
-  batchId          String  @db.Uuid
+  id                    String  @id @default(uuid()) @db.Uuid
+  saleItemId            String  @db.Uuid
+  batchId               String  @db.Uuid
   // For service-line allocations: which consumed product (SaleItemConsumption)
   // this allocation belongs to. Null for plain product lines.
   saleItemConsumptionId String? @db.Uuid
-  quantity         Int
-  unitCost         Decimal @db.Decimal(14, 2)
-  cost             Decimal @db.Decimal(14, 2) // quantity * unitCost
+  quantity              Int
+  unitCost              Decimal @db.Decimal(14, 2)
+  cost                  Decimal @db.Decimal(14, 2) // quantity * unitCost
   // Units of this allocation reversed back to the batch via returns.
-  returnedQuantity Int     @default(0)
+  returnedQuantity      Int     @default(0)
 
-  saleItem SaleItem       @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
-  batch    InventoryBatch @relation(fields: [batchId], references: [id])
+  saleItem    SaleItem             @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
+  batch       InventoryBatch       @relation(fields: [batchId], references: [id])
   consumption SaleItemConsumption? @relation(fields: [saleItemConsumptionId], references: [id], onDelete: Cascade)
 
   @@index([saleItemId])
@@ -679,12 +696,12 @@ model CogsAllocation {
 // A single service line can have several — one per product in the option's BOM.
 // Holds the base-unit quantity and FIFO cost drawn, so a void restores it exactly.
 model SaleItemConsumption {
-  id         String  @id @default(uuid()) @db.Uuid
-  saleItemId String  @db.Uuid
-  variantId  String  @db.Uuid
-  productId  String  @db.Uuid
+  id         String   @id @default(uuid()) @db.Uuid
+  saleItemId String   @db.Uuid
+  variantId  String   @db.Uuid
+  productId  String   @db.Uuid
   qty        Int // base units consumed
-  cogs       Decimal @db.Decimal(14, 2) @default(0)
+  cogs       Decimal  @default(0) @db.Decimal(14, 2)
   createdAt  DateTime @default(now())
 
   saleItem    SaleItem         @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
@@ -711,8 +728,8 @@ model SaleReturn {
   totalRefund       Decimal  @db.Decimal(14, 2)
   // Portion of the refund applied to the customer's credit balance (store
   // credit) rather than paid out in cash. cashRefunded = totalRefund - creditApplied.
-  creditApplied     Decimal  @db.Decimal(14, 2) @default(0)
-  totalCogsReversed Decimal  @db.Decimal(14, 2) @default(0)
+  creditApplied     Decimal  @default(0) @db.Decimal(14, 2)
+  totalCogsReversed Decimal  @default(0) @db.Decimal(14, 2)
   createdAt         DateTime @default(now())
 
   sale        Sale             @relation(fields: [saleId], references: [id])
@@ -733,7 +750,7 @@ model SaleReturnItem {
   saleItemId   String  @db.Uuid
   quantity     Int
   refundAmount Decimal @db.Decimal(14, 2)
-  cogsReversed Decimal @db.Decimal(14, 2) @default(0)
+  cogsReversed Decimal @default(0) @db.Decimal(14, 2)
 
   saleReturn SaleReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
   saleItem   SaleItem   @relation(fields: [saleItemId], references: [id])
@@ -776,25 +793,40 @@ model InventoryMovement {
 }
 
 model InventoryAdjustment {
-  id             String   @id @default(uuid()) @db.Uuid
-  productId      String   @db.Uuid
-  variantId      String   @db.Uuid
-  userId         String   @db.Uuid
-  quantityChange Int // signed
-  beforeQty      Int
-  afterQty       Int
-  reason         String
+  id               String                @id @default(uuid()) @db.Uuid
+  productId        String                @db.Uuid
+  variantId        String                @db.Uuid
+  userId           String                @db.Uuid
+  quantityChange   Int // signed
+  beforeQty        Int
+  afterQty         Int
+  // Countable category, and the free-text note that goes with it.
+  reasonCode       StockAdjustmentReason @default(OTHER)
+  reason           String
   // For positive adjustments we create a batch; track its cost for valuation.
-  unitCost       Decimal? @db.Decimal(14, 2)
-  createdAt      DateTime @default(now())
+  unitCost         Decimal?              @db.Decimal(14, 2)
+  // What this adjustment did to the value of stock on hand, signed like
+  // quantityChange: negative = value written off (a cost to the shop), positive
+  // = value written back on. Sourced from the FIFO batches actually consumed,
+  // so it is the real money lost, not a reference price. This is what carries
+  // wastage into the profit figures.
+  costImpact       Decimal?              @db.Decimal(14, 2)
+  // Set when the loss came out of a service job (e.g. a jam while printing A4),
+  // so wastage can be attributed to the work that caused it.
+  serviceVariantId String?               @db.Uuid
+  createdAt        DateTime              @default(now())
 
-  product Product        @relation(fields: [productId], references: [id])
-  variant ProductVariant @relation(fields: [variantId], references: [id])
-  user    User           @relation(fields: [userId], references: [id])
+  product        Product         @relation(fields: [productId], references: [id])
+  variant        ProductVariant  @relation(fields: [variantId], references: [id])
+  user           User            @relation(fields: [userId], references: [id])
+  serviceVariant ServiceVariant? @relation(fields: [serviceVariantId], references: [id])
 
   @@index([productId])
   @@index([variantId])
   @@index([userId])
+  @@index([reasonCode])
+  @@index([createdAt])
+  @@index([serviceVariantId])
   @@map("inventory_adjustments")
 }
 
@@ -806,19 +838,19 @@ model InventoryAdjustment {
 // but fully CRUD-able: admins may add their own, rename them, pick an icon and
 // choose which ones staff may use.
 model ExpenseCategory {
-  id           String  @id @default(uuid()) @db.Uuid
-  name         String  @unique
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String   @unique
   // Material Symbols icon name shown next to the category in the UI.
-  icon         String  @default("category")
+  icon         String   @default("category")
   // "Petty cash": staff may record and see these. Fixed overheads (rent,
   // salary, electricity, internet) stay management-only by default.
-  staffAllowed Boolean @default(false)
+  staffAllowed Boolean  @default(false)
   // Archived categories keep their history but disappear from the pickers.
-  isActive     Boolean @default(true)
+  isActive     Boolean  @default(true)
   // Stable handle for categories the code itself resolves (OFFICE_SUPPLIES).
   // Null for admin-created ones; those carry no behaviour beyond their name.
-  systemKey    String? @unique
-  sortOrder    Int     @default(100)
+  systemKey    String?  @unique
+  sortOrder    Int      @default(100)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -829,17 +861,17 @@ model ExpenseCategory {
 }
 
 model Expense {
-  id            String          @id @default(uuid()) @db.Uuid
-  categoryId    String          @db.Uuid
-  amount        Decimal         @db.Decimal(14, 2)
+  id            String   @id @default(uuid()) @db.Uuid
+  categoryId    String   @db.Uuid
+  amount        Decimal  @db.Decimal(14, 2)
   expenseDate   DateTime
   description   String?
   // Optional free-text vendor, used by itemized office purchases.
   supplierName  String?
-  userId        String          @db.Uuid
+  userId        String   @db.Uuid
   // Linked to the cash session if paid from the till.
-  cashSessionId String?         @db.Uuid
-  createdAt     DateTime        @default(now())
+  cashSessionId String?  @db.Uuid
+  createdAt     DateTime @default(now())
 
   user        User            @relation(fields: [userId], references: [id])
   cashSession CashSession?    @relation(fields: [cashSessionId], references: [id])
@@ -892,6 +924,10 @@ model AccountingPeriod {
   cogs        Decimal @db.Decimal(14, 2)
   grossProfit Decimal @db.Decimal(14, 2)
   expenses    Decimal @db.Decimal(14, 2)
+  // Stock written off by hand during the month, as a positive cost. Months
+  // closed before wastage was accounted for keep 0, which is what their
+  // netProfit was computed with.
+  stockLoss   Decimal @default(0) @db.Decimal(14, 2)
   netProfit   Decimal @db.Decimal(14, 2)
   purchases   Decimal @db.Decimal(14, 2)
   saleCount   Int
@@ -930,14 +966,14 @@ model CashSession {
   closedAt       DateTime?
 
   // Filled at close time (snapshot of computed values).
-  expectedAmount Decimal? @db.Decimal(14, 2)
-  actualAmount   Decimal? @db.Decimal(14, 2)
-  variance       Decimal? @db.Decimal(14, 2)
+  expectedAmount    Decimal? @db.Decimal(14, 2)
+  actualAmount      Decimal? @db.Decimal(14, 2)
+  variance          Decimal? @db.Decimal(14, 2)
   // Cash taken out of the drawer as part of closing, after it was counted. Kept
   // apart from actualAmount so the count still reconciles against expected
   // while the next shift's float carries over only what was physically left.
   closingWithdrawal Decimal? @db.Decimal(14, 2)
-  notes          String?
+  notes             String?
 
   user             User              @relation(fields: [userId], references: [id])
   sales            Sale[]
@@ -1018,21 +1054,21 @@ model BankTransaction {
 /// shop, never an expense: profit does not move when it is issued, only the
 /// place the money sits. Outstanding = amount - sum(repayments).
 model Loan {
-  id       String        @id @default(uuid()) @db.Uuid
+  id            String        @id @default(uuid()) @db.Uuid
   /// The shop member who took the money. Only staff and admins can borrow.
-  userId   String        @db.Uuid
-  amount   Decimal       @db.Decimal(14, 2)
-  source   MoneyLocation
-  issuedAt DateTime      @default(now())
-  dueDate  DateTime
-  status   LoanStatus    @default(OUTSTANDING)
-  notes    String?
+  userId        String        @db.Uuid
+  amount        Decimal       @db.Decimal(14, 2)
+  source        MoneyLocation
+  issuedAt      DateTime      @default(now())
+  dueDate       DateTime
+  status        LoanStatus    @default(OUTSTANDING)
+  notes         String?
   /// The admin who recorded it — never the borrower themselves.
-  issuedById String   @db.Uuid
+  issuedById    String        @db.Uuid
   /// Set when the cash came out of the drawer.
-  cashSessionId String? @db.Uuid
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  cashSessionId String?       @db.Uuid
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
   user             User              @relation("LoanBorrower", fields: [userId], references: [id])
   issuedBy         User              @relation("LoanIssuer", fields: [issuedById], references: [id])
@@ -1109,23 +1145,23 @@ model AuditLog {
 // ----------------------------------------------------------------------------
 
 model AppSetting {
-  id           String   @id @default("singleton")
-  businessName String   @default("KJ Stationery")
-  branchName   String   @default("Main Branch")
+  id                String    @id @default("singleton")
+  businessName      String    @default("KJ Stationery")
+  branchName        String    @default("Main Branch")
   // Automatic database backups to local disk (drive D on Windows by default).
-  autoBackupEnabled Boolean  @default(false)
+  autoBackupEnabled Boolean   @default(false)
   // Local time of day (HH:mm, 24h) the daily backup should run.
-  backupTime        String   @default("22:00")
+  backupTime        String    @default("22:00")
   // Optional custom folder; null = OS default (D:\STMS-Backups on Windows).
   backupDir         String?
   // How many backup files to keep. Each new backup replaces the oldest once
   // this many exist — old copies are not worth the disk on a shop machine.
-  backupKeep        Int      @default(3)
+  backupKeep        Int       @default(3)
   lastBackupAt      DateTime?
   // "ok" after a successful run, or a short error message; null = never run.
   lastBackupStatus  String?
   lastBackupPath    String?
-  updatedAt    DateTime @updatedAt
+  updatedAt         DateTime  @updatedAt
 
   @@map("app_settings")
 }

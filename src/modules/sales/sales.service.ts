@@ -632,7 +632,7 @@ export class SalesService {
           }
         : {}),
     };
-    const [data, total] = await this.prisma.$transaction([
+    const [data, total, completed, voided] = await this.prisma.$transaction([
       this.prisma.sale.findMany({
         where,
         include: {
@@ -645,8 +645,28 @@ export class SalesService {
         take: query.limit,
       }),
       this.prisma.sale.count({ where }),
+      // Totals over everything the filters match, not just the page. A summary
+      // added up from one page of rows is wrong the moment there are two pages.
+      this.prisma.sale.aggregate({
+        where: { ...where, status: 'COMPLETED' },
+        _sum: { total: true },
+        _count: true,
+      }),
+      this.prisma.sale.count({ where: { ...where, status: 'VOIDED' } }),
     ]);
-    return paginate(data, total, query.page, query.limit);
+
+    const revenue = money(completed._sum.total ?? 0);
+    return {
+      ...paginate(data, total, query.page, query.limit),
+      summary: {
+        revenue: revenue.toFixed(2),
+        completedCount: completed._count,
+        voidedCount: voided,
+        averageSale: completed._count
+          ? revenue.dividedBy(completed._count).toFixed(2)
+          : '0.00',
+      },
+    };
   }
 
   async findOne(id: string) {

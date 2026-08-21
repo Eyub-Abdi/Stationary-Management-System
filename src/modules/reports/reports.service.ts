@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, StockAdjustmentReason } from '@prisma/client';
 import { add, money, sub } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CashService } from '../cash/cash.service';
+import {
+  REASON_LABELS,
+  isLossReason,
+} from '../inventory/adjustment-reasons';
 import { findOpenSession } from '../cash/open-session';
 import {
   ReportGranularity,
@@ -99,7 +103,11 @@ export class ReportsService {
     const expenseRange = this.dateFilter('"expenseDate"', query);
     const purchaseRange = this.dateFilter('"purchaseDate"', query);
 
-    const [rows, expenseRows, purchaseRows] = await Promise.all([
+    const adjustmentRange = this.dateFilter('"createdAt"', query);
+    const returnRange = this.dateFilter('"createdAt"', query);
+
+    const [rows, expenseRows, purchaseRows, wastageRows, returnRows] =
+      await Promise.all([
       this.prisma.$queryRaw<
         {
           period: Date;
@@ -133,6 +141,25 @@ export class ReportsService {
         WHERE TRUE ${purchaseRange}
         GROUP BY period;
       `),
+      // Net stock written off in the bucket, as a positive cost.
+      this.prisma.$queryRaw<{ period: Date; stock_loss: string }[]>(Prisma.sql`
+        SELECT date_trunc(${unit}, "createdAt")      AS period,
+               COALESCE(-SUM("costImpact"), 0)::text AS stock_loss
+        FROM inventory_adjustments
+        WHERE TRUE ${adjustmentRange}
+        GROUP BY period;
+      `),
+      // Returns are backed out of the bucket they were processed in, matching
+      // the financial summary. Without this the series would drift from the
+      // headline figures the moment a customer brought something back.
+      this.prisma.$queryRaw<{ period: Date; refunds: string; cogs_reversed: string }[]>(Prisma.sql`
+        SELECT date_trunc(${unit}, "createdAt")            AS period,
+               COALESCE(SUM("totalRefund"), 0)::text       AS refunds,
+               COALESCE(SUM("totalCogsReversed"), 0)::text AS cogs_reversed
+        FROM sale_returns
+        WHERE TRUE ${returnRange}
+        GROUP BY period;
+      `),
     ]);
 
     const expenseByPeriod = new Map(
@@ -141,16 +168,49 @@ export class ReportsService {
     const purchaseByPeriod = new Map(
       purchaseRows.map((r) => [r.period.getTime(), r.purchases]),
     );
+    const stockLossByPeriod = new Map(
+      wastageRows.map((r) => [r.period.getTime(), r.stock_loss]),
+    );
+    const returnByPeriod = new Map(
+      returnRows.map((r) => [
+        r.period.getTime(),
+        { refunds: money(r.refunds), cogsReversed: money(r.cogs_reversed) },
+      ]),
+    );
 
-    return rows.map((r) => ({
-      period: r.period,
-      revenue: r.revenue,
-      cogs: r.cogs,
-      grossProfit: r.gross_profit,
-      saleCount: Number(r.sale_count),
-      expenses: expenseByPeriod.get(r.period.getTime()) ?? '0',
-      purchases: purchaseByPeriod.get(r.period.getTime()) ?? '0',
-    }));
+    const salesByPeriod = new Map(rows.map((r) => [r.period.getTime(), r]));
+
+    // Every bucket that saw ANY activity, not just the ones with sales in them.
+    // A quiet day that still paid rent has to appear, or the totals under the
+    // table would leave that rent out.
+    const periods = [
+      ...new Set([
+        ...salesByPeriod.keys(),
+        ...expenseByPeriod.keys(),
+        ...purchaseByPeriod.keys(),
+        ...stockLossByPeriod.keys(),
+        ...returnByPeriod.keys(),
+      ]),
+    ].sort((a, b) => a - b);
+
+    return periods.map((key) => {
+      const row = salesByPeriod.get(key);
+      const back = returnByPeriod.get(key);
+      // Net of returns, exactly as financialSummary does it.
+      const revenue = sub(money(row?.revenue ?? 0), back?.refunds ?? money(0));
+      const cogs = sub(money(row?.cogs ?? 0), back?.cogsReversed ?? money(0));
+      return {
+        period: new Date(key),
+        revenue: revenue.toFixed(2),
+        cogs: cogs.toFixed(2),
+        grossProfit: sub(revenue, cogs).toFixed(2),
+        refunds: (back?.refunds ?? money(0)).toFixed(2),
+        saleCount: Number(row?.sale_count ?? 0),
+        expenses: expenseByPeriod.get(key) ?? '0',
+        purchases: purchaseByPeriod.get(key) ?? '0',
+        stockLoss: stockLossByPeriod.get(key) ?? '0',
+      };
+    });
   }
 
   // ---- Financial summary ---------------------------------------------------
@@ -173,7 +233,12 @@ export class ReportsService {
         ? { createdAt: { gte: query.from, lte: query.to } }
         : {};
 
-    const [sales, expenses, returns] = await Promise.all([
+    const adjustmentWhere: Prisma.InventoryAdjustmentWhereInput =
+      query.from || query.to
+        ? { createdAt: { gte: query.from, lte: query.to } }
+        : {};
+
+    const [sales, expenses, returns, writeOffs, writeOns] = await Promise.all([
       this.prisma.sale.aggregate({
         where: saleWhere,
         _sum: { total: true, totalCogs: true },
@@ -187,6 +252,18 @@ export class ReportsService {
         where: returnWhere,
         _sum: { totalRefund: true, totalCogsReversed: true },
       }),
+      // Stock written off by hand — jams, spoilage, shrinkage. costImpact is
+      // the FIFO cost of what left the shelf, signed negative.
+      this.prisma.inventoryAdjustment.aggregate({
+        where: { ...adjustmentWhere, quantityChange: { lt: 0 } },
+        _sum: { costImpact: true },
+      }),
+      // Stock written back on. Value appearing without a purchase behind it, so
+      // it offsets the losses rather than counting as income.
+      this.prisma.inventoryAdjustment.aggregate({
+        where: { ...adjustmentWhere, quantityChange: { gt: 0 } },
+        _sum: { costImpact: true },
+      }),
     ]);
 
     const grossSales = money(sales._sum.total ?? 0);
@@ -199,7 +276,14 @@ export class ReportsService {
     );
     const grossProfit = sub(revenue, cogs);
     const totalExpenses = money(expenses._sum.amount ?? 0);
-    const netProfit = sub(grossProfit, totalExpenses);
+    // costImpact is signed like the quantity, so a write-off arrives negative.
+    // Flip it: stockLoss is a positive number meaning money gone.
+    const writtenOff = money(writeOffs._sum.costImpact ?? 0).negated();
+    const writtenOn = money(writeOns._sum.costImpact ?? 0);
+    const stockLoss = sub(writtenOff, writtenOn);
+    // Stock that spoils is as real a cost as rent. Leaving it out overstated
+    // profit by exactly the value of everything ever written off.
+    const netProfit = sub(sub(grossProfit, totalExpenses), stockLoss);
 
     return {
       range: { from: query.from ?? null, to: query.to ?? null },
@@ -209,6 +293,9 @@ export class ReportsService {
       cogs: cogs.toFixed(2),
       grossProfit: grossProfit.toFixed(2),
       expenses: totalExpenses.toFixed(2),
+      stockWrittenOff: writtenOff.toFixed(2),
+      stockWrittenOn: writtenOn.toFixed(2),
+      stockLoss: stockLoss.toFixed(2),
       netProfit: netProfit.toFixed(2),
       saleCount: sales._count,
     };
@@ -239,6 +326,174 @@ export class ReportsService {
       icon: byId.get(g.categoryId)?.icon ?? 'category',
       total: money(g._sum.amount ?? 0).toFixed(2),
       count: g._count,
+    }));
+  }
+
+  // ---- Wastage -------------------------------------------------------------
+
+  /**
+   * What the shop destroyed, lost or recounted away, and what it cost.
+   *
+   * Three cuts of the same rows, because the useful questions differ: which
+   * kind of loss dominates (byReason), which stock it eats (byProduct), and
+   * which job causes it (byService — the one that answers "is this printer
+   * getting worse"). Costs come from the FIFO batches actually consumed.
+   */
+  async wastageReport(query: ReportRangeDto) {
+    const where: Prisma.InventoryAdjustmentWhereInput = {
+      ...(query.from || query.to
+        ? { createdAt: { gte: query.from, lte: query.to } }
+        : {}),
+    };
+    const range = this.dateFilter('a."createdAt"', query);
+
+    const [byReason, byProduct, byService, totals] = await Promise.all([
+      // Units out and units in are counted separately. Netting them would let
+      // one delivery written back on hide a month of jams behind a single
+      // small number.
+      this.prisma.$queryRaw<
+        {
+          reasonCode: StockAdjustmentReason;
+          units_out: bigint;
+          units_in: bigint;
+          cost: string;
+          entries: bigint;
+        }[]
+      >(Prisma.sql`
+        SELECT a."reasonCode"                                                        AS "reasonCode",
+               COALESCE(SUM(CASE WHEN a."quantityChange" < 0 THEN -a."quantityChange" ELSE 0 END), 0) AS units_out,
+               COALESCE(SUM(CASE WHEN a."quantityChange" > 0 THEN  a."quantityChange" ELSE 0 END), 0) AS units_in,
+               COALESCE(-SUM(a."costImpact"), 0)::text                               AS cost,
+               COUNT(*)                                                              AS entries
+        FROM inventory_adjustments a
+        WHERE TRUE ${range}
+        GROUP BY a."reasonCode";
+      `),
+      this.prisma.$queryRaw<
+        {
+          variantId: string;
+          sku: string;
+          name: string;
+          baseUnit: string;
+          units: bigint;
+          cost: string;
+          entries: bigint;
+        }[]
+      >(Prisma.sql`
+        SELECT v.id                            AS "variantId",
+               v.sku                           AS sku,
+               p.name || CASE WHEN v.label <> 'Default' THEN ' — ' || v.label ELSE '' END AS name,
+               p."baseUnit"                    AS "baseUnit",
+               -SUM(a."quantityChange")        AS units,
+               COALESCE(-SUM(a."costImpact"), 0)::text AS cost,
+               COUNT(*)                        AS entries
+        FROM inventory_adjustments a
+        JOIN product_variants v ON v.id = a."variantId"
+        JOIN products p         ON p.id = v."productId"
+        WHERE a."quantityChange" < 0 ${range}
+        GROUP BY v.id, p.id
+        ORDER BY COALESCE(-SUM(a."costImpact"), 0) DESC;
+      `),
+      this.prisma.$queryRaw<
+        {
+          serviceVariantId: string;
+          name: string;
+          units: bigint;
+          cost: string;
+          entries: bigint;
+        }[]
+      >(Prisma.sql`
+        SELECT sv.id                           AS "serviceVariantId",
+               s.name || ' — ' || sv.label     AS name,
+               -SUM(a."quantityChange")        AS units,
+               COALESCE(-SUM(a."costImpact"), 0)::text AS cost,
+               COUNT(*)                        AS entries
+        FROM inventory_adjustments a
+        JOIN service_variants sv ON sv.id = a."serviceVariantId"
+        JOIN services s          ON s.id = sv."serviceId"
+        WHERE a."quantityChange" < 0 ${range}
+        GROUP BY sv.id, s.id
+        ORDER BY COALESCE(-SUM(a."costImpact"), 0) DESC;
+      `),
+      this.prisma.inventoryAdjustment.aggregate({
+        where,
+        _sum: { costImpact: true },
+      }),
+    ]);
+
+    // A negative costImpact is value gone; report it as a positive cost.
+    const netLoss = money(totals._sum.costImpact ?? 0).negated();
+
+    return {
+      range: { from: query.from ?? null, to: query.to ?? null },
+      netLoss: netLoss.toFixed(2),
+      byReason: byReason
+        .map((r) => ({
+          reasonCode: r.reasonCode,
+          reason: REASON_LABELS[r.reasonCode],
+          isLoss: isLossReason(r.reasonCode),
+          unitsOut: Number(r.units_out),
+          unitsIn: Number(r.units_in),
+          cost: r.cost,
+          entries: Number(r.entries),
+        }))
+        .sort((a, b) => Number(b.cost) - Number(a.cost) || b.unitsOut - a.unitsOut),
+      byProduct: byProduct.map((r) => ({
+        variantId: r.variantId,
+        sku: r.sku,
+        name: r.name,
+        baseUnit: r.baseUnit,
+        units: Number(r.units),
+        cost: r.cost,
+        entries: Number(r.entries),
+      })),
+      byService: byService.map((r) => ({
+        serviceVariantId: r.serviceVariantId,
+        name: r.name,
+        units: Number(r.units),
+        cost: r.cost,
+        entries: Number(r.entries),
+      })),
+    };
+  }
+
+  /** The individual write-offs behind the wastage totals, newest first. */
+  async wastageEntries(query: ReportRangeDto, limit = 100) {
+    const rows = await this.prisma.inventoryAdjustment.findMany({
+      where: {
+        ...(query.from || query.to
+          ? { createdAt: { gte: query.from, lte: query.to } }
+          : {}),
+      },
+      include: {
+        variant: { select: { sku: true, label: true } },
+        product: { select: { name: true, baseUnit: true } },
+        user: { select: { id: true, fullName: true } },
+        serviceVariant: {
+          select: { label: true, service: { select: { name: true } } },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+
+    return rows.map((r) => ({
+      id: r.id,
+      createdAt: r.createdAt,
+      name:
+        r.variant.label && r.variant.label !== 'Default'
+          ? `${r.product.name} — ${r.variant.label}`
+          : r.product.name,
+      sku: r.variant.sku,
+      baseUnit: r.product.baseUnit,
+      quantityChange: r.quantityChange,
+      reasonCode: r.reasonCode,
+      reason: r.reason,
+      cost: money(r.costImpact ?? 0).negated().toFixed(2),
+      user: r.user.fullName,
+      service: r.serviceVariant
+        ? `${r.serviceVariant.service.name} — ${r.serviceVariant.label}`
+        : null,
     }));
   }
 

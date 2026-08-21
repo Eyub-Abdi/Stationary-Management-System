@@ -1,8 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { StockAdjustmentReason } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
+  IsEnum,
   IsInt,
-  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
@@ -25,10 +26,20 @@ export class AdjustStockDto {
   @NotEquals(0)
   quantityChange!: number;
 
-  @ApiProperty({ example: 'Stock count correction / damaged goods' })
+  @ApiProperty({
+    enum: StockAdjustmentReason,
+    description: 'Why the stock changed. Drives the wastage report.',
+  })
+  @IsEnum(StockAdjustmentReason)
+  reasonCode!: StockAdjustmentReason;
+
+  @ApiPropertyOptional({
+    example: 'Ream soaked when the roof leaked',
+    description: 'Free-text detail. Defaults to the label of the chosen reason.',
+  })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  reason!: string;
+  reason?: string;
 
   @ApiPropertyOptional({
     example: 9000,

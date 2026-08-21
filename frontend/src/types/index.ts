@@ -14,6 +14,17 @@ export type CashSessionStatus = 'OPEN' | 'CLOSED';
 export type CashMovementType = 'DEPOSIT' | 'WITHDRAWAL';
 export type PaymentMethod = 'CASH' | 'CREDIT';
 export type SellUnit = 'BASE' | 'BULK';
+/** Why stock was adjusted by hand. Mirrors the Prisma enum. */
+export type StockAdjustmentReason =
+  | 'JAM'
+  | 'SPOILED'
+  | 'DAMAGED'
+  | 'EXPIRED'
+  | 'LOST'
+  | 'THEFT'
+  | 'COUNT_CORRECTION'
+  | 'FOUND'
+  | 'OTHER';
 
 export interface ApiEnvelope<T> {
   success: true;
@@ -35,6 +46,14 @@ export interface Paginated<T> {
   data: T[];
   meta: PageMeta;
   timestamp: string;
+}
+
+/** Totals over every sale the filters match, not just the page on screen. */
+export interface SalesSummary {
+  revenue: string;
+  completedCount: number;
+  voidedCount: number;
+  averageSale: string;
 }
 
 export interface User {
@@ -438,18 +457,80 @@ export interface FinancialSummary {
   cogs: string;
   grossProfit: string;
   expenses: string;
+  /** FIFO cost of stock written off in the range (positive = money gone). */
+  stockWrittenOff: string;
+  /** Value of stock written back on, which offsets the write-offs. */
+  stockWrittenOn: string;
+  /** Net of the two. Subtracted from gross profit alongside expenses. */
+  stockLoss: string;
   netProfit: string;
   saleCount: number;
 }
 
 export interface SalesSeriesPoint {
   period: string;
+  /** Net of refunds processed in the bucket, matching FinancialSummary. */
   revenue: string;
   cogs: string;
   grossProfit: string;
+  refunds: string;
   saleCount: number;
   expenses: string;
   purchases: string;
+  stockLoss: string;
+}
+
+export interface WastageByReason {
+  reasonCode: StockAdjustmentReason;
+  reason: string;
+  /** True for stock genuinely destroyed, false for a books-only correction. */
+  isLoss: boolean;
+  /** Units removed. Counted apart from unitsIn so one write-on cannot mask
+   *  a month of write-offs behind a single netted figure. */
+  unitsOut: number;
+  unitsIn: number;
+  cost: string;
+  entries: number;
+}
+
+export interface WastageByProduct {
+  variantId: string;
+  sku: string;
+  name: string;
+  baseUnit: string;
+  units: number;
+  cost: string;
+  entries: number;
+}
+
+export interface WastageByService {
+  serviceVariantId: string;
+  name: string;
+  units: number;
+  cost: string;
+  entries: number;
+}
+
+export interface WastageReport {
+  range: { from: string | null; to: string | null };
+  netLoss: string;
+  byReason: WastageByReason[];
+  byProduct: WastageByProduct[];
+  byService: WastageByService[];
+}
+
+export interface WastageEntry {
+  id: string;
+  createdAt: string;
+  name: string;
+  sku: string;
+  baseUnit: string;
+  quantityChange: number;
+  reasonCode: StockAdjustmentReason;
+  reason: string;
+  cost: string;
+  user: string;
+  service: string | null;
 }
 
 /** Per-day total (amount + count) used by the Purchases/Expenses daily views. */
@@ -473,6 +554,7 @@ export interface AccountingPeriod {
   revenue: string;
   grossProfit: string;
   expenses: string;
+  stockLoss: string;
   netProfit: string;
   saleCount: number;
 }
@@ -492,6 +574,7 @@ export interface MonthlyStatement extends AccountingPeriod {
     cogs: string;
     grossProfit: string;
     expenses: string;
+    stockLoss: string;
     netProfit: string;
     purchases: string;
     saleCount: number;

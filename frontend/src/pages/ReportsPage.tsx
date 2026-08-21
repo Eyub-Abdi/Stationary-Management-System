@@ -30,14 +30,23 @@ import {
   useTopProducts,
   useTopServices,
   useUserActivityReport,
+  useWastageEntries,
+  useWastageReport,
 } from '@/hooks/useReports';
 import { useSupplierSummary } from '@/hooks/useCatalog';
 import { useCustomerAging } from '@/hooks/useCustomers';
-import { CHART_COLORS } from '@/lib/constants';
+import { ADJUSTMENT_REASONS, CHART_COLORS } from '@/lib/constants';
 import { cn, currency, formatDate, formatDateTime, num } from '@/lib/utils';
 import { resolvePeriod, type Period } from '@/lib/period';
 
-type TabKey = 'financial' | 'sales' | 'expenses' | 'inventory' | 'cash' | 'staff';
+type TabKey =
+  | 'financial'
+  | 'sales'
+  | 'expenses'
+  | 'inventory'
+  | 'wastage'
+  | 'cash'
+  | 'staff';
 
 function exportCsv(filename: string, rows: Record<string, unknown>[]) {
   if (rows.length === 0) return;
@@ -69,6 +78,8 @@ export default function ReportsPage() {
   const topServices = useTopServices(r, tab === 'sales');
   const stockLevels = useStockLevels(tab === 'inventory');
   const lowStock = useReportLowStock(tab === 'inventory');
+  const wastage = useWastageReport(r, tab === 'wastage');
+  const wastageEntries = useWastageEntries(r, tab === 'wastage');
   const cash = useCashReport(tab === 'cash');
   const staff = useUserActivityReport(r, tab === 'staff');
 
@@ -108,6 +119,23 @@ export default function ReportsPage() {
       case 'inventory':
         exportCsv('stock-levels', (stockLevels.data ?? []) as unknown as Record<string, unknown>[]);
         break;
+      case 'wastage':
+        exportCsv(
+          'wastage',
+          (wastageEntries.data ?? []).map((w) => ({
+            date: formatDateTime(w.createdAt),
+            item: w.name,
+            sku: w.sku,
+            units: -w.quantityChange,
+            unit: w.baseUnit,
+            reason: ADJUSTMENT_REASONS[w.reasonCode]?.label ?? w.reasonCode,
+            note: w.reason,
+            job: w.service ?? '',
+            cost: w.cost,
+            recordedBy: w.user,
+          })),
+        );
+        break;
       case 'cash':
         exportCsv('cash-sessions', (cash.data ?? []).map((s) => ({ opened: s.openedAt, closed: s.closedAt, cashier: s.user?.fullName, opening: s.openingBalance, expected: s.expectedAmount, actual: s.actualAmount, variance: s.variance })));
         break;
@@ -134,10 +162,20 @@ export default function ReportsPage() {
       />
 
       {/* Summary KPIs always visible */}
-      <div className="grid grid-cols-2 gap-gutter lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-gutter lg:grid-cols-5">
         <StatCard label="Revenue" icon="payments" accent="primary" loading={summary.isLoading} value={currency(summary.data?.revenue ?? 0)} hint={`${summary.data?.saleCount ?? 0} sales`} />
         <StatCard label="Gross Profit" icon="trending_up" accent="secondary" loading={summary.isLoading} value={currency(summary.data?.grossProfit ?? 0)} hint={`COGS ${currency(summary.data?.cogs ?? 0)}`} />
         <StatCard label="Expenses" icon="receipt_long" accent="error" loading={summary.isLoading} value={currency(summary.data?.expenses ?? 0)} />
+        {/* Spoiled stock is a cost like any other. Shown beside expenses so it
+            is obvious where the gap between gross and net profit went. */}
+        <StatCard
+          label="Stock Wastage"
+          icon="delete_sweep"
+          accent="error"
+          loading={summary.isLoading}
+          value={currency(summary.data?.stockLoss ?? 0)}
+          hint="Jams, spoilage, recounts"
+        />
         <StatCard label="Net Profit" icon="account_balance_wallet" accent="tertiary" loading={summary.isLoading} value={currency(summary.data?.netProfit ?? 0)} hint={range.label} />
       </div>
 
@@ -168,6 +206,7 @@ export default function ReportsPage() {
           { value: 'sales', label: 'Sales', icon: 'show_chart' },
           { value: 'expenses', label: 'Expenses', icon: 'pie_chart' },
           { value: 'inventory', label: 'Inventory', icon: 'inventory' },
+          { value: 'wastage', label: 'Wastage', icon: 'delete_sweep' },
           { value: 'cash', label: 'Cash', icon: 'account_balance' },
           { value: 'staff', label: 'Staff', icon: 'groups' },
         ]}
@@ -315,6 +354,135 @@ export default function ReportsPage() {
                       <TD className="font-medium">{s.name}</TD>
                       <TD align="center" className="font-mono-data font-bold text-error">{s.currentStock}</TD>
                       <TD align="center" className="font-mono-data">{s.minStockLevel}</TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {tab === 'wastage' && (
+        <div className="grid grid-cols-1 items-start gap-gutter lg:grid-cols-12">
+          <Card className="lg:col-span-5 overflow-hidden">
+            <CardHeader
+              title="By Reason"
+              subtitle={`${currency(wastage.data?.netLoss ?? 0)} net · ${range.label}`}
+            />
+            {wastage.isLoading ? <LoadingState /> : (wastage.data?.byReason.length ?? 0) === 0 ? (
+              <EmptyState icon="check_circle" title="Nothing written off" />
+            ) : (
+              <Table>
+                <THead><TH>Reason</TH><TH align="center">Units out</TH><TH align="right">Cost</TH></THead>
+                <TBody>
+                  {wastage.data!.byReason.map((w) => (
+                    <TR key={w.reasonCode}>
+                      <TD className="font-medium">
+                        <span className="flex items-center gap-2">
+                          <Icon
+                            name={ADJUSTMENT_REASONS[w.reasonCode]?.icon ?? 'more_horiz'}
+                            size={16}
+                            className={w.isLoss ? 'text-error' : 'text-on-surface-variant'}
+                          />
+                          {w.reason}
+                        </span>
+                      </TD>
+                      <TD align="center" className="font-mono-data">
+                        {w.unitsOut.toLocaleString()}
+                        {w.unitsIn > 0 && (
+                          <span className="ml-1 text-[11px] text-secondary">
+                            (+{w.unitsIn.toLocaleString()} back)
+                          </span>
+                        )}
+                      </TD>
+                      <TD align="right" className="font-mono-data font-semibold">{currency(w.cost)}</TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            )}
+          </Card>
+
+          <Card className="lg:col-span-7 overflow-hidden">
+            <CardHeader title="By Product" subtitle="What the losses eat" />
+            {wastage.isLoading ? <LoadingState /> : (wastage.data?.byProduct.length ?? 0) === 0 ? (
+              <EmptyState icon="inventory_2" title="Nothing written off" />
+            ) : (
+              <Table>
+                <THead><TH>Product</TH><TH align="center">Units</TH><TH align="center">Entries</TH><TH align="right">Cost</TH></THead>
+                <TBody>
+                  {wastage.data!.byProduct.map((w) => (
+                    <TR key={w.variantId}>
+                      <TD className="font-medium">{w.name}</TD>
+                      <TD align="center" className="font-mono-data">
+                        {w.units.toLocaleString()} {w.baseUnit}
+                      </TD>
+                      <TD align="center" className="font-mono-data">{w.entries}</TD>
+                      <TD align="right" className="font-mono-data font-semibold">{currency(w.cost)}</TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            )}
+          </Card>
+
+          {/* The question a shop actually asks: which machine or job is
+              eating the paper, and is it getting worse. */}
+          <Card className="lg:col-span-5 overflow-hidden">
+            <CardHeader title="By Job" subtitle="Losses recorded against a service" />
+            {wastage.isLoading ? <LoadingState /> : (wastage.data?.byService.length ?? 0) === 0 ? (
+              <EmptyState
+                icon="print"
+                title="Nothing recorded against a job"
+                description="Wastage logged from the POS is attributed to the job it happened on."
+              />
+            ) : (
+              <Table>
+                <THead><TH>Service / option</TH><TH align="center">Units</TH><TH align="right">Cost</TH></THead>
+                <TBody>
+                  {wastage.data!.byService.map((w) => (
+                    <TR key={w.serviceVariantId}>
+                      <TD className="font-medium">{w.name}</TD>
+                      <TD align="center" className="font-mono-data">{w.units.toLocaleString()}</TD>
+                      <TD align="right" className="font-mono-data font-semibold">{currency(w.cost)}</TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            )}
+          </Card>
+
+          <Card className="lg:col-span-7 overflow-hidden">
+            <CardHeader title="Recent Entries" subtitle="Who wrote off what" />
+            {wastageEntries.isLoading ? <LoadingState /> : (wastageEntries.data?.length ?? 0) === 0 ? (
+              <EmptyState icon="history" title="No entries" />
+            ) : (
+              <Table>
+                <THead><TH>When</TH><TH>Item</TH><TH align="center">Units</TH><TH align="right">Cost</TH><TH>By</TH></THead>
+                <TBody>
+                  {wastageEntries.data!.map((w) => (
+                    <TR key={w.id}>
+                      <TD className="whitespace-nowrap text-on-surface-variant">{formatDateTime(w.createdAt)}</TD>
+                      <TD>
+                        <span className="font-medium">{w.name}</span>
+                        <span className="block text-[11px] text-on-surface-variant">
+                          {w.reason}
+                          {w.service ? ` · ${w.service}` : ''}
+                        </span>
+                      </TD>
+                      <TD
+                        align="center"
+                        className={cn(
+                          'font-mono-data font-semibold',
+                          w.quantityChange < 0 ? 'text-error' : 'text-secondary',
+                        )}
+                      >
+                        {w.quantityChange > 0 ? '+' : ''}
+                        {w.quantityChange.toLocaleString()}
+                      </TD>
+                      <TD align="right" className="font-mono-data">{currency(w.cost)}</TD>
+                      <TD className="text-on-surface-variant">{w.user}</TD>
                     </TR>
                   ))}
                 </TBody>

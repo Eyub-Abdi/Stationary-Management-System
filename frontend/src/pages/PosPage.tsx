@@ -21,6 +21,7 @@ import { useServices } from '@/hooks/useCatalog';
 import { useCustomers } from '@/hooks/useCustomers';
 import { useCreateSale, type SaleItemInput } from '@/hooks/useSales';
 import { CustomerFormModal } from '@/features/customers/CustomerFormModal';
+import { WastageModal } from '@/features/inventory/WastageModal';
 import { DEFAULT_SERVICE_ICON } from '@/lib/constants';
 import { extractMessage } from '@/lib/api';
 import { cn, currency, imageSrc, num } from '@/lib/utils';
@@ -83,6 +84,16 @@ function minSellingPrice(p: Product): number {
 }
 function totalStock(p: Product): number {
   return activeVariants(p).reduce((a, v) => a + v.currentStock, 0);
+}
+
+/** How wide the variant picker should be, and how many columns it lays out.
+ * Long lists (printing sizes, say) go wider rather than taller so every option
+ * stays on screen instead of trailing off the bottom. */
+function pickerLayout(count: number): { width: number; cols: string } {
+  if (count <= 4) return { width: 300, cols: 'grid-cols-2' };
+  if (count <= 9) return { width: 440, cols: 'grid-cols-3' };
+  if (count <= 16) return { width: 588, cols: 'grid-cols-4' };
+  return { width: 730, cols: 'grid-cols-5' };
 }
 
 interface CartLine {
@@ -158,6 +169,7 @@ export default function PosPage() {
   const [serviceVariantPick, setServiceVariantPick] = useState<{ service: Service; anchor: HTMLElement } | null>(null);
   const [serviceCat, setServiceCat] = useState<string>('all');
   const [custModalOpen, setCustModalOpen] = useState(false);
+  const [wastageOpen, setWastageOpen] = useState(false);
   const [view, setView] = useState<'grid' | 'list'>(
     () => (localStorage.getItem('pos-view') === 'list' ? 'list' : 'grid'),
   );
@@ -376,15 +388,22 @@ export default function PosPage() {
             Ring up products and services, sell by piece or pack, and take cash or credit.
           </p>
         </div>
-        {!session && (
-          <Link
-            to="/cash"
-            className="flex items-center gap-2 rounded-xl border border-error/40 bg-error-container/40 px-4 py-2 text-body-sm font-semibold text-on-error-container"
-          >
-            <Icon name="warning" size={20} className="text-error" />
-            The till is closed — open it to record sales
-          </Link>
-        )}
+        <div className="flex items-center gap-3">
+          {!session && (
+            <Link
+              to="/cash"
+              className="flex items-center gap-2 rounded-xl border border-error/40 bg-error-container/40 px-4 py-2 text-body-sm font-semibold text-on-error-container"
+            >
+              <Icon name="warning" size={20} className="text-error" />
+              The till is closed — open it to record sales
+            </Link>
+          )}
+          {/* Jams happen here, mid-job. Making the cashier leave for the
+              inventory screen is how spoiled paper goes unrecorded. */}
+          <Button variant="outline" icon="delete_sweep" onClick={() => setWastageOpen(true)}>
+            Record wastage
+          </Button>
+        </div>
       </div>
 
       {/* items-start: the catalog grows with the product count, and stretching
@@ -702,14 +721,14 @@ export default function PosPage() {
         anchor={variantPick?.anchor ?? null}
         open={!!variantPick}
         onClose={() => setVariantPick(null)}
-        width={variantPick && activeVariants(variantPick.product).length > 4 ? 348 : 280}
+        width={pickerLayout(variantPick ? activeVariants(variantPick.product).length : 0).width}
       >
         {variantPick && (
           <>
-            <p className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-on-surface-variant">
+            <p className="sticky top-0 z-10 bg-surface-container-high px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-on-surface-variant">
               {variantPick.product.name} · pick a variant
             </p>
-            <div className={cn('grid gap-2', activeVariants(variantPick.product).length > 4 ? 'grid-cols-3' : 'grid-cols-2')}>
+            <div className={cn('grid gap-2', pickerLayout(activeVariants(variantPick.product).length).cols)}>
               {activeVariants(variantPick.product).map((v) => {
                 const out = v.currentStock <= 0;
                 return (
@@ -740,14 +759,14 @@ export default function PosPage() {
         anchor={serviceVariantPick?.anchor ?? null}
         open={!!serviceVariantPick}
         onClose={() => setServiceVariantPick(null)}
-        width={serviceVariantPick && activeServiceVariants(serviceVariantPick.service).length > 4 ? 348 : 280}
+        width={pickerLayout(serviceVariantPick ? activeServiceVariants(serviceVariantPick.service).length : 0).width}
       >
         {serviceVariantPick && (
           <>
-            <p className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-on-surface-variant">
+            <p className="sticky top-0 z-10 bg-surface-container-high px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-on-surface-variant">
               {serviceVariantPick.service.name} · pick an option
             </p>
-            <div className={cn('grid gap-2', activeServiceVariants(serviceVariantPick.service).length > 4 ? 'grid-cols-3' : 'grid-cols-2')}>
+            <div className={cn('grid gap-2', pickerLayout(activeServiceVariants(serviceVariantPick.service).length).cols)}>
               {activeServiceVariants(serviceVariantPick.service).map((v) => (
                 <button
                   key={v.id}
@@ -770,6 +789,7 @@ export default function PosPage() {
           </>
         )}
       </Popover>
+      <WastageModal open={wastageOpen} onClose={() => setWastageOpen(false)} />
       <CustomerFormModal
         open={custModalOpen}
         onClose={() => setCustModalOpen(false)}
