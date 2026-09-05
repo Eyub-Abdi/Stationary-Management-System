@@ -547,47 +547,6 @@ export interface DailyTotalPoint {
   count: number;
 }
 
-export type PeriodStatus = 'OPEN' | 'CLOSED';
-
-/** A finished calendar month on the closing screen. */
-export interface AccountingPeriod {
-  year: number;
-  month: number;
-  label: string;
-  status: PeriodStatus;
-  isClosed: boolean;
-  closedAt: string | null;
-  closedBy: string | null;
-  revenue: string;
-  grossProfit: string;
-  expenses: string;
-  stockLoss: string;
-  netProfit: string;
-  saleCount: number;
-}
-
-/** Full monthly statement. A closed month also reports `liveFigures` — what the
- *  same numbers would be today, so drift from the snapshot is visible. */
-export interface MonthlyStatement extends AccountingPeriod {
-  grossSales: string;
-  refunds: string;
-  cogs: string;
-  purchases: string;
-  notes: string | null;
-  liveFigures: {
-    grossSales: string;
-    refunds: string;
-    revenue: string;
-    cogs: string;
-    grossProfit: string;
-    expenses: string;
-    stockLoss: string;
-    netProfit: string;
-    purchases: string;
-    saleCount: number;
-  } | null;
-}
-
 export interface ExpenseByCategory {
   categoryId: string;
   /** Display name of the category, already resolved by the API. */

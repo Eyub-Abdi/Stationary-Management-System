@@ -9,7 +9,6 @@ import {
   PageHeader,
   PeriodPicker,
   Skeleton,
-  StatCard,
   TBody,
   TD,
   TH,
@@ -40,6 +39,13 @@ import { ADJUSTMENT_REASONS, CHART_COLORS } from '@/lib/constants';
 import { cn, currency, formatDate, formatDateTime, num } from '@/lib/utils';
 import { resolvePeriod, type Period } from '@/lib/period';
 
+interface StatementRow {
+  label: string;
+  value: string;
+  /** `deduction` is subtracted from the line above; `subtotal`/`total` are sums. */
+  kind: 'item' | 'deduction' | 'subtotal' | 'total';
+}
+
 type TabKey =
   | 'financial'
   | 'sales'
@@ -65,7 +71,9 @@ function exportCsv(filename: string, rows: Record<string, unknown>[]) {
 
 export default function ReportsPage() {
   const toast = useToast();
-  const [period, setPeriod] = useState<Period>({ kind: '7d' });
+  // The month to date is the figure the shop is actually running on; a rolling
+  // week cuts across the month boundary and matches nothing it reports on.
+  const [period, setPeriod] = useState<Period>({ kind: 'thisMonth' });
   const [tab, setTab] = useState<TabKey>('financial');
   const range = useMemo(() => resolvePeriod(period), [period]);
   const r = { from: range.from, to: range.to };
@@ -83,6 +91,40 @@ export default function ReportsPage() {
   const wastageEntries = useWastageEntries(r, tab === 'wastage');
   const cash = useCashReport(tab === 'cash');
   const staff = useUserActivityReport(r, tab === 'staff');
+
+  // The statement's one figure the financial summary does not carry. The series
+  // is already loaded for this range, so summing its buckets costs no request.
+  const purchases = useMemo(
+    () => (series.data ?? []).reduce((a, pt) => a + num(pt.purchases), 0),
+    [series.data],
+  );
+
+  // The month-end statement, read straight down: what was sold, what it cost,
+  // what was spent, what is left. Formerly the Closing the Books detail view.
+  const statementRows = useMemo((): StatementRow[] => {
+    const d = summary.data;
+    if (!d) return [];
+    // A deduction of nothing is still nothing — "−TZS 0" only reads as a typo.
+    const less = (v: string) => (num(v) === 0 ? currency(0) : `−${currency(v)}`);
+    return [
+      { label: 'Gross sales', value: currency(d.grossSales), kind: 'item' },
+      { label: 'Less refunds', value: less(d.refunds), kind: 'deduction' },
+      { label: 'Revenue', value: currency(d.revenue), kind: 'subtotal' },
+      { label: 'Cost of goods sold', value: less(d.cogs), kind: 'deduction' },
+      { label: 'Gross profit', value: currency(d.grossProfit), kind: 'subtotal' },
+      { label: 'Operating expenses', value: less(d.expenses), kind: 'deduction' },
+      // Stock destroyed or written off in the range. On its own line, or the
+      // arithmetic from gross to net profit would not read.
+      { label: 'Stock written off', value: less(d.stockLoss), kind: 'deduction' },
+      { label: 'Net profit', value: currency(d.netProfit), kind: 'total' },
+    ];
+  }, [summary.data]);
+
+  // Margins earn the width the ledger does not need: the same figures as a
+  // proportion, which is how one month is compared with another.
+  const revenueNum = num(summary.data?.revenue ?? 0);
+  const pct = (v: string | number | undefined) =>
+    revenueNum === 0 ? '—' : `${((num(v ?? 0) / revenueNum) * 100).toFixed(1)}%`;
 
   // Every report table opens on the figure it exists to rank by, and each
   // header can reorder the rows that table holds.
@@ -227,22 +269,56 @@ export default function ReportsPage() {
         }
       />
 
-      {/* Summary KPIs always visible */}
-      <div className="grid grid-cols-2 gap-gutter lg:grid-cols-5">
-        <StatCard label="Revenue" icon="payments" accent="primary" loading={summary.isLoading} value={currency(summary.data?.revenue ?? 0)} hint={`${summary.data?.saleCount ?? 0} sales`} />
-        <StatCard label="Gross Profit" icon="trending_up" accent="secondary" loading={summary.isLoading} value={currency(summary.data?.grossProfit ?? 0)} hint={`COGS ${currency(summary.data?.cogs ?? 0)}`} />
-        <StatCard label="Expenses" icon="receipt_long" accent="error" loading={summary.isLoading} value={currency(summary.data?.expenses ?? 0)} />
+      {/* Summary KPIs, always visible. One panel of ruled cells rather than five
+          separate cards: five sets of border, shadow, padding and icon chip left
+          each figure about a third of its cell, and long shilling amounts were
+          the part that got squeezed out. */}
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-outline-variant bg-outline-variant shadow-sm sm:grid-cols-3 xl:grid-cols-5">
+        <KpiCell
+          label="Revenue"
+          icon="payments"
+          value={currency(summary.data?.revenue ?? 0)}
+          hint={`${summary.data?.saleCount ?? 0} sales`}
+          loading={summary.isLoading}
+        />
+        <KpiCell
+          label="Gross Profit"
+          icon="trending_up"
+          tone="secondary"
+          value={currency(summary.data?.grossProfit ?? 0)}
+          hint={`COGS ${currency(summary.data?.cogs ?? 0)}`}
+          loading={summary.isLoading}
+        />
+        <KpiCell
+          label="Expenses"
+          icon="receipt_long"
+          tone="error"
+          value={currency(summary.data?.expenses ?? 0)}
+          hint="Cost of running the shop"
+          loading={summary.isLoading}
+        />
         {/* Spoiled stock is a cost like any other. Shown beside expenses so it
             is obvious where the gap between gross and net profit went. */}
-        <StatCard
+        <KpiCell
           label="Stock Wastage"
           icon="delete_sweep"
-          accent="error"
-          loading={summary.isLoading}
+          tone="error"
           value={currency(summary.data?.stockLoss ?? 0)}
           hint="Jams, spoilage, recounts"
+          loading={summary.isLoading}
         />
-        <StatCard label="Net Profit" icon="account_balance_wallet" accent="tertiary" loading={summary.isLoading} value={currency(summary.data?.netProfit ?? 0)} hint={range.label} />
+        {/* The bottom line closes the row, and takes the full width on a phone
+            where it would otherwise sit alone in half a column. */}
+        <KpiCell
+          label="Net Profit"
+          icon="account_balance_wallet"
+          tone="primary"
+          emphasis
+          value={currency(summary.data?.netProfit ?? 0)}
+          hint={range.label}
+          loading={summary.isLoading}
+          className="col-span-2 sm:col-span-1"
+        />
       </div>
 
       {/* Debt position — compact squared ledger, distinct from the KPI cards */}
@@ -314,6 +390,40 @@ export default function ReportsPage() {
                 </>
               )}
             </div>
+          </Card>
+
+          <Card className="lg:col-span-12">
+            <CardHeader
+              title="Statement"
+              subtitle={range.label}
+              action={
+                <Button variant="outline" icon="print" onClick={() => window.print()}>
+                  Print
+                </Button>
+              }
+            />
+            {summary.isLoading || !summary.data ? (
+              <div className="px-6 pb-6">
+                <LoadingState label="Building statement…" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-x-10 px-6 pb-6 lg:grid-cols-12">
+                {/* The ledger reads top to bottom; rules sit above the running
+                    totals only, so the arithmetic is the thing the eye follows. */}
+                <dl className="lg:col-span-7">
+                  {statementRows.map((row) => (
+                    <StatementLine key={row.label} row={row} />
+                  ))}
+                </dl>
+
+                <dl className="mt-8 lg:col-span-5 lg:mt-0 lg:border-l lg:border-outline-variant lg:pl-10">
+                  <StatementMeta label="Sales recorded" value={summary.data.saleCount.toLocaleString()} />
+                  <StatementMeta label="Stock purchased" value={currency(purchases)} />
+                  <StatementMeta label="Gross margin" value={pct(summary.data.grossProfit)} />
+                  <StatementMeta label="Net margin" value={pct(summary.data.netProfit)} />
+                </dl>
+              </div>
+            )}
           </Card>
         </div>
       )}
@@ -658,10 +768,126 @@ export default function ReportsPage() {
   );
 }
 
+const KPI_TONE = {
+  neutral: 'text-on-surface',
+  secondary: 'text-secondary',
+  error: 'text-error',
+  primary: 'text-primary',
+} as const;
+
+/**
+ * One figure in the summary panel. The cells are separated by the grid's own
+ * hairlines, so nothing here draws a border of its own; the icon rides beside
+ * the label at text size rather than in a chip, which is what bought the room
+ * the amounts needed.
+ */
+function KpiCell({
+  label,
+  value,
+  icon,
+  hint,
+  tone = 'neutral',
+  emphasis,
+  loading,
+  className,
+}: {
+  label: string;
+  value: string;
+  icon: string;
+  hint?: string;
+  tone?: keyof typeof KPI_TONE;
+  /** The bottom line: heavier weight, not a larger size that would not fit. */
+  emphasis?: boolean;
+  loading?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={cn('bg-surface-container-lowest p-4', className)}>
+      <p className="flex items-center gap-1.5 text-body-sm font-medium text-on-surface-variant">
+        <Icon name={icon} size={16} className={cn('shrink-0', KPI_TONE[tone])} />
+        <span className="truncate">{label}</span>
+      </p>
+      {loading ? (
+        <Skeleton className="mt-2 h-7 w-28" />
+      ) : (
+        // Shilling amounts run long — "TZS 3,247,900" is already 13 characters
+        // and grows with the shop — so the figure steps down a size on narrow
+        // cells rather than being clipped. `title` keeps the full number
+        // reachable if a future amount outgrows even that.
+        <p
+          className={cn(
+            'mt-1 truncate text-body-lg sm:text-h3',
+            emphasis ? 'font-bold' : 'font-semibold',
+            KPI_TONE[tone],
+          )}
+          title={value}
+        >
+          {value}
+        </p>
+      )}
+      {hint && !loading && (
+        <p className="mt-0.5 truncate text-[12px] text-on-surface-variant">{hint}</p>
+      )}
+    </div>
+  );
+}
+
 const DEBT_ACCENT = {
   secondary: 'text-secondary',
   error: 'text-error',
 } as const;
+
+/**
+ * One line of the statement. `item` and `deduction` are the workings;
+ * `subtotal` and `total` are the figures the shop actually quotes, so they get
+ * the rule above them and the weight — nothing is boxed, or the card's own
+ * border would be doubled by every group inside it.
+ */
+function StatementLine({ row }: { row: StatementRow }) {
+  const rule = row.kind === 'subtotal' || row.kind === 'total';
+  const total = row.kind === 'total';
+  return (
+    <div
+      className={cn(
+        'flex items-baseline justify-between gap-4 py-2',
+        rule && 'mt-1 border-t border-outline-variant pt-2.5',
+        total && 'mt-1.5 border-t-2 border-outline pt-3',
+      )}
+    >
+      <dt
+        className={cn(
+          'text-body-sm',
+          row.kind === 'deduction' && 'pl-4 text-on-surface-variant',
+          row.kind === 'item' && 'text-on-surface-variant',
+          rule && 'font-semibold text-on-surface',
+          total && 'text-body-lg',
+        )}
+      >
+        {row.label}
+      </dt>
+      <dd
+        className={cn(
+          'shrink-0 font-mono-data',
+          row.kind === 'deduction' ? 'text-error' : 'text-on-surface',
+          rule && 'font-bold',
+          total && 'text-h3 text-primary',
+        )}
+      >
+        {row.value}
+      </dd>
+    </div>
+  );
+}
+
+/** A supporting figure beside the ledger — ruled, never boxed. */
+function StatementMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-b border-outline-variant py-2.5 last:border-b-0">
+      <dt className="text-body-sm text-on-surface-variant">{label}</dt>
+      <dd className="font-mono-data font-semibold text-on-surface">{value}</dd>
+    </div>
+  );
+}
 
 function DebtTile({
   label,

@@ -29,7 +29,6 @@ import CashPage from '@/pages/CashPage';
 import LoansPage from '@/pages/LoansPage';
 import ReportsPage from '@/pages/ReportsPage';
 import ProfitPage from '@/pages/ProfitPage';
-import ClosingPage from '@/pages/ClosingPage';
 import MovementPage from '@/pages/MovementPage';
 import UsersPage from '@/pages/UsersPage';
 import UserDetailPage from '@/pages/UserDetailPage';
@@ -179,14 +178,6 @@ export default function App() {
             <PermissionRoute permission="reports">
               <ProfitPage />
             </PermissionRoute>
-          }
-        />
-        <Route
-          path="/closing"
-          element={
-            <AdminRoute>
-              <ClosingPage />
-            </AdminRoute>
           }
         />
         <Route
