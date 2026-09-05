@@ -97,7 +97,7 @@ export default function PurchasesPage() {
     <div className="flex flex-col gap-gutter">
       <PageHeader
         title="Purchases"
-        description="Record stock received from suppliers — pay cash or on credit, by piece or by pack."
+        description="Record stock received from suppliers. Pay cash or on credit, by piece or by pack."
         actions={
           <div className="flex gap-2">
             <Button variant="outline" icon="straighten" onClick={() => setUnitsOpen(true)}>

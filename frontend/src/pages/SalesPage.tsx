@@ -184,7 +184,7 @@ export default function SalesPage() {
 
   return (
     <div className="flex flex-col gap-gutter">
-      <PageHeader title="Sales" description="Browse, search and inspect every transaction — including returns and voids." />
+      <PageHeader title="Sales" description="Browse, search and inspect every transaction, including returns and voids." />
 
       <div className="grid grid-cols-2 gap-gutter lg:grid-cols-4">
         <StatCard

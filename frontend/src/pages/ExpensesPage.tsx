@@ -510,7 +510,7 @@ function ExpenseFormModal({
       <div className="space-y-4">
         {isItemized && (
           <p className="rounded-xl bg-surface-container-low p-3 text-body-sm text-on-surface-variant">
-            This is an itemized office purchase — its amount and category come from its
+            This is an itemized office purchase. Its amount and category come from its
             line items. You can still edit the date and description here.
           </p>
         )}

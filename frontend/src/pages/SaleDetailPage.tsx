@@ -227,7 +227,7 @@ function ReturnModal({ sale, open, onClose }: { sale: Sale; open: boolean; onClo
       <div className="space-y-4">
         {!session && (
           <div className="rounded-xl border border-error/40 bg-error-container/40 px-4 py-3 text-body-sm font-semibold text-on-error-container">
-            The till is closed — open it to refund from the drawer.
+            The till is closed. Open it to refund from the drawer.
           </div>
         )}
         <div className="space-y-2">

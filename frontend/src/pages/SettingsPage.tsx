@@ -158,7 +158,7 @@ function SupportCard() {
           </div>
         </div>
         <p className="mt-4 border-t border-outline-variant pt-3 text-[12px] text-on-surface-variant">
-          &copy; {new Date().getFullYear()} STMS — Stationery Management System. Developed by Ayub
+          &copy; {new Date().getFullYear()} STMS, Stationery Management System. Developed by Ayub
           Abdi. All rights reserved.
         </p>
       </CardBody>
@@ -341,7 +341,7 @@ function AutoBackupSection() {
                 </span>
                 <div>
                   <p className="text-body-sm font-semibold text-on-surface">
-                    {enabled ? `On — daily at ${settings.backupTime}` : 'Off'}
+                    {enabled ? `On, daily at ${settings.backupTime}` : 'Off'}
                   </p>
                   <p className="text-[12px] text-on-surface-variant">
                     Saved to <span className="font-mono-data">{settings.effectiveBackupDir}</span>
@@ -488,7 +488,7 @@ function StartupSection() {
           <Icon name="engineering" size={18} className="mt-0.5 shrink-0 text-on-surface-variant" />
           <span>
             <strong className="text-on-surface">
-              Technical setting — only change this if you know what you're doing.
+              Technical setting. Only change this if you know what you're doing.
             </strong>{' '}
             It sets the STMS background service to start (or not) when Windows boots. For a shop till
             this is convenient, but it's meant for whoever set the computer up.
@@ -507,7 +507,7 @@ function StartupSection() {
             <span>
               The STMS background service isn't installed yet. On this computer, open a terminal as
               Administrator and run <span className="font-mono-data">npm run service:install</span>{' '}
-              once — then this toggle controls whether it starts on boot.
+              once. After that this toggle controls whether it starts on boot.
             </span>
           </div>
         ) : (
@@ -670,7 +670,7 @@ function BackupRestoreSection() {
                           <Badge tone="error">Unreadable</Badge>
                         ) : behind ? (
                           <Badge tone="warning">
-                            Older — rolls back {b.inspection!.missingMigrations.length}
+                            Older, rolls back {b.inspection!.missingMigrations.length}
                           </Badge>
                         ) : (
                           <Badge tone="success">Current</Badge>

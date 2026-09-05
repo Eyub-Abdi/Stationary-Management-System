@@ -403,7 +403,7 @@ function IssueLoanModal({ open, onClose }: { open: boolean; onClose: () => void 
         </Field>
         <p className="flex items-start gap-2 rounded-xl bg-surface-container-low px-3 py-2.5 text-[13px] text-on-surface-variant sm:col-span-2">
           <Icon name="info" size={16} className="mt-0.5 shrink-0" />
-          This does not reduce profit. The shop has swapped cash for money owed by a person —
+          This does not reduce profit. The shop has swapped cash for money owed by a person, and
           it shows as owed to the shop until it is paid back.
           {guest && ' A sponsored loan counts against the member who signed for it.'}
         </p>

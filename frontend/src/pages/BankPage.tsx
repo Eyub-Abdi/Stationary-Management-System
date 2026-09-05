@@ -284,7 +284,7 @@ function MoveMoneyModal({
             cash movement, and there is no drawer to move it to or from. */}
         <p className="flex items-start gap-2 rounded-xl bg-surface-container-low px-3 py-2.5 text-[13px] text-on-surface-variant">
           <Icon name="info" size={16} className="mt-0.5 shrink-0" />
-          The till must be open — this moves real cash in or out of the drawer, and the
+          The till must be open. This moves real cash in or out of the drawer, and the
           day&rsquo;s count has to know about it.
         </p>
         <Field
@@ -418,7 +418,7 @@ function CorrectionModal({
         <Field
           label="Adjustment"
           required
-          hint="Negative takes money off the balance, positive adds it — e.g. −2500 for a bank charge."
+          hint="Negative takes money off the balance, positive adds it. For example, −2500 for a bank charge."
         >
           <Input
             type="number"

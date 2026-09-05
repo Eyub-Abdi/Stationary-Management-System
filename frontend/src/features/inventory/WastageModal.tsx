@@ -150,7 +150,7 @@ export function WastageModal({ open, onClose }: { open: boolean; onClose: () => 
       open={open}
       onClose={onClose}
       title="Record wastage"
-      subtitle="Paper spoiled mid-job — jams, misfeeds, ruined sheets"
+      subtitle="Paper spoiled mid-job: jams, misfeeds, ruined sheets"
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={record.isPending}>
@@ -254,7 +254,7 @@ export function WastageModal({ open, onClose }: { open: boolean; onClose: () => 
           </div>
         )}
 
-        <Field label="Note" hint="Optional — anything worth remembering">
+        <Field label="Note" hint="Optional, anything worth remembering">
           <Textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}

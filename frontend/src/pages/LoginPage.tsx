@@ -65,7 +65,7 @@ export default function LoginPage() {
               </h2>
               <p className="mt-4 max-w-md text-body-lg text-on-primary/70">
                 Point of sale, inventory, cash sessions, expenses, and real-time
-                profit reporting — unified in one professional console.
+                profit reporting, unified in one professional console.
               </p>
             </div>
             <div className="flex items-center gap-6 text-on-primary/70">

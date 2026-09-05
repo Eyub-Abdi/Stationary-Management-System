@@ -87,7 +87,7 @@ export default function ProfitPage() {
     <div className="flex flex-col gap-gutter">
       <PageHeader
         title="Profit Analysis"
-        description="What each product earns — selling price vs. FIFO purchase cost, net of returns."
+        description="What each product earns: selling price against FIFO purchase cost, net of returns."
         actions={
           <Button
             variant="outline"

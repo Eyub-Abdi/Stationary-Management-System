@@ -54,7 +54,7 @@ export default function CashPage() {
     <div className="flex flex-col gap-gutter">
       <PageHeader
         title="Cash Management"
-        description="One shared till for the whole shop — open it once a day, everyone rings into it, then reconcile."
+        description="One shared till for the whole shop. Open it once a day, everyone rings into it, then reconcile."
         actions={
           session ? (
             <>
@@ -356,7 +356,7 @@ function OpenSessionModal({ open, onClose }: { open: boolean; onClose: () => voi
                 {currency(carryOver!.withdrawn)} taken out, leaving this in the drawer.
               </span>
             ) : (
-              <span>No need to recount — this is the cash left in the drawer at the last close.</span>
+              <span>No need to recount. This is the cash left in the drawer at the last close.</span>
             )}
           </p>
         </div>
@@ -472,7 +472,7 @@ function CloseSessionModal({
               hint={
                 destination === 'BANK'
                   ? 'Recorded on the bank ledger straight away'
-                  : 'Someone is holding it — not recorded anywhere else'
+                  : 'Someone is holding it, not recorded anywhere else'
               }
             >
               <Select

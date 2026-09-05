@@ -90,7 +90,7 @@ export default function ServicesPage() {
     <div className="flex flex-col gap-gutter">
       <PageHeader
         title="Services"
-        description="Printing, photocopying, scanning and lamination — set pricing per service."
+        description="Printing, photocopying, scanning and lamination. Set pricing per service."
         actions={
           canManage && (
             <Button icon="add" onClick={() => navigate('/services/new')}>
@@ -198,7 +198,7 @@ export default function ServicesPage() {
         onConfirm={confirmRemove}
         loading={remove.isPending}
         title="Delete service permanently?"
-        message={`"${removing?.name}" will be permanently deleted. This cannot be undone. Services used by past sales cannot be deleted — deactivate them instead.`}
+        message={`"${removing?.name}" will be permanently deleted. This cannot be undone. Services used by past sales cannot be deleted. Deactivate them instead.`}
         confirmLabel="Delete"
         icon="delete"
       />

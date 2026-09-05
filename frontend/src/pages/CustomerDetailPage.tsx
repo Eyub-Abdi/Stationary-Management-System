@@ -187,7 +187,7 @@ export default function CustomerDetailPage() {
               Credit sales
               {sales.length > 0 && (
                 <span className="ml-2 font-normal normal-case tracking-normal text-outline">
-                  — select an invoice to see its repayments
+                  (select an invoice to see its repayments)
                 </span>
               )}
             </p>

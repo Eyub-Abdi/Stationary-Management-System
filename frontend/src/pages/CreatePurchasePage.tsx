@@ -159,7 +159,7 @@ export default function CreatePurchasePage() {
       const p = productById.get(badPack.card.productId);
       toast.error(
         'Pack size needed',
-        `Enter how many ${badPack.line.baseUnit} are in each pack for ${p?.name ?? 'this product'} (${badPack.line.label}) — 2 or more.`,
+        `Enter how many ${badPack.line.baseUnit} are in each pack for ${p?.name ?? 'this product'} (${badPack.line.label}). It must be 2 or more.`,
       );
       return;
     }

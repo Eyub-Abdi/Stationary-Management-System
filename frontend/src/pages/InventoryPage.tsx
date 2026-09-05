@@ -439,7 +439,7 @@ function AdjustStockModal({ open, onClose }: { open: boolean; onClose: () => voi
               hint={
                 selected
                   ? `The cost of ONE ${unit} — divide a pack price by how many ${unit} it holds`
-                  : 'Optional — defaults to the product reference buying price'
+                  : 'Optional, defaults to the product reference buying price'
               }
               error={
                 costTooHigh

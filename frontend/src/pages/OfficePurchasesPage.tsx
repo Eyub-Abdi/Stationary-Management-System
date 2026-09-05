@@ -54,7 +54,7 @@ export default function OfficePurchasesPage() {
     <div className="flex flex-col gap-gutter">
       <PageHeader
         title="Office Purchases"
-        description="Record goods bought for internal/office use (not for resale). Booked as a cost — never added to sellable stock."
+        description="Record goods bought for internal/office use (not for resale). Booked as a cost, never added to sellable stock."
         actions={
           <Button icon="add" onClick={() => setCreateOpen(true)}>
             New Office Purchase
@@ -213,7 +213,7 @@ function CreateOfficePurchaseModal({ open, onClose }: { open: boolean; onClose: 
       onClose={onClose}
       size="xl"
       title="New Office Purchase"
-      subtitle="Goods for internal use — booked as a cost, not added to sellable stock"
+      subtitle="Goods for internal use, booked as a cost and not added to sellable stock"
       footer={
         <>
           <div className="mr-auto text-body-sm text-on-surface-variant">

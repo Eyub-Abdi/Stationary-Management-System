@@ -234,7 +234,7 @@ export default function ServiceFormPage() {
           description={
             isEdit
               ? 'Update pricing, options and the products each option consumes.'
-              : 'Printing, photocopying, scanning and lamination — set pricing and stock usage.'
+              : 'Printing, photocopying, scanning and lamination. Set pricing and stock usage.'
           }
         />
       </div>

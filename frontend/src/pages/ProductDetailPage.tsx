@@ -290,7 +290,7 @@ export default function ProductDetailPage() {
         onConfirm={confirmRemove}
         loading={remove.isPending}
         title="Delete product permanently?"
-        message={`"${data?.name}" will be permanently deleted. This cannot be undone. Products with any sales, purchases or stock history can't be deleted — deactivate them instead.`}
+        message={`"${data?.name}" will be permanently deleted. This cannot be undone. Products with any sales, purchases or stock history can't be deleted. Deactivate them instead.`}
         confirmLabel="Delete"
         icon="delete"
       />

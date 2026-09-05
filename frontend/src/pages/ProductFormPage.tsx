@@ -485,7 +485,7 @@ export default function ProductFormPage() {
         tone="danger"
         icon="delete"
         title="Delete variant permanently?"
-        message={`"${deletingVariant?.label}" will be permanently deleted. This cannot be undone. Variants with any sales, purchases or stock history can't be deleted — deactivate them instead.`}
+        message={`"${deletingVariant?.label}" will be permanently deleted. This cannot be undone. Variants with any sales, purchases or stock history can't be deleted. Deactivate them instead.`}
         confirmLabel="Delete"
       />
     </div>

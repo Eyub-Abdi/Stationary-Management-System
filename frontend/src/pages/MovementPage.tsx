@@ -132,7 +132,7 @@ export default function MovementPage() {
     <div className="flex flex-col gap-gutter">
       <PageHeader
         title="Product Movement"
-        description="How fast each product sells — spot best sellers, slow movers and dead stock."
+        description="How fast each product sells. Spot best sellers, slow movers and dead stock."
       />
 
       <div className="grid grid-cols-2 gap-gutter lg:grid-cols-4">

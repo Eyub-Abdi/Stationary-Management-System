@@ -182,7 +182,7 @@ export default function UsersPage() {
         tone="danger"
         icon="delete"
         title="Delete user permanently?"
-        message={`"${deleting?.fullName}" will be permanently deleted. This cannot be undone. Users with any activity (sales, payments, history) can't be deleted — deactivate them instead.`}
+        message={`"${deleting?.fullName}" will be permanently deleted. This cannot be undone. Users with any activity (sales, payments, history) can't be deleted. Deactivate them instead.`}
         confirmLabel="Delete"
       />
     </div>
