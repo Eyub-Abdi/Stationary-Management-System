@@ -36,14 +36,22 @@ export function Sidebar({
           collapsed ? 'lg:w-[76px]' : 'lg:w-64',
         )}
       >
-        {/* Brand */}
+        {/* Brand. Collapsed, the rail is 76px of icons: the logo would be a
+            second badge competing with them, so only the toggle stays. */}
         <div
           className={cn(
-            'flex items-center gap-3 px-5 py-5',
-            collapsed && 'lg:flex-col lg:gap-2 lg:px-0 lg:py-4',
+            // A fixed height in both states, or the nav below jumps 20px as
+            // the taller logo row gives way to the lone toggle.
+            'flex min-h-[84px] items-center gap-3 px-5 py-5',
+            collapsed && 'lg:justify-center lg:gap-0 lg:px-0',
           )}
         >
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-sm">
+          <div
+            className={cn(
+              'flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-sm',
+              collapsed && 'lg:hidden',
+            )}
+          >
             <img src="/st-logo.png" alt="Stationery Management System" className="h-full w-full object-contain p-0.5" />
           </div>
           <div className={cn('min-w-0', collapsed && 'lg:hidden')}>
@@ -63,7 +71,10 @@ export function Sidebar({
               collapsed && 'lg:ml-0',
             )}
           >
-            <Icon name={collapsed ? 'left_panel_open' : 'left_panel_close'} size={20} />
+            <Icon
+              name={collapsed ? 'keyboard_double_arrow_right' : 'keyboard_double_arrow_left'}
+              size={20}
+            />
           </button>
         </div>
 
