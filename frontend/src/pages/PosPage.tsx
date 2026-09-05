@@ -173,6 +173,11 @@ export default function PosPage() {
   const [serviceVariantPick, setServiceVariantPick] = useState<{ service: Service; anchor: HTMLElement } | null>(null);
   const [serviceCat, setServiceCat] = useState<string>('all');
   const [custModalOpen, setCustModalOpen] = useState(false);
+  // The cart is a drawer so the catalog gets the whole page. It holds two
+  // steps: adjust what is in the basket, then settle it. Payment sits behind a
+  // deliberate step so a stray tap cannot complete a sale.
+  const [cartOpen, setCartOpen] = useState(false);
+  const [step, setStep] = useState<'cart' | 'pay'>('cart');
   // Non-null while the cashier is being asked to confirm an unusual sale.
   const [confirmWarnings, setConfirmWarnings] = useState<string[] | null>(null);
   const [wastageOpen, setWastageOpen] = useState(false);
@@ -182,6 +187,56 @@ export default function PosPage() {
   useEffect(() => {
     localStorage.setItem('pos-view', view);
   }, [view]);
+
+  // The page behind the drawer should not scroll, and its scrollbar should not
+  // sit alongside the panel. Removing it frees the width it occupied, so the
+  // same width goes back as padding or the whole page jumps sideways as the
+  // drawer opens.
+  useEffect(() => {
+    if (!cartOpen) return;
+    const { body } = document;
+    const gutter = window.innerWidth - document.documentElement.clientWidth;
+    const overflow = body.style.overflow;
+    const padding = body.style.paddingRight;
+    body.style.overflow = 'hidden';
+    if (gutter > 0) body.style.paddingRight = `${gutter}px`;
+    return () => {
+      body.style.overflow = overflow;
+      body.style.paddingRight = padding;
+    };
+  }, [cartOpen]);
+
+  // Esc closes the drawer, the way it closes every modal in the app. Ctrl+X
+  // empties the basket from anywhere on the page, so a wrong order can be
+  // abandoned without hunting for the drawer first.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && cartOpen) {
+        setCartOpen(false);
+        return;
+      }
+      if ((e.key === 'x' || e.key === 'X') && (e.ctrlKey || e.metaKey)) {
+        // Never steal Cut from a field the cashier is editing.
+        const el = document.activeElement as HTMLElement | null;
+        const typing =
+          !!el &&
+          (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+        if (typing || cart.length === 0) return;
+        e.preventDefault();
+        // Only setState setters inside, so the closure never goes stale.
+        clearCart();
+        toast.info('Cart cleared', 'Ctrl+X emptied the current sale.');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [cartOpen, cart.length]);
+
+  // Emptying the basket from the payment step would otherwise leave the cashier
+  // settling nothing.
+  useEffect(() => {
+    if (cart.length === 0) setStep('cart');
+  }, [cart.length]);
 
   // Keep the in-progress sale on disk so it survives navigation; an empty cart
   // clears the draft entirely.
@@ -331,6 +386,8 @@ export default function PosPage() {
 
   const removeLine = (key: string) => setCart((prev) => prev.filter((l) => l.key !== key));
   const clearCart = () => {
+    setStep('cart');
+    setCartOpen(false);
     setCart([]);
     setOrderDiscount('');
     setCashReceived('');
@@ -445,7 +502,7 @@ export default function PosPage() {
               className="flex items-center gap-2 rounded-xl border border-error/40 bg-error-container/40 px-4 py-2 text-body-sm font-semibold text-on-error-container"
             >
               <Icon name="warning" size={20} className="text-error" />
-              The till is closed — open it to record sales
+              The till is closed. Open it to record sales
             </Link>
           )}
           {/* Jams happen here, mid-job. Making the cashier leave for the
@@ -456,223 +513,303 @@ export default function PosPage() {
         </div>
       </div>
 
-      {/* items-start: the catalog grows with the product count, and stretching
-          the cart to match it just trails empty space under Complete Sale. */}
-      <div className="grid grid-cols-1 items-start gap-gutter lg:grid-cols-12">
-        {/* Catalog */}
-        <div className="lg:col-span-7 xl:col-span-8">
-          <Card className="flex flex-col">
-            <div className="flex flex-col gap-3 border-b border-outline-variant p-4 sm:flex-row sm:items-center">
-              <SegmentedControl
-                value={tab}
-                onChange={(v) => {
-                  setTab(v);
-                  setSearch('');
-                }}
-                items={[
-                  { value: 'products', label: 'Products' },
-                  { value: 'services', label: 'Services' },
-                ]}
-              />
-              <SearchInput value={search} onChange={setSearch} placeholder={`Search ${tab}…`} className="flex-1" />
-              <div className="inline-flex shrink-0 rounded-lg border border-outline-variant bg-surface-container-low p-0.5">
-                {(['grid', 'list'] as const).map((v) => (
-                  <button
-                    key={v}
-                    onClick={() => setView(v)}
-                    aria-label={`${v} view`}
-                    title={`${v === 'grid' ? 'Grid' : 'List'} view`}
-                    className={cn(
-                      'rounded-md p-1.5 transition-all',
-                      view === v
-                        ? 'bg-surface-container-lowest text-on-surface shadow-sm'
-                        : 'text-on-surface-variant hover:text-on-surface',
-                    )}
-                  >
-                    <Icon name={v === 'grid' ? 'grid_view' : 'view_list'} size={18} />
-                  </button>
-                ))}
-              </div>
+      {/* The catalog takes the whole page; the basket lives in the drawer. */}
+      <div>
+        <Card className="flex flex-col">
+          <div className="flex flex-col gap-3 border-b border-outline-variant p-4 sm:flex-row sm:items-center">
+            <SegmentedControl
+              value={tab}
+              onChange={(v) => {
+                setTab(v);
+                setSearch('');
+              }}
+              items={[
+                { value: 'products', label: 'Products' },
+                { value: 'services', label: 'Services' },
+              ]}
+            />
+            <SearchInput value={search} onChange={setSearch} placeholder={`Search ${tab}…`} className="flex-1" />
+            <div className="inline-flex shrink-0 rounded-lg border border-outline-variant bg-surface-container-low p-0.5">
+              {(['grid', 'list'] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  aria-label={`${v} view`}
+                  title={`${v === 'grid' ? 'Grid' : 'List'} view`}
+                  className={cn(
+                    'rounded-md p-1.5 transition-all',
+                    view === v
+                      ? 'bg-surface-container-lowest text-on-surface shadow-sm'
+                      : 'text-on-surface-variant hover:text-on-surface',
+                  )}
+                >
+                  <Icon name={v === 'grid' ? 'grid_view' : 'view_list'} size={18} />
+                </button>
+              ))}
             </div>
+          </div>
 
-            <div className="min-h-[420px] p-4">
-              {list.isLoading ? (
-                <LoadingState />
-              ) : tab === 'products' ? (
-                products.data!.data.length === 0 ? (
-                  <EmptyState icon="inventory_2" title="No products" description="No active products match your search." />
-                ) : view === 'grid' ? (
+          <div className="min-h-[420px] p-4">
+            {list.isLoading ? (
+              <LoadingState />
+            ) : tab === 'products' ? (
+              products.data!.data.length === 0 ? (
+                <EmptyState icon="inventory_2" title="No products" description="No active products match your search." />
+              ) : view === 'grid' ? (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+                  {products.data!.data.map((p) => (
+                    <ProductTile key={p.id} product={p} onAdd={(a) => addProduct(p, a)} />
+                  ))}
+                </div>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {products.data!.data.map((p) => (
+                    <ProductRow key={p.id} product={p} onAdd={(a) => addProduct(p, a)} />
+                  ))}
+                </ul>
+              )
+            ) : services.data!.data.length === 0 ? (
+              <EmptyState icon="print" title="No services" description="No active services match your search." />
+            ) : (
+              <>
+                {serviceGroups.length > 1 && (
+                  <div className="mb-4 flex flex-wrap gap-2">
+                    <ServiceChip label="All" active={!activeGroup} onClick={() => setServiceCat('all')} />
+                    {serviceGroups.map((g) => (
+                      <ServiceChip
+                        key={g.key}
+                        icon={g.icon}
+                        label={g.key}
+                        active={activeGroup?.key === g.key}
+                        onClick={() => setServiceCat(g.key)}
+                      />
+                    ))}
+                  </div>
+                )}
+                {view === 'grid' ? (
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-                    {products.data!.data.map((p) => (
-                      <ProductTile key={p.id} product={p} onAdd={(a) => addProduct(p, a)} />
+                    {visibleServices.map((s) => (
+                      <ServiceTile
+                        key={s.id}
+                        service={s}
+                        label={activeGroup ? serviceSubLabel(s) : s.name}
+                        onAdd={(a) => addService(s, a)}
+                      />
                     ))}
                   </div>
                 ) : (
                   <ul className="flex flex-col gap-2">
-                    {products.data!.data.map((p) => (
-                      <ProductRow key={p.id} product={p} onAdd={(a) => addProduct(p, a)} />
+                    {visibleServices.map((s) => (
+                      <ServiceRow
+                        key={s.id}
+                        service={s}
+                        label={activeGroup ? serviceSubLabel(s) : s.name}
+                        onAdd={(a) => addService(s, a)}
+                      />
                     ))}
                   </ul>
-                )
-              ) : services.data!.data.length === 0 ? (
-                <EmptyState icon="print" title="No services" description="No active services match your search." />
-              ) : (
-                <>
-                  {serviceGroups.length > 1 && (
-                    <div className="mb-4 flex flex-wrap gap-2">
-                      <ServiceChip label="All" active={!activeGroup} onClick={() => setServiceCat('all')} />
-                      {serviceGroups.map((g) => (
-                        <ServiceChip
-                          key={g.key}
-                          icon={g.icon}
-                          label={g.key}
-                          active={activeGroup?.key === g.key}
-                          onClick={() => setServiceCat(g.key)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                  {view === 'grid' ? (
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-                      {visibleServices.map((s) => (
-                        <ServiceTile
-                          key={s.id}
-                          service={s}
-                          label={activeGroup ? serviceSubLabel(s) : s.name}
-                          onAdd={(a) => addService(s, a)}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <ul className="flex flex-col gap-2">
-                      {visibleServices.map((s) => (
-                        <ServiceRow
-                          key={s.id}
-                          service={s}
-                          label={activeGroup ? serviceSubLabel(s) : s.name}
-                          onAdd={(a) => addService(s, a)}
-                        />
-                      ))}
-                    </ul>
-                  )}
-                </>
-              )}
-            </div>
-          </Card>
-        </div>
+                )}
+              </>
+            )}
+          </div>
+        </Card>
 
-        {/* Cart */}
-        <div className="lg:col-span-5 xl:col-span-4">
-          <Card className="flex flex-col">
-            <div className="flex items-center justify-between border-b border-outline-variant px-5 py-4">
+        {/* The way back into the sale. Always on screen, so the basket is never
+            more than one tap away however far the catalog has been scrolled. */}
+        <button
+          type="button"
+          onClick={() => setCartOpen(true)}
+          className={cn(
+            'fixed bottom-6 right-6 z-30 flex items-center gap-3 rounded-2xl bg-primary py-3 pl-4 pr-5 text-on-primary shadow-lg transition-all duration-300 hover:shadow-xl',
+            cartOpen ? 'pointer-events-none translate-y-4 opacity-0' : 'translate-y-0 opacity-100',
+          )}
+        >
+          <span className="relative">
+            <Icon name="shopping_cart" size={24} />
+            {cart.length > 0 && (
+              <span className="absolute -right-2 -top-2 grid h-5 min-w-[20px] place-items-center rounded-full bg-error px-1 text-[11px] font-bold text-on-error">
+                {cart.length}
+              </span>
+            )}
+          </span>
+          <span className="flex flex-col items-start leading-tight">
+            <span className="text-[11px] font-medium opacity-80">
+              {cart.length === 0 ? 'Cart is empty' : 'Current sale'}
+            </span>
+            <span className="font-mono-data text-body-lg font-bold">{currency(total)}</span>
+          </span>
+        </button>
+
+        {/* The basket, as a drawer over the catalog: what is being sold, then
+            how it is paid for. */}
+        <div
+          className={cn(
+            'fixed inset-0 z-40 bg-on-background/40 backdrop-blur-sm transition-opacity duration-300',
+            cartOpen ? 'opacity-100' : 'pointer-events-none opacity-0',
+          )}
+          onClick={() => setCartOpen(false)}
+          aria-hidden
+        />
+        <aside
+          aria-label="Current sale"
+          className={cn(
+            'fixed right-0 top-0 z-50 flex h-screen w-full max-w-[420px] flex-col border-l border-outline-variant bg-surface-container-lowest shadow-2xl transition-transform duration-300 ease-out',
+            cartOpen ? 'translate-x-0' : 'translate-x-full',
+          )}
+        >
+          <div className="flex items-center justify-between border-b border-outline-variant px-5 py-4">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setCartOpen(false)}
+                aria-label="Close the sale"
+                className="rounded-full p-1 text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
+              >
+                <Icon name="close" size={20} />
+              </button>
               <h3 className="text-h3 font-semibold text-on-surface">Current Sale</h3>
-              {cart.length > 0 && (
-                <button onClick={clearCart} className="text-[13px] font-semibold text-error hover:underline">
-                  Clear
-                </button>
-              )}
             </div>
+            {cart.length > 0 && (
+              <button
+                onClick={clearCart}
+                title="Clear the sale (Ctrl+X)"
+                className="text-[13px] font-semibold text-error hover:underline"
+              >
+                Clear
+              </button>
+            )}
+          </div>
 
-            <div className="scrollbar-none flex-1 overflow-y-auto px-4 py-3" style={{ maxHeight: 320 }}>
-              {cart.length === 0 ? (
-                <div className="flex h-full flex-col items-center justify-center py-12 text-center text-on-surface-variant">
-                  <Icon name="shopping_cart" size={40} />
-                  <p className="mt-3 text-body-sm">Cart is empty. Tap an item to add it.</p>
-                </div>
-              ) : (
-                <ul className="space-y-3">
-                  {cart.map((l) => {
-                    const maxStock = l.stockBase;
-                    const color = lineColor(l.refId);
-                    return (
-                      <li
-                        key={l.key}
-                        className="rounded-xl border border-l-4 border-outline-variant p-3"
-                        style={{ borderLeftColor: color }}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex min-w-0 items-start gap-2">
-                            <span
-                              className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-                              style={{ backgroundColor: color }}
+          {/* Where the cashier is, and the way back. */}
+          <ol className="flex items-center gap-2 border-b border-outline-variant px-5 py-3">
+            <StepChip
+              n={1}
+              label="Items"
+              active={step === 'cart'}
+              done={step === 'pay'}
+              onClick={() => setStep('cart')}
+            />
+            <li className="h-px flex-1 bg-outline-variant" aria-hidden />
+            <StepChip n={2} label="Payment" active={step === 'pay'} />
+          </ol>
+
+          {step === 'cart' ? (
+            <>
+              <div className="scrollbar-none flex-1 overflow-y-auto px-4 py-3">
+                {cart.length === 0 ? (
+                  <div className="flex h-full flex-col items-center justify-center py-12 text-center text-on-surface-variant">
+                    <Icon name="shopping_cart" size={40} />
+                    <p className="mt-3 text-body-sm">Cart is empty. Tap an item to add it.</p>
+                  </div>
+                ) : (
+                  <ul className="space-y-3">
+                    {cart.map((l) => {
+                      const maxStock = l.stockBase;
+                      const color = lineColor(l.refId);
+                      return (
+                        <li
+                          key={l.key}
+                          className="rounded-xl border border-l-4 border-outline-variant p-3"
+                          style={{ borderLeftColor: color }}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex min-w-0 items-start gap-2">
+                              <span
+                                className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+                                style={{ backgroundColor: color }}
+                              />
+                              <div className="min-w-0">
+                                <p className="truncate text-body-sm font-semibold text-on-surface">{l.name}</p>
+                                <p className="font-mono-data text-[11px] text-on-surface-variant">
+                                  {currency(l.unitPrice)} {l.perPage ? '/ page' : `/ ${unitWord(l)}`}
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => removeLine(l.key)}
+                              className="rounded-full p-1 text-on-surface-variant hover:bg-surface-container hover:text-error"
+                            >
+                              <Icon name="close" size={18} />
+                            </button>
+                          </div>
+
+                          {l.wholesalePrice != null && (
+                            <div className="mt-2">
+                              <SegmentedControl
+                                value={l.sellUnit}
+                                onChange={(v) =>
+                                  updateLine(l.key, {
+                                    sellUnit: v,
+                                    unitPrice: v === 'BULK' ? l.wholesalePrice! : l.retailPrice,
+                                  })
+                                }
+                                items={[
+                                  { value: 'BASE', label: `Retail ${currency(l.retailPrice)}` },
+                                  { value: 'BULK', label: `Wholesale ${currency(l.wholesalePrice)}` },
+                                ]}
+                              />
+                            </div>
+                          )}
+
+                          <div className="mt-2 flex items-center gap-2">
+                            <QtyStepper
+                              value={l.quantity}
+                              min={1}
+                              max={maxStock}
+                              onChange={(q) => updateLine(l.key, { quantity: q })}
                             />
-                            <div className="min-w-0">
-                              <p className="truncate text-body-sm font-semibold text-on-surface">{l.name}</p>
-                              <p className="font-mono-data text-[11px] text-on-surface-variant">
-                                {currency(l.unitPrice)} {l.perPage ? '/ page' : `/ ${unitWord(l)}`}
-                              </p>
+                            {l.perPage && (
+                              <label className="flex items-center gap-1 text-[11px] text-on-surface-variant">
+                                <span>Pages</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={l.pages}
+                                  onChange={(e) => updateLine(l.key, { pages: Math.max(1, parseInt(e.target.value || '1', 10)) })}
+                                  className="h-8 w-14 rounded-lg border border-outline-variant bg-surface-container-lowest px-2 text-center text-[13px] outline-none focus:border-secondary"
+                                />
+                              </label>
+                            )}
+                            <div className="ml-auto font-mono-data text-body-sm font-bold text-on-surface">
+                              {currency(lineTotal(l))}
                             </div>
                           </div>
-                          <button
-                            onClick={() => removeLine(l.key)}
-                            className="rounded-full p-1 text-on-surface-variant hover:bg-surface-container hover:text-error"
-                          >
-                            <Icon name="close" size={18} />
-                          </button>
-                        </div>
 
-                        {l.wholesalePrice != null && (
-                          <div className="mt-2">
-                            <SegmentedControl
-                              value={l.sellUnit}
-                              onChange={(v) =>
-                                updateLine(l.key, {
-                                  sellUnit: v,
-                                  unitPrice: v === 'BULK' ? l.wholesalePrice! : l.retailPrice,
-                                })
-                              }
-                              items={[
-                                { value: 'BASE', label: `Retail ${currency(l.retailPrice)}` },
-                                { value: 'BULK', label: `Wholesale ${currency(l.wholesalePrice)}` },
-                              ]}
+                          <div className="mt-2 flex items-center gap-1">
+                            <span className="text-[11px] text-on-surface-variant">Disc</span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={l.discount || ''}
+                              placeholder="0"
+                              onChange={(e) => updateLine(l.key, { discount: Math.max(0, num(e.target.value)) })}
+                              className="h-8 w-24 rounded-lg border border-outline-variant bg-surface-container-lowest px-2 text-[13px] outline-none focus:border-secondary"
                             />
                           </div>
-                        )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
 
-                        <div className="mt-2 flex items-center gap-2">
-                          <QtyStepper
-                            value={l.quantity}
-                            min={1}
-                            max={maxStock}
-                            onChange={(q) => updateLine(l.key, { quantity: q })}
-                          />
-                          {l.perPage && (
-                            <label className="flex items-center gap-1 text-[11px] text-on-surface-variant">
-                              <span>Pages</span>
-                              <input
-                                type="number"
-                                min={1}
-                                value={l.pages}
-                                onChange={(e) => updateLine(l.key, { pages: Math.max(1, parseInt(e.target.value || '1', 10)) })}
-                                className="h-8 w-14 rounded-lg border border-outline-variant bg-surface-container-lowest px-2 text-center text-[13px] outline-none focus:border-secondary"
-                              />
-                            </label>
-                          )}
-                          <div className="ml-auto font-mono-data text-body-sm font-bold text-on-surface">
-                            {currency(lineTotal(l))}
-                          </div>
-                        </div>
-
-                        <div className="mt-2 flex items-center gap-1">
-                          <span className="text-[11px] text-on-surface-variant">Disc</span>
-                          <input
-                            type="number"
-                            min={0}
-                            value={l.discount || ''}
-                            placeholder="0"
-                            onChange={(e) => updateLine(l.key, { discount: Math.max(0, num(e.target.value)) })}
-                            className="h-8 w-24 rounded-lg border border-outline-variant bg-surface-container-lowest px-2 text-[13px] outline-none focus:border-secondary"
-                          />
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-
-            {/* Summary */}
-            <div className="space-y-3 border-t border-outline-variant p-4">
+              {/* Step one only decides what is being sold; the money is step
+                  two's business, so the running total rides on the button. */}
+              <div className="border-t border-outline-variant p-4">
+                <Button
+                  size="lg"
+                  fullWidth
+                  icon="arrow_forward"
+                  disabled={cart.length === 0 || !session}
+                  onClick={() => setStep('pay')}
+                >
+                  Continue to payment · {currency(total)}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="scrollbar-none flex-1 space-y-3 overflow-y-auto p-4">
+              {/* What is owed, worked out in front of the cashier, immediately
+                  above how it will be settled. */}
               <Row label="Subtotal" value={currency(subtotal)} />
               <div className="flex items-center justify-between">
                 <span className="text-body-sm text-on-surface-variant">Order discount</span>
@@ -691,13 +828,13 @@ export default function PosPage() {
               </div>
               {gross > 0 && total === 0 ? (
                 <PanelWarning>
-                  The discount cancels the whole sale — {currency(gross)} of goods for nothing, and
+                  The discount cancels the whole sale: {currency(gross)} of goods for nothing, and
                   no debt recorded. Did you mean to type that into “Paid now” instead?
                 </PanelWarning>
               ) : (
                 discountPct >= 50 && (
                   <PanelWarning>
-                    {Math.round(discountPct)}% off — {currency(discountTotal)} discounted from{' '}
+                    {Math.round(discountPct)}% off, {currency(discountTotal)} discounted from{' '}
                     {currency(gross)}.
                   </PanelWarning>
                 )
@@ -769,25 +906,33 @@ export default function PosPage() {
                   />
                   {creditFullySettled && (
                     <PanelWarning>
-                      Nothing will be owed — “Paid now” already covers the whole sale. Clear it to
+                      Nothing will be owed. “Paid now” already covers the whole sale. Clear it to
                       put {currency(total)} on the customer’s account, or switch to Cash.
                     </PanelWarning>
                   )}
                 </>
               )}
-              <Button
-                size="lg"
-                fullWidth
-                icon="point_of_sale"
-                disabled={completeDisabled}
-                loading={createSale.isPending}
-                onClick={complete}
-              >
-                {payment === 'CREDIT' ? 'Complete (on credit)' : 'Complete Sale'}
-              </Button>
+              {/* A grid, not a flex row: Button carries `shrink-0`, so a
+                  `fullWidth` Complete beside Back adds up to more than the
+                  panel and spills past its padding. Tracks size it instead. */}
+              <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2 pt-1">
+                <Button size="lg" variant="outline" icon="arrow_back" onClick={() => setStep('cart')}>
+                  Back
+                </Button>
+                <Button
+                  size="lg"
+                  fullWidth
+                  icon="point_of_sale"
+                  disabled={completeDisabled}
+                  loading={createSale.isPending}
+                  onClick={complete}
+                >
+                  {payment === 'CREDIT' ? 'Complete (on credit)' : 'Complete Sale'}
+                </Button>
+              </div>
             </div>
-          </Card>
-        </div>
+          )}
+        </aside>
       </div>
 
       <ReceiptModal sale={receipt} onClose={() => setReceipt(null)} />
@@ -918,6 +1063,51 @@ function Row({ label, value, valueClass }: { label: string; value: string; value
       <span className="text-body-sm text-on-surface-variant">{label}</span>
       <span className={cn('font-mono-data text-body-sm font-semibold text-on-surface', valueClass)}>{value}</span>
     </div>
+  );
+}
+
+/** One of the drawer's two steps. Step 1 stays clickable from step 2 so a line
+ *  can be fixed without abandoning the sale. */
+function StepChip({
+  n,
+  label,
+  active,
+  done,
+  onClick,
+}: {
+  n: number;
+  label: string;
+  active: boolean;
+  done?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={!onClick}
+        className={cn(
+          'flex items-center gap-2 rounded-full py-1 pl-1 pr-3 text-body-sm font-semibold transition-colors',
+          active ? 'bg-primary-container text-on-primary-container' : 'text-on-surface-variant',
+          onClick && !active && 'hover:bg-surface-container hover:text-on-surface',
+        )}
+      >
+        <span
+          className={cn(
+            'grid h-6 w-6 place-items-center rounded-full text-[12px]',
+            active
+              ? 'bg-primary text-on-primary'
+              : done
+                ? 'bg-secondary text-on-secondary'
+                : 'bg-surface-container text-on-surface-variant',
+          )}
+        >
+          {done ? <Icon name="check" size={14} /> : n}
+        </span>
+        {label}
+      </button>
+    </li>
   );
 }
 
