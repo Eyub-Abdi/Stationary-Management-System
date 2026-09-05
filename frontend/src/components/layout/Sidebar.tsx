@@ -2,7 +2,6 @@ import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Icon } from '@/components/ui';
 import { useAuth } from '@/providers/AuthProvider';
-import { useAppSettings } from '@/hooks/useAppSettings';
 import { visibleNav } from './nav';
 
 /**
@@ -22,9 +21,7 @@ export function Sidebar({
   onToggleCollapsed: () => void;
 }) {
   const { user, can } = useAuth();
-  const { data: settings } = useAppSettings();
   const items = visibleNav(user?.role, can);
-  const businessName = settings?.businessName ?? 'KJ Stationery';
 
   return (
     <>
@@ -103,27 +100,6 @@ export function Sidebar({
             </NavLink>
           ))}
         </nav>
-
-        {/* Footer instance card */}
-        <div className={cn('border-t border-outline-variant p-4', collapsed && 'lg:p-3')}>
-          <div
-            className={cn(
-              'flex items-center gap-3 rounded-xl bg-surface-container px-3 py-2.5',
-              collapsed && 'lg:justify-center lg:bg-transparent lg:px-0',
-            )}
-            title={collapsed ? `${businessName} · ${settings?.branchName ?? 'Main Branch'}` : undefined}
-          >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-fixed-dim text-on-primary-fixed">
-              <Icon name="store" size={20} />
-            </div>
-            <div className={cn('min-w-0', collapsed && 'lg:hidden')}>
-              <p className="truncate text-[13px] font-bold text-on-surface">{businessName}</p>
-              <p className="truncate text-[10px] uppercase tracking-widest text-on-surface-variant">
-                {settings?.branchName ?? 'Main Branch'}
-              </p>
-            </div>
-          </div>
-        </div>
       </aside>
     </>
   );
