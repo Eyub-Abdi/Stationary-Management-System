@@ -8,6 +8,7 @@ import {
   Icon,
   LoadingState,
   Combobox,
+  ConfirmDialog,
   Modal,
   Popover,
   SearchInput,
@@ -114,9 +115,12 @@ interface CartLine {
   stockBase?: number; // currentStock in base units (products)
 }
 
+function lineGross(l: CartLine): number {
+  return l.perPage ? l.unitPrice * (l.pages || 1) * l.quantity : l.unitPrice * l.quantity;
+}
+
 function lineTotal(l: CartLine): number {
-  const gross = l.perPage ? l.unitPrice * (l.pages || 1) * l.quantity : l.unitPrice * l.quantity;
-  return Math.max(0, gross - l.discount);
+  return Math.max(0, lineGross(l) - l.discount);
 }
 
 /**
@@ -169,6 +173,8 @@ export default function PosPage() {
   const [serviceVariantPick, setServiceVariantPick] = useState<{ service: Service; anchor: HTMLElement } | null>(null);
   const [serviceCat, setServiceCat] = useState<string>('all');
   const [custModalOpen, setCustModalOpen] = useState(false);
+  // Non-null while the cashier is being asked to confirm an unusual sale.
+  const [confirmWarnings, setConfirmWarnings] = useState<string[] | null>(null);
   const [wastageOpen, setWastageOpen] = useState(false);
   const [view, setView] = useState<'grid' | 'list'>(
     () => (localStorage.getItem('pos-view') === 'list' ? 'list' : 'grid'),
@@ -205,6 +211,15 @@ export default function PosPage() {
   const received = num(cashReceived);
   const change = received - total;
   const creditBalance = Math.max(0, total - received);
+
+  // Discounts measured against the undiscounted price of the cart, so a figure
+  // typed into the wrong box shows up as the outsized reduction it is.
+  const gross = useMemo(() => cart.reduce((a, l) => a + lineGross(l), 0), [cart]);
+  const discountTotal = Math.max(0, gross - total);
+  const discountPct = gross > 0 ? (discountTotal / gross) * 100 : 0;
+  // A credit sale settled in full at the till leaves nothing owing — usually a
+  // total typed into "Paid now" out of cash-sale habit.
+  const creditFullySettled = payment === 'CREDIT' && total > 0 && received >= total;
 
   // Tapping a product: pick a variant when there's more than one; then dual-unit
   // items ask "pieces or pack?"; single-unit items add straight away.
@@ -344,6 +359,38 @@ export default function PosPage() {
         return;
       }
     }
+
+    // Everything below is legal but rarely intended. Rather than block it, name
+    // what the sale will actually record and make the cashier agree to it —
+    // both traps here have quietly written off goods before.
+    const warnings: string[] = [];
+    if (total === 0 && gross > 0) {
+      warnings.push(
+        `The discount cancels this sale entirely: ${currency(gross)} of goods leave the shop, ` +
+          `nothing is collected, and no debt is recorded against anyone.`,
+      );
+    } else if (discountPct >= 50) {
+      warnings.push(
+        `Discounts take ${Math.round(discountPct)}% off this sale — ${currency(discountTotal)} ` +
+          `off ${currency(gross)}, leaving ${currency(total)} to pay.`,
+      );
+    }
+    if (creditFullySettled) {
+      warnings.push(
+        `"Paid now" covers the full ${currency(total)}, so this credit sale records no balance owing. ` +
+          `If the customer is taking it on credit, set "Paid now" back to 0; if they paid in full, ` +
+          `switch the payment method to Cash.`,
+      );
+    }
+    if (warnings.length > 0) {
+      setConfirmWarnings(warnings);
+      return;
+    }
+
+    await submitSale();
+  };
+
+  const submitSale = async () => {
     const items: SaleItemInput[] = cart.map((l) => ({
       itemType: l.itemType,
       variantId: l.itemType === 'PRODUCT' ? l.refId : undefined,
@@ -366,8 +413,11 @@ export default function PosPage() {
         idempotencyKey: crypto.randomUUID(),
       });
       setReceipt(sale);
+      setConfirmWarnings(null);
       clearCart();
     } catch (e) {
+      // Leave any confirmation open so the cashier can retry without re-reading
+      // the warnings into an empty dialog.
       toast.error('Sale failed', extractMessage(e));
     }
   };
@@ -639,6 +689,19 @@ export default function PosPage() {
                 <span className="text-body-lg font-semibold text-on-surface">Total</span>
                 <span className="font-mono-data text-h3 font-bold text-primary">{currency(total)}</span>
               </div>
+              {gross > 0 && total === 0 ? (
+                <PanelWarning>
+                  The discount cancels the whole sale — {currency(gross)} of goods for nothing, and
+                  no debt recorded. Did you mean to type that into “Paid now” instead?
+                </PanelWarning>
+              ) : (
+                discountPct >= 50 && (
+                  <PanelWarning>
+                    {Math.round(discountPct)}% off — {currency(discountTotal)} discounted from{' '}
+                    {currency(gross)}.
+                  </PanelWarning>
+                )
+              )}
 
               {/* Payment method */}
               <SegmentedControl
@@ -698,7 +761,19 @@ export default function PosPage() {
                 />
               )}
               {payment === 'CREDIT' && (
-                <Row label="Balance on credit" value={currency(creditBalance)} valueClass="text-error" />
+                <>
+                  <Row
+                    label="Balance on credit"
+                    value={currency(creditBalance)}
+                    valueClass={creditBalance > 0 ? 'text-error' : 'text-on-surface-variant'}
+                  />
+                  {creditFullySettled && (
+                    <PanelWarning>
+                      Nothing will be owed — “Paid now” already covers the whole sale. Clear it to
+                      put {currency(total)} on the customer’s account, or switch to Cash.
+                    </PanelWarning>
+                  )}
+                </>
               )}
               <Button
                 size="lg"
@@ -796,6 +871,23 @@ export default function PosPage() {
         customer={null}
         onCreated={(c) => setCustomerId(c.id)}
       />
+      <ConfirmDialog
+        open={confirmWarnings !== null}
+        onClose={() => setConfirmWarnings(null)}
+        onConfirm={submitSale}
+        loading={createSale.isPending}
+        icon="report"
+        title="Check this sale before recording it"
+        confirmLabel="Record it anyway"
+        cancelLabel="Go back"
+        message={
+          <span className="flex flex-col gap-2 text-left">
+            {(confirmWarnings ?? []).map((w, i) => (
+              <span key={i}>{w}</span>
+            ))}
+          </span>
+        }
+      />
     </div>
   );
 }
@@ -825,6 +917,16 @@ function Row({ label, value, valueClass }: { label: string; value: string; value
     <div className="flex items-center justify-between">
       <span className="text-body-sm text-on-surface-variant">{label}</span>
       <span className={cn('font-mono-data text-body-sm font-semibold text-on-surface', valueClass)}>{value}</span>
+    </div>
+  );
+}
+
+/** An amber note in the payment panel: the sale is legal, but read it again. */
+function PanelWarning({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-tertiary/40 bg-tertiary-container/40 p-2.5">
+      <Icon name="warning" size={18} className="mt-px shrink-0 text-tertiary" />
+      <span className="text-[12px] leading-snug text-on-surface">{children}</span>
     </div>
   );
 }
