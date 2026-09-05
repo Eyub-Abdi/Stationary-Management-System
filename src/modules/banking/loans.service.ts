@@ -56,16 +56,31 @@ export class LoansService {
   async issue(dto: IssueLoanDto, issuedById: string) {
     const amount = money(dto.amount);
 
-    const borrower = await this.prisma.user.findUnique({
+    const member = await this.prisma.user.findUnique({
       where: { id: dto.userId },
       select: { id: true, fullName: true, isActive: true },
     });
-    if (!borrower) throw new NotFoundException('Shop member not found');
-    if (!borrower.isActive) {
+    if (!member) throw new NotFoundException('Shop member not found');
+    if (!member.isActive) {
       throw new BadRequestException(
-        `${borrower.fullName} is no longer active — reactivate the account before lending to them.`,
+        `${member.fullName} is no longer active — reactivate the account before lending against them.`,
       );
     }
+
+    // An outsider can borrow, but never on their own: a member sponsors them and
+    // the debt is chased through that member. Blank-but-present is a slip worth
+    // catching — an unnamed outside borrower is nobody at all.
+    const borrowerName = dto.borrowerName?.trim() || null;
+    const borrowerPhone = borrowerName ? dto.borrowerPhone?.trim() || null : null;
+    if (dto.borrowerName !== undefined && !borrowerName) {
+      throw new BadRequestException(
+        'Name the outside borrower, or leave the field empty to lend to the member themselves.',
+      );
+    }
+    // Who the money is handed to, for the cash/bank note and the audit trail.
+    const paidTo = borrowerName
+      ? `${borrowerName} (sponsored by ${member.fullName})`
+      : member.fullName;
 
     return this.prisma.runSerializable(async (tx) => {
       // Taking cash from the drawer needs a till open to take it from; the bank
@@ -82,6 +97,8 @@ export class LoansService {
       const loan = await tx.loan.create({
         data: {
           userId: dto.userId,
+          borrowerName,
+          borrowerPhone,
           amount: toPrisma(amount),
           source: dto.source,
           dueDate: dto.dueDate,
@@ -99,7 +116,7 @@ export class LoansService {
             type: 'WITHDRAWAL',
             amount: toPrisma(amount),
             userId: issuedById,
-            notes: `Loan to ${borrower.fullName}`,
+            notes: `Loan to ${paidTo}`,
           },
         });
       } else {
@@ -108,7 +125,7 @@ export class LoansService {
           amount: amount.negated(),
           userId: issuedById,
           loanId: loan.id,
-          notes: `Loan to ${borrower.fullName}`,
+          notes: `Loan to ${paidTo}`,
           action: 'BANK_LOAN_OUT',
         });
       }
@@ -119,8 +136,11 @@ export class LoansService {
         entityType: 'Loan',
         entityId: loan.id,
         metadata: {
-          borrower: borrower.fullName,
-          borrowerId: borrower.id,
+          borrower: borrowerName ?? member.fullName,
+          // The member who answers for it, whether or not they took the money.
+          memberId: member.id,
+          member: member.fullName,
+          sponsored: borrowerName !== null,
           amount: amount.toFixed(2),
           source: dto.source,
           dueDate: dto.dueDate.toISOString(),
@@ -148,7 +168,7 @@ export class LoansService {
       }
       if (amount.greaterThan(outstanding)) {
         throw new BadRequestException(
-          `${loan.user.fullName} owes ${outstanding.toFixed(2)}; ${amount.toFixed(2)} is more than that.`,
+          `${this.debtor(loan)} owes ${outstanding.toFixed(2)}; ${amount.toFixed(2)} is more than that.`,
         );
       }
 
@@ -176,7 +196,7 @@ export class LoansService {
             type: 'DEPOSIT',
             amount: toPrisma(amount),
             userId: recordedById,
-            notes: `Loan repayment from ${loan.user.fullName}`,
+            notes: `Loan repayment from ${this.debtor(loan)}`,
           },
         });
       } else {
@@ -186,7 +206,7 @@ export class LoansService {
           userId: recordedById,
           loanId,
           repaymentId: repayment.id,
-          notes: `Repayment from ${loan.user.fullName}`,
+          notes: `Repayment from ${this.debtor(loan)}`,
           action: 'BANK_LOAN_REPAYMENT',
         });
       }
@@ -204,7 +224,8 @@ export class LoansService {
         entityType: 'Loan',
         entityId: loanId,
         metadata: {
-          borrower: loan.user.fullName,
+          borrower: this.debtor(loan),
+          member: loan.user.fullName,
           amount: amount.toFixed(2),
           destination: dto.destination,
           outstandingAfter: sub(outstanding, amount).toFixed(2),
@@ -293,6 +314,15 @@ export class LoansService {
         }))
         .sort((a, b) => Number(b.outstanding) - Number(a.outstanding)),
     };
+  }
+
+  /**
+   * Who the money actually went to. For a sponsored loan that is the outsider,
+   * not the member — naming the member in "X owes 40,000" would be wrong about
+   * who is holding the cash, even though the member is the one answering for it.
+   */
+  private debtor(loan: { borrowerName: string | null; user: { fullName: string } }) {
+    return loan.borrowerName ?? loan.user.fullName;
   }
 
   private outstanding(loan: { amount: Prisma.Decimal; repayments: { amount: Prisma.Decimal }[] }) {

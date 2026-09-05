@@ -670,8 +670,12 @@ export interface LoanRepayment {
 
 export interface Loan {
   id: string;
+  /** The member answerable for the loan — the borrower, or the sponsor. */
   userId: string;
   user: { id: string; fullName: string; email: string; role: Role };
+  /** Set when an outsider borrowed and the member above sponsored them. */
+  borrowerName: string | null;
+  borrowerPhone: string | null;
   issuedBy: { id: string; fullName: string };
   amount: string;
   source: MoneyLocation;

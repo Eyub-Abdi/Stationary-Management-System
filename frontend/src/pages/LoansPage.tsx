@@ -12,6 +12,7 @@ import {
   Modal,
   PageHeader,
   Pagination,
+  SegmentedControl,
   Select,
   StatCard,
   TBody,
@@ -54,8 +55,8 @@ export default function LoansPage() {
         title={isAdmin ? 'Member Loans' : 'My Loans'}
         description={
           isAdmin
-            ? 'Money shop members have taken, what is still owed, and when it is due.'
-            : 'Money you have taken from the shop and what is still to pay back.'
+            ? 'Money members have taken or sponsored, what is still owed, and when it is due.'
+            : 'Money you have taken or sponsored, and what is still to pay back.'
         }
         actions={
           isAdmin && (
@@ -153,7 +154,7 @@ export default function LoansPage() {
           <>
             <Table>
               <THead sort={sort} onSort={onSort}>
-                {isAdmin && <TH sortKey="user">Member</TH>}
+                {isAdmin && <TH sortKey="user">Borrower</TH>}
                 <TH sortKey="issuedAt" sortDefault="desc">Taken</TH>
                 <TH sortKey="dueDate">Due</TH>
                 <TH sortKey="source">From</TH>
@@ -168,9 +169,27 @@ export default function LoansPage() {
                   <TR key={l.id}>
                     {isAdmin && (
                       <TD className="font-medium">
-                        {l.user.fullName}
-                        {l.userId === user?.id && (
-                          <span className="ml-1.5 text-[11px] text-on-surface-variant">(you)</span>
+                        {l.borrowerName ? (
+                          // An outsider's loan is still the member's to answer
+                          // for, so both names show — who holds the money, and
+                          // who the shop chases for it.
+                          <span className="flex flex-col">
+                            <span>
+                              {l.borrowerName}
+                              <Badge tone="neutral" className="ml-1.5">Guest</Badge>
+                            </span>
+                            <span className="text-[11px] font-normal text-on-surface-variant">
+                              sponsored by {l.user.fullName}
+                              {l.userId === user?.id && ' (you)'}
+                            </span>
+                          </span>
+                        ) : (
+                          <>
+                            {l.user.fullName}
+                            {l.userId === user?.id && (
+                              <span className="ml-1.5 text-[11px] text-on-surface-variant">(you)</span>
+                            )}
+                          </>
                         )}
                       </TD>
                     )}
@@ -235,14 +254,23 @@ function IssueLoanModal({ open, onClose }: { open: boolean; onClose: () => void 
   const issue = useIssueLoan();
   const { data: users } = useUsers({ limit: 100 });
 
+  // Who is taking the money. An outsider never borrows alone — a member
+  // sponsors them and the shop chases that member if it is not paid back.
+  const [borrowerKind, setBorrowerKind] = useState<'member' | 'guest'>('member');
+  const [borrowerName, setBorrowerName] = useState('');
+  const [borrowerPhone, setBorrowerPhone] = useState('');
   const [userId, setUserId] = useState('');
   const [amount, setAmount] = useState('');
   const [source, setSource] = useState<MoneyLocation>('HAND');
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
+  const guest = borrowerKind === 'guest';
 
   useEffect(() => {
     if (open) {
+      setBorrowerKind('member');
+      setBorrowerName('');
+      setBorrowerPhone('');
       setUserId('');
       setAmount('');
       setSource('HAND');
@@ -251,16 +279,25 @@ function IssueLoanModal({ open, onClose }: { open: boolean; onClose: () => void 
     }
   }, [open]);
 
-  // Nobody signs off their own borrowing; the API refuses it too.
-  const members = (users?.data ?? []).filter((u) => u.isActive && u.id !== user?.id);
+  // Everyone active is listed, the admin recording it included: only admins can
+  // issue a loan, so excluding yourself left the single-admin shop unable to
+  // borrow at all, or to sponsor a guest of your own.
+  const members = (users?.data ?? []).filter((u) => u.isActive);
 
   const submit = async () => {
-    if (!userId) return toast.error('Choose the member taking the money');
+    if (guest && !borrowerName.trim()) return toast.error('Name the person taking the money');
+    if (!userId) {
+      return toast.error(
+        guest ? 'Choose the member sponsoring them' : 'Choose the member taking the money',
+      );
+    }
     if (num(amount) <= 0) return toast.error('Enter an amount greater than zero');
     if (!dueDate) return toast.error('Set the date it should be paid back by');
     try {
       await issue.mutateAsync({
         userId,
+        borrowerName: guest ? borrowerName.trim() : undefined,
+        borrowerPhone: guest ? borrowerPhone.trim() || undefined : undefined,
         amount: num(amount),
         source,
         dueDate: new Date(dueDate).toISOString(),
@@ -279,7 +316,11 @@ function IssueLoanModal({ open, onClose }: { open: boolean; onClose: () => void 
       onClose={onClose}
       size="lg"
       title="Record a Loan"
-      subtitle="Money a shop member is taking for themselves"
+      subtitle={
+        guest
+          ? 'Money going to someone outside the shop, against a member who answers for it'
+          : 'Money a shop member is taking for themselves'
+      }
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={issue.isPending}>Cancel</Button>
@@ -288,12 +329,48 @@ function IssueLoanModal({ open, onClose }: { open: boolean; onClose: () => void 
       }
     >
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Member" required className="sm:col-span-2">
+        <Field label="Who is taking the money" required className="sm:col-span-2">
+          <SegmentedControl
+            value={borrowerKind}
+            onChange={(v) => setBorrowerKind(v)}
+            items={[
+              { value: 'member', label: 'A shop member' },
+              { value: 'guest', label: 'Someone outside' },
+            ]}
+          />
+        </Field>
+
+        {guest && (
+          <>
+            <Field label="Borrower's name" required>
+              <Input
+                value={borrowerName}
+                onChange={(e) => setBorrowerName(e.target.value)}
+                placeholder="Who is taking it"
+              />
+            </Field>
+            <Field label="Their phone" hint="Optional, but worth having">
+              <Input
+                value={borrowerPhone}
+                onChange={(e) => setBorrowerPhone(e.target.value)}
+                placeholder="07…"
+              />
+            </Field>
+          </>
+        )}
+
+        <Field
+          label={guest ? 'Sponsoring member' : 'Member'}
+          required
+          className="sm:col-span-2"
+          hint={guest ? 'The shop chases this member if it is not paid back' : undefined}
+        >
           <Select value={userId} onChange={(e) => setUserId(e.target.value)}>
             <option value="">Choose a shop member…</option>
             {members.map((u) => (
               <option key={u.id} value={u.id}>
-                {u.fullName} — {u.role === 'ADMIN' ? 'Admin' : 'Staff'}
+                {u.fullName}
+                {u.id === user?.id ? ' (you)' : ''} — {u.role === 'ADMIN' ? 'Admin' : 'Staff'}
               </option>
             ))}
           </Select>
@@ -328,6 +405,7 @@ function IssueLoanModal({ open, onClose }: { open: boolean; onClose: () => void 
           <Icon name="info" size={16} className="mt-0.5 shrink-0" />
           This does not reduce profit. The shop has swapped cash for money owed by a person —
           it shows as owed to the shop until it is paid back.
+          {guest && ' A sponsored loan counts against the member who signed for it.'}
         </p>
       </div>
     </Modal>
@@ -380,7 +458,11 @@ function RepayModal({ loan, onClose }: { loan: Loan | null; onClose: () => void 
       open={!!loan}
       onClose={onClose}
       title="Record a Repayment"
-      subtitle={loan ? `${loan.user.fullName} — ${currency(owed)} still owed` : undefined}
+      subtitle={
+        loan
+          ? `${loan.borrowerName ?? loan.user.fullName} — ${currency(owed)} still owed`
+          : undefined
+      }
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={repay.isPending}>Cancel</Button>

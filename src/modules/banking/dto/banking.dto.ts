@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  MaxLength,
   Min,
 } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
@@ -54,9 +55,28 @@ export class BankCorrectionDto {
 }
 
 export class IssueLoanDto {
-  @ApiProperty({ description: 'The shop member taking the money.' })
+  @ApiProperty({
+    description:
+      'The shop member answerable for the loan — the borrower, or the sponsor when borrowerName is given.',
+  })
   @IsUUID()
   userId!: string;
+
+  @ApiPropertyOptional({
+    example: 'Juma Athumani',
+    description:
+      'Name of an outside borrower. Give this and the member above becomes their sponsor; omit it and the member is borrowing for themselves.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  borrowerName?: string;
+
+  @ApiPropertyOptional({ example: '0778 827 461', description: 'How to reach an outside borrower.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  borrowerPhone?: string;
 
   @ApiProperty({ example: 200000 })
   @Type(() => Number)

@@ -112,6 +112,9 @@ export function useIssueLoan() {
   return useMoneyMutation(
     (body: {
       userId: string;
+      /** Naming an outsider makes the member above their sponsor. */
+      borrowerName?: string;
+      borrowerPhone?: string;
       amount: number;
       source: MoneyLocation;
       dueDate: string;

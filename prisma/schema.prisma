@@ -1055,8 +1055,15 @@ model BankTransaction {
 /// place the money sits. Outstanding = amount - sum(repayments).
 model Loan {
   id            String        @id @default(uuid()) @db.Uuid
-  /// The shop member who took the money. Only staff and admins can borrow.
+  /// The shop member answerable for the loan: the borrower when they took it
+  /// themselves, otherwise the member sponsoring an outsider (see borrowerName).
+  /// Either way the debt is chased through them, so it counts against them.
   userId        String        @db.Uuid
+  /// Set when the money went to someone from outside the shop. Null means the
+  /// member on `userId` took it for themselves.
+  borrowerName  String?
+  /// How to reach an outside borrower. Only meaningful with borrowerName.
+  borrowerPhone String?
   amount        Decimal       @db.Decimal(14, 2)
   source        MoneyLocation
   issuedAt      DateTime      @default(now())

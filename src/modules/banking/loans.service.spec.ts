@@ -158,6 +158,42 @@ describe('LoansService', () => {
     expect(bank.assertCovers).toHaveBeenCalled();
   });
 
+  // An outsider can borrow, but only against a member who answers for it, so
+  // the loan is still stored under that member and still counts against them.
+  it('records a sponsored loan against the member who signed for it', async () => {
+    const { service, calls } = build();
+    await service.issue(dto({ borrowerName: '  Juma Athumani  ', borrowerPhone: ' 0778 827 461 ' }), 'admin1');
+
+    const created = calls['loan.create'][0] as {
+      userId: string;
+      borrowerName: string | null;
+      borrowerPhone: string | null;
+    };
+    expect(created.userId).toBe('u2');
+    expect(created.borrowerName).toBe('Juma Athumani');
+    expect(created.borrowerPhone).toBe('0778 827 461');
+
+    // The drawer note says who actually walked off with the cash.
+    const move = calls['cashMovement.create'][0] as { notes: string };
+    expect(move.notes).toMatch(/Juma Athumani \(sponsored by/);
+  });
+
+  it('keeps a plain member loan free of borrower details', async () => {
+    const { service, calls } = build();
+    await service.issue(dto(), 'admin1');
+    const created = calls['loan.create'][0] as { borrowerName: string | null };
+    expect(created.borrowerName).toBeNull();
+  });
+
+  // A phone with no name is nobody: catch the half-filled form rather than
+  // storing a loan whose outside borrower cannot be identified.
+  it('refuses an outside borrower with a blank name', async () => {
+    const { service } = build();
+    await expect(service.issue(dto({ borrowerName: '   ' }), 'admin1')).rejects.toThrow(
+      /Name the outside borrower/i,
+    );
+  });
+
   it('refuses an inactive borrower', async () => {
     const prisma = {
       user: {
