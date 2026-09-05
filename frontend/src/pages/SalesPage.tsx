@@ -49,6 +49,12 @@ function monthNet(r: SalesSeriesPoint): number {
   return num(r.grossProfit) - num(r.expenses) - num(r.stockLoss);
 }
 
+/** The view the page was last left on. */
+function initialView(): ViewKey {
+  const saved = localStorage.getItem('sales-view');
+  return saved === 'daily' || saved === 'monthly' ? saved : 'transactions';
+}
+
 export default function SalesPage() {
   const navigate = useNavigate();
   const { can } = useAuth();
@@ -56,13 +62,16 @@ export default function SalesPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<SaleStatus | ''>('');
-  const [rangeKey, setRangeKey] = useState<RangeKey>('all');
+  // The shop asks "how are we doing this month" far more often than "show me
+  // everything since we opened", so that is where the page starts. Monthly
+  // totals are the exception — one month of a month-by-month comparison is a
+  // single row, so that view opens on the full history.
+  const [rangeKey, setRangeKey] = useState<RangeKey>(() =>
+    initialView() === 'monthly' ? 'all' : 'this-month',
+  );
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
-  const [view, setView] = useState<ViewKey>(() => {
-    const saved = localStorage.getItem('sales-view');
-    return saved === 'daily' || saved === 'monthly' ? saved : 'transactions';
-  });
+  const [view, setView] = useState<ViewKey>(initialView);
   useEffect(() => {
     localStorage.setItem('sales-view', view);
   }, [view]);
