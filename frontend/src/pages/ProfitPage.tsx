@@ -104,7 +104,7 @@ export default function ProfitPage() {
         <StatCard
           label="Revenue"
           icon="payments"
-          accent="secondary"
+          accent="emerald"
           loading={isLoading}
           value={currency(totals.revenue)}
           hint={`${range.label} · net of returns`}
@@ -112,7 +112,7 @@ export default function ProfitPage() {
         <StatCard
           label="Cost of Goods"
           icon="local_shipping"
-          accent="tertiary"
+          accent="amber"
           loading={isLoading}
           value={currency(totals.cogs)}
           hint="What we paid suppliers"
@@ -120,7 +120,7 @@ export default function ProfitPage() {
         <StatCard
           label="Gross Profit"
           icon="trending_up"
-          accent="primary"
+          accent="blue"
           loading={isLoading}
           value={currency(totals.profit)}
           hint="Revenue − cost"
@@ -128,7 +128,7 @@ export default function ProfitPage() {
         <StatCard
           label="Avg. Margin"
           icon="percent"
-          accent={totals.margin >= 0 ? 'primary' : 'error'}
+          accent={totals.margin >= 0 ? 'violet' : 'rose'}
           loading={isLoading}
           value={`${totals.margin.toFixed(1)}%`}
           hint="Profit as % of revenue"

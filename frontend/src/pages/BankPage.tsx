@@ -82,7 +82,7 @@ export default function BankPage() {
         <StatCard
           label="At the Bank"
           icon="account_balance"
-          accent="primary"
+          accent="blue"
           loading={summary.isLoading}
           value={currency(balance)}
           hint={summary.data?.transactionCount ? `${summary.data.transactionCount} movements` : 'No movements yet'}
@@ -90,7 +90,7 @@ export default function BankPage() {
         <StatCard
           label="In the Drawer"
           icon="point_of_sale"
-          accent="secondary"
+          accent="emerald"
           loading={position.isLoading}
           value={currency(position.data?.inHand ?? 0)}
           hint={position.data?.tillOpen ? 'Till open · expected now' : 'Till closed · left at last count'}
@@ -98,7 +98,7 @@ export default function BankPage() {
         <StatCard
           label="Held by Members"
           icon="account_balance_wallet"
-          accent="error"
+          accent="amber"
           loading={position.isLoading}
           value={currency(position.data?.owedByMembers ?? 0)}
           hint={

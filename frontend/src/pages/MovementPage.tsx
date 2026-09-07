@@ -136,10 +136,10 @@ export default function MovementPage() {
       />
 
       <div className="grid grid-cols-2 gap-gutter lg:grid-cols-4">
-        <StatCard label="Fast movers" icon="bolt" accent="secondary" loading={isLoading} value={counts.FAST} hint={range.label} />
-        <StatCard label="Slow movers" icon="trending_down" accent="tertiary" loading={isLoading} value={counts.SLOW} hint="Selling, but rarely" />
-        <StatCard label="Dead stock" icon="do_not_disturb_on" accent="error" loading={isLoading} value={counts.DEAD} hint={`${deadWithStock} still in stock`} />
-        <StatCard label="Active products" icon="inventory_2" accent="primary" loading={isLoading} value={enriched.length} hint="In catalogue" />
+        <StatCard label="Fast movers" icon="bolt" accent="emerald" loading={isLoading} value={counts.FAST} hint={range.label} />
+        <StatCard label="Slow movers" icon="trending_down" accent="amber" loading={isLoading} value={counts.SLOW} hint="Selling, but rarely" />
+        <StatCard label="Dead stock" icon="do_not_disturb_on" accent="rose" loading={isLoading} value={counts.DEAD} hint={`${deadWithStock} still in stock`} />
+        <StatCard label="Active products" icon="inventory_2" accent="blue" loading={isLoading} value={enriched.length} hint="In catalogue" />
       </div>
 
       <Card>

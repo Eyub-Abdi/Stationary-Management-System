@@ -178,3 +178,62 @@
     scrollbar-width: none;
   }
 }
+
+/* ==========================================================================
+   Stat accents — one hue per figure, so a row of cards reads at a glance
+   instead of as four identical grey tiles. Each class sets `--c-stat` (RGB
+   channels); the card derives its icon tile, top rail, wash and hover border
+   from that single variable, so a new hue is one line here.
+
+   The dark values are lifted and desaturated a step: a mid-tone that sings on
+   white goes muddy on a near-black surface.
+   ========================================================================== */
+.stat-blue {
+  --c-stat: 37 99 235;
+}
+.stat-emerald {
+  --c-stat: 5 150 105;
+}
+.stat-amber {
+  --c-stat: 202 111 4;
+}
+.stat-orange {
+  --c-stat: 234 88 12;
+}
+.stat-rose {
+  --c-stat: 225 29 72;
+}
+.stat-violet {
+  --c-stat: 124 58 237;
+}
+.stat-cyan {
+  --c-stat: 8 145 178;
+}
+.stat-slate {
+  --c-stat: 71 85 105;
+}
+
+.dark .stat-blue {
+  --c-stat: 138 165 255;
+}
+.dark .stat-emerald {
+  --c-stat: 52 211 153;
+}
+.dark .stat-amber {
+  --c-stat: 251 191 36;
+}
+.dark .stat-orange {
+  --c-stat: 251 146 60;
+}
+.dark .stat-rose {
+  --c-stat: 253 128 145;
+}
+.dark .stat-violet {
+  --c-stat: 176 152 251;
+}
+.dark .stat-cyan {
+  --c-stat: 34 211 238;
+}
+.dark .stat-slate {
+  --c-stat: 148 163 184;
+}

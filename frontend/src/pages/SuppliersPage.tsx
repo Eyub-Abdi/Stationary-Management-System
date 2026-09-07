@@ -68,7 +68,7 @@ export default function SuppliersPage() {
         <StatCard
           label="Total we owe"
           icon="account_balance_wallet"
-          accent="error"
+          accent="rose"
           value={currency(stats?.totalPayable ?? 0)}
           hint="Outstanding payables"
           loading={summary.isLoading}
@@ -76,7 +76,7 @@ export default function SuppliersPage() {
         <StatCard
           label="Suppliers we owe"
           icon="groups"
-          accent="tertiary"
+          accent="amber"
           value={num(stats?.weOweCount ?? 0).toString()}
           hint={`of ${num(stats?.supplierCount ?? 0)} total`}
           loading={summary.isLoading}
@@ -84,7 +84,7 @@ export default function SuppliersPage() {
         <StatCard
           label="Largest single debt"
           icon="trending_up"
-          accent="error"
+          accent="orange"
           value={currency(stats?.largestDebt ?? 0)}
           hint="Biggest creditor balance"
           loading={summary.isLoading}
@@ -92,7 +92,7 @@ export default function SuppliersPage() {
         <StatCard
           label="Total suppliers"
           icon="local_shipping"
-          accent="primary"
+          accent="blue"
           value={num(stats?.supplierCount ?? 0).toString()}
           hint="On record"
           loading={summary.isLoading}

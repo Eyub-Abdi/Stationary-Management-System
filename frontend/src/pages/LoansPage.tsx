@@ -72,7 +72,7 @@ export default function LoansPage() {
           <StatCard
             label="Owed to the Shop"
             icon="account_balance_wallet"
-            accent="primary"
+            accent="blue"
             loading={summary.isLoading}
             value={currency(summary.data?.outstanding ?? 0)}
             hint={`${summary.data?.loanCount ?? 0} open ${summary.data?.loanCount === 1 ? 'loan' : 'loans'}`}
@@ -80,7 +80,7 @@ export default function LoansPage() {
           <StatCard
             label="Overdue"
             icon="schedule"
-            accent="error"
+            accent="rose"
             loading={summary.isLoading}
             value={currency(summary.data?.overdue ?? 0)}
             hint="Past the agreed date"
@@ -88,7 +88,7 @@ export default function LoansPage() {
           <StatCard
             label="Members Borrowing"
             icon="groups"
-            accent="secondary"
+            accent="violet"
             loading={summary.isLoading}
             value={summary.data?.byMember.length ?? 0}
             hint="With something still to pay"

@@ -190,7 +190,7 @@ export default function SalesPage() {
         <StatCard
           label="Transactions"
           icon="receipt_long"
-          accent="primary"
+          accent="blue"
           loading={isLoading}
           value={txCount.toLocaleString()}
           hint="Matching current filters"
@@ -198,7 +198,7 @@ export default function SalesPage() {
         <StatCard
           label="Revenue"
           icon="payments"
-          accent="secondary"
+          accent="emerald"
           loading={isLoading}
           value={currency(revenue)}
           hint={`${completedCount} completed`}
@@ -206,7 +206,7 @@ export default function SalesPage() {
         <StatCard
           label="Avg. Sale"
           icon="trending_up"
-          accent="tertiary"
+          accent="violet"
           loading={isLoading}
           value={currency(avgSale)}
           hint="Per completed sale"
@@ -214,7 +214,7 @@ export default function SalesPage() {
         <StatCard
           label="Voided"
           icon="block"
-          accent="error"
+          accent="rose"
           loading={isLoading}
           value={voided}
           hint="Excluded from revenue"

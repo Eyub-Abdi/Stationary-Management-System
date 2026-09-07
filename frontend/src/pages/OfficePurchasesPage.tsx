@@ -66,7 +66,7 @@ export default function OfficePurchasesPage() {
         <StatCard
           label="This Month"
           icon="business_center"
-          accent="error"
+          accent="violet"
           loading={month.isLoading}
           value={currency(monthTotal)}
           hint={`${monthRows.length} purchase(s)`}
@@ -74,7 +74,7 @@ export default function OfficePurchasesPage() {
         <StatCard
           label="Items Bought"
           icon="inventory_2"
-          accent="primary"
+          accent="blue"
           loading={month.isLoading}
           value={monthItems}
           hint="This month"
@@ -82,7 +82,7 @@ export default function OfficePurchasesPage() {
         <StatCard
           label="Avg / Purchase"
           icon="bar_chart"
-          accent="tertiary"
+          accent="cyan"
           loading={month.isLoading}
           value={currency(monthRows.length ? monthTotal / monthRows.length : 0)}
           hint="This month"

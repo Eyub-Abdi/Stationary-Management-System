@@ -7,6 +7,8 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Per-card accent hue, set by the .stat-* classes in index.css.
+        stat: c('stat'),
         'on-background': c('on-background'),
         'surface-container': c('surface-container'),
         'inverse-on-surface': c('inverse-on-surface'),

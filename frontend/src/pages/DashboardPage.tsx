@@ -128,7 +128,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-gutter sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Today's Sales"
-          accent="primary"
+          accent="blue"
           icon="trending_up"
           loading={salesToday.isLoading}
           value={currency(todaySalesTotal)}
@@ -137,7 +137,7 @@ export default function DashboardPage() {
         {isAdmin && (
           <StatCard
             label="Today's Expenses"
-            accent="error"
+            accent="rose"
             icon="payments"
             loading={expensesToday.isLoading}
             value={currency(todayExpensesTotal)}
@@ -147,7 +147,7 @@ export default function DashboardPage() {
         {isAdmin ? (
           <StatCard
             label="Today's Net Profit"
-            accent="secondary"
+            accent="emerald"
             icon="account_balance_wallet"
             loading={summary.isLoading}
             value={currency(summary.data?.netProfit ?? 0)}
@@ -156,7 +156,7 @@ export default function DashboardPage() {
         ) : (
           <StatCard
             label="Cash In Drawer"
-            accent="secondary"
+            accent="cyan"
             icon="account_balance"
             value={session ? currency(session.breakdown?.expectedAmount ?? 0) : 'Closed'}
             hint={session ? 'Expected cash · session open' : 'No open session'}
@@ -165,7 +165,7 @@ export default function DashboardPage() {
         {!isAdmin && (
           <StatCard
             label="Receivables"
-            accent="error"
+            accent="amber"
             icon="request_quote"
             loading={aging.isLoading}
             value={currency(receivablesTotal)}
@@ -174,7 +174,7 @@ export default function DashboardPage() {
         )}
         <StatCard
           label="Low Stock Alerts"
-          accent="tertiary"
+          accent="violet"
           icon="inventory"
           loading={lowStock.isLoading}
           value={lowStock.data?.length ?? 0}

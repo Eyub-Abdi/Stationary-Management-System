@@ -156,7 +156,7 @@ export default function ExpensesPage() {
         <StatCard
           label="This Month"
           icon="payments"
-          accent="error"
+          accent="rose"
           loading={monthExpenses.isLoading}
           value={currency(monthTotal)}
           hint={`${monthExpenses.data?.data.length ?? 0} entries`}
@@ -164,7 +164,7 @@ export default function ExpensesPage() {
         <StatCard
           label="Categories Used"
           icon="category"
-          accent="primary"
+          accent="violet"
           loading={monthExpenses.isLoading}
           value={new Set((monthExpenses.data?.data ?? []).map((e) => e.category)).size}
           hint="Distinct this month"
@@ -172,7 +172,7 @@ export default function ExpensesPage() {
         <StatCard
           label="Avg / Entry"
           icon="bar_chart"
-          accent="tertiary"
+          accent="cyan"
           loading={monthExpenses.isLoading}
           value={currency(monthExpenses.data?.data.length ? monthTotal / monthExpenses.data.data.length : 0)}
           hint="This month"

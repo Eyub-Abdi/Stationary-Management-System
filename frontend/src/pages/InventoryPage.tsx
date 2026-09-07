@@ -80,7 +80,7 @@ export default function InventoryPage() {
         <StatCard
           label="Stock Valuation"
           icon="paid"
-          accent="secondary"
+          accent="emerald"
           loading={valuation.isLoading}
           value={currency(totalValuation)}
           hint="FIFO batch cost"
@@ -88,7 +88,7 @@ export default function InventoryPage() {
         <StatCard
           label="Total Units"
           icon="inventory_2"
-          accent="primary"
+          accent="blue"
           loading={valuation.isLoading}
           value={num(totalUnits).toLocaleString()}
           hint={`${valuation.data?.length ?? 0} SKUs`}
@@ -96,7 +96,7 @@ export default function InventoryPage() {
         <StatCard
           label="Low Stock Items"
           icon="warning"
-          accent="error"
+          accent="amber"
           loading={lowStock.isLoading}
           value={lowStock.data?.length ?? 0}
           hint="At or below minimum"

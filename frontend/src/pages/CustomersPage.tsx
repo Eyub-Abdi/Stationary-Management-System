@@ -80,10 +80,10 @@ export default function CustomersPage() {
       />
 
       <div className="grid grid-cols-2 gap-gutter sm:grid-cols-4">
-        <StatCard label="Current (0–30d)" icon="schedule" accent="primary" value={currency(agingTotals.current)} loading={aging.isLoading} />
-        <StatCard label="31–60 days" icon="hourglass_bottom" accent="tertiary" value={currency(agingTotals.d3160)} loading={aging.isLoading} />
-        <StatCard label="61–90 days" icon="warning" accent="tertiary" value={currency(agingTotals.d6190)} loading={aging.isLoading} />
-        <StatCard label="90+ days overdue" icon="error" accent="error" value={currency(agingTotals.d90)} loading={aging.isLoading} />
+        <StatCard label="Current (0–30d)" icon="schedule" accent="emerald" value={currency(agingTotals.current)} loading={aging.isLoading} />
+        <StatCard label="31–60 days" icon="hourglass_bottom" accent="amber" value={currency(agingTotals.d3160)} loading={aging.isLoading} />
+        <StatCard label="61–90 days" icon="warning" accent="orange" value={currency(agingTotals.d6190)} loading={aging.isLoading} />
+        <StatCard label="90+ days overdue" icon="error" accent="rose" value={currency(agingTotals.d90)} loading={aging.isLoading} />
       </div>
 
       <Card>
