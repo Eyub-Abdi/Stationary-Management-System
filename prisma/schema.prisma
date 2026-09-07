@@ -1172,6 +1172,10 @@ model AppSetting {
   id                String    @id @default("singleton")
   businessName      String    @default("KJ Stationery")
   branchName        String    @default("Main Branch")
+  // Opening stock is setup work, not trading: on most days there is nothing to
+  // enter, so the screen is hidden unless an admin turns it on for the stretch
+  // where it is being used.
+  openingStockEnabled Boolean @default(false)
   // Automatic database backups to local disk (drive D on Windows by default).
   autoBackupEnabled Boolean   @default(false)
   // Local time of day (HH:mm, 24h) the daily backup should run.

@@ -1,6 +1,11 @@
 import type { Role } from '@/types';
 import type { PermissionKey } from '@/providers/AuthProvider';
 
+/** Screens an admin can switch off in Settings, for the stretch they are used. */
+export type FeatureKey = 'openingStock';
+
+export type NavFeatures = Record<FeatureKey, boolean>;
+
 export interface NavItem {
   to: string;
   label: string;
@@ -10,6 +15,8 @@ export interface NavItem {
   permission?: PermissionKey;
   // Alternate label shown to non-admin staff (e.g. "Expenses" → "Petty Cash").
   staffLabel?: string;
+  /** Hidden entirely while the matching setting is off. */
+  feature?: FeatureKey;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -21,8 +28,9 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/services', label: 'Services', icon: 'print' },
   { to: '/inventory', label: 'Inventory', icon: 'package_2' },
   // Setup, not trading: the shelf the shop started with. Sits next to
-  // Inventory because that is where someone goes looking for it.
-  { to: '/opening-stock', label: 'Opening Stock', icon: 'flag', permission: 'inventory' },
+  // Inventory because that is where someone goes looking for it, and only
+  // while an admin has it switched on — a shop enters this once.
+  { to: '/opening-stock', label: 'Opening Stock', icon: 'flag', permission: 'inventory', feature: 'openingStock' },
   { to: '/purchases', label: 'Purchases', icon: 'shopping_cart', permission: 'purchases' },
   { to: '/suppliers', label: 'Suppliers', icon: 'local_shipping', permission: 'suppliers' },
   { to: '/expenses', label: 'Expenses', icon: 'payments', staffLabel: 'Petty Cash' },
@@ -46,10 +54,14 @@ export const NAV_ITEMS: NavItem[] = [
 export function visibleNav(
   role: Role | undefined,
   can: (key: PermissionKey) => boolean,
+  features: NavFeatures,
 ): NavItem[] {
   const isAdmin = role === 'ADMIN';
   return NAV_ITEMS.filter(
-    (item) => (!item.adminOnly || isAdmin) && (!item.permission || can(item.permission)),
+    (item) =>
+      (!item.adminOnly || isAdmin) &&
+      (!item.permission || can(item.permission)) &&
+      (!item.feature || features[item.feature]),
   ).map((item) =>
     !isAdmin && item.staffLabel ? { ...item, label: item.staffLabel } : item,
   );

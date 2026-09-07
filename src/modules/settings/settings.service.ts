@@ -33,6 +33,7 @@ export class SettingsService {
     const data: Prisma.AppSettingUpdateInput = {};
     if (dto.businessName !== undefined) data.businessName = dto.businessName.trim();
     if (dto.branchName !== undefined) data.branchName = dto.branchName.trim();
+    if (dto.openingStockEnabled !== undefined) data.openingStockEnabled = dto.openingStockEnabled;
     if (dto.autoBackupEnabled !== undefined) data.autoBackupEnabled = dto.autoBackupEnabled;
     // `backupTime` widened until the Prisma client is regenerated to include it.
     if (dto.backupTime !== undefined) (data as { backupTime?: string }).backupTime = dto.backupTime;

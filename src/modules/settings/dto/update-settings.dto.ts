@@ -27,6 +27,14 @@ export class UpdateSettingsDto {
   @MaxLength(80)
   branchName?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Show the Opening Stock screen. Setup work, so it stays hidden until a shop is entering the shelf it started with.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  openingStockEnabled?: boolean;
+
   @ApiPropertyOptional({ description: 'Enable automatic daily database backups to local disk.' })
   @IsOptional()
   @IsBoolean()

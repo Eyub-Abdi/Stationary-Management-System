@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { AdminRoute, PermissionRoute, ProtectedRoute } from '@/components/RouteGuards';
+import { AdminRoute, FeatureRoute, PermissionRoute, ProtectedRoute } from '@/components/RouteGuards';
 import { useAuth } from '@/providers/AuthProvider';
 
 import LoginPage from '@/pages/LoginPage';
@@ -98,7 +98,9 @@ export default function App() {
           path="/opening-stock"
           element={
             <PermissionRoute permission="inventory">
-              <OpeningStockPage />
+              <FeatureRoute feature="openingStock">
+                <OpeningStockPage />
+              </FeatureRoute>
             </PermissionRoute>
           }
         />

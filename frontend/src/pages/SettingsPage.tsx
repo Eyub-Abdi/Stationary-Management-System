@@ -229,7 +229,89 @@ function BusinessTab() {
           )}
         </CardBody>
       </Card>
+      <OpeningStockSection />
     </div>
+  );
+}
+
+/**
+ * Opening stock is entered once, when a shop starts using the system, and then
+ * left alone. Kept in the sidebar forever it invites the wrong entry — a
+ * supplier delivery recorded as stock that was always there, its cost missing
+ * from every trading figure — so an admin switches it on for that stretch.
+ */
+function OpeningStockSection() {
+  const toast = useToast();
+  const { data: settings, isLoading } = useAppSettings();
+  const update = useUpdateAppSettings();
+  const enabled = !!settings?.openingStockEnabled;
+
+  const toggle = async () => {
+    try {
+      await update.mutateAsync({ openingStockEnabled: !enabled });
+      toast.success(
+        enabled ? 'Opening stock hidden' : 'Opening stock shown',
+        enabled
+          ? 'Entries already recorded are untouched.'
+          : 'It is now in the sidebar, under Inventory.',
+      );
+    } catch (e) {
+      toast.error('Could not change setting', extractMessage(e));
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader
+        title="Opening stock"
+        subtitle="The shelf the shop started with. Setup work, not trading"
+      />
+      <CardBody>
+        {isLoading ? (
+          <p className="text-body-sm text-on-surface-variant">Loading…</p>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-container-low p-3">
+              <div className="flex items-center gap-3">
+                <span
+                  className={cn(
+                    'flex h-9 w-9 items-center justify-center rounded-lg',
+                    enabled
+                      ? 'bg-secondary-container text-on-secondary-container'
+                      : 'bg-surface-container text-on-surface-variant',
+                  )}
+                >
+                  <Icon name={enabled ? 'flag' : 'visibility_off'} size={20} />
+                </span>
+                <div>
+                  <p className="text-body-sm font-semibold text-on-surface">
+                    {enabled ? 'Shown in the sidebar' : 'Hidden'}
+                  </p>
+                  <p className="text-[12px] text-on-surface-variant">
+                    {enabled
+                      ? 'Switch it off once the shelf is entered.'
+                      : 'Switch it on while you are entering it.'}
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant={enabled ? 'outline' : 'primary'}
+                icon={enabled ? 'visibility_off' : 'visibility'}
+                loading={update.isPending}
+                onClick={toggle}
+              >
+                {enabled ? 'Hide' : 'Show'}
+              </Button>
+            </div>
+            <p className="text-[12px] text-on-surface-variant">
+              Hiding it changes nothing already recorded: the costs stay on the batches they
+              were entered against, and the figures that exclude them keep doing so. Stock that
+              arrives from a supplier belongs in Purchases, whichever way this is set.
+            </p>
+          </div>
+        )}
+      </CardBody>
+    </Card>
   );
 }
 

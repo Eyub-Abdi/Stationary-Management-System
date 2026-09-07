@@ -5,6 +5,8 @@ export interface AppSettings {
   id: string;
   businessName: string;
   branchName: string;
+  /** Whether the Opening Stock screen is shown at all (setup work, so off by default). */
+  openingStockEnabled: boolean;
   autoBackupEnabled: boolean;
   /** Local time of day (HH:mm) the daily backup runs. */
   backupTime: string;
@@ -23,6 +25,7 @@ export interface AppSettings {
 export interface UpdateAppSettingsInput {
   businessName?: string;
   branchName?: string;
+  openingStockEnabled?: boolean;
   autoBackupEnabled?: boolean;
   backupTime?: string;
   backupDir?: string;

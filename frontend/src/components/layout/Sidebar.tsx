@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Icon } from '@/components/ui';
 import { useAuth } from '@/providers/AuthProvider';
+import { useAppSettings } from '@/hooks/useAppSettings';
 import { visibleNav } from './nav';
 
 /**
@@ -21,7 +22,12 @@ export function Sidebar({
   onToggleCollapsed: () => void;
 }) {
   const { user, can } = useAuth();
-  const items = visibleNav(user?.role, can);
+  const { data: settings } = useAppSettings();
+  // Undefined while the settings load: a switched-off entry that flickers in
+  // and out is worse than one that arrives a moment late.
+  const items = visibleNav(user?.role, can, {
+    openingStock: !!settings?.openingStockEnabled,
+  });
 
   return (
     <>
