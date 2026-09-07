@@ -14,6 +14,7 @@ import ProductFormPage from '@/pages/ProductFormPage';
 import ServicesPage from '@/pages/ServicesPage';
 import ServiceFormPage from '@/pages/ServiceFormPage';
 import InventoryPage from '@/pages/InventoryPage';
+import OpeningStockPage from '@/pages/OpeningStockPage';
 import PurchasesPage from '@/pages/PurchasesPage';
 import CreatePurchasePage from '@/pages/CreatePurchasePage';
 import PurchaseDetailPage from '@/pages/PurchaseDetailPage';
@@ -93,6 +94,14 @@ export default function App() {
           }
         />
         <Route path="/inventory" element={<InventoryPage />} />
+        <Route
+          path="/opening-stock"
+          element={
+            <PermissionRoute permission="inventory">
+              <OpeningStockPage />
+            </PermissionRoute>
+          }
+        />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/customers/:id" element={<CustomerDetailPage />} />
         <Route

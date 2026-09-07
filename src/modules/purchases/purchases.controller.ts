@@ -1,22 +1,11 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Headers,
-  Param,
-  ParseUUIDPipe,
-  Post,
-  Query,
-} from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { IDEMPOTENCY_HEADER } from '../../common/constants';
-import {
-  AuthenticatedUser,
-  CurrentUser,
-} from '../../common/decorators/current-user.decorator';
+import { AuthenticatedUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permission } from '../../common/decorators/permission.decorator';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { PurchaseQueryDto } from './dto/purchase-query.dto';
+import { VoidPurchaseDto } from './dto/void-purchase.dto';
 import { PurchasesService } from './purchases.service';
 
 @ApiTags('Purchases')
@@ -56,5 +45,20 @@ export class PurchasesController {
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.purchases.findOne(id);
+  }
+
+  @Post(':id/void')
+  @ApiOperation({
+    summary:
+      'Undo a purchase. Takes the stock back off the shelf, removes its FIFO ' +
+      'batches, unwinds the supplier debt and returns the cash to the till. ' +
+      'Refused once anything has been sold out of it.',
+  })
+  void(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: VoidPurchaseDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.purchases.void(id, dto.reason, user.id);
   }
 }

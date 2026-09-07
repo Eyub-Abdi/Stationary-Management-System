@@ -20,6 +20,9 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/products', label: 'Products', icon: 'inventory_2' },
   { to: '/services', label: 'Services', icon: 'print' },
   { to: '/inventory', label: 'Inventory', icon: 'package_2' },
+  // Setup, not trading: the shelf the shop started with. Sits next to
+  // Inventory because that is where someone goes looking for it.
+  { to: '/opening-stock', label: 'Opening Stock', icon: 'flag', permission: 'inventory' },
   { to: '/purchases', label: 'Purchases', icon: 'shopping_cart', permission: 'purchases' },
   { to: '/suppliers', label: 'Suppliers', icon: 'local_shipping', permission: 'suppliers' },
   { to: '/expenses', label: 'Expenses', icon: 'payments', staffLabel: 'Petty Cash' },

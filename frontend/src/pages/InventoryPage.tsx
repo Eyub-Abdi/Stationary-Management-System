@@ -47,6 +47,7 @@ const MOVE_TONE: Record<InventoryMovementType, 'success' | 'error' | 'info' | 'w
   SALE: 'info',
   ADJUSTMENT: 'warning',
   RETURN: 'success',
+  OPENING: 'info',
 };
 
 export default function InventoryPage() {
@@ -150,6 +151,7 @@ function MovementsTab() {
           <option value="SALE">Sale</option>
           <option value="ADJUSTMENT">Adjustment</option>
           <option value="RETURN">Return</option>
+          <option value="OPENING">Opening stock</option>
         </Select>
       </div>
 

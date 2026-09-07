@@ -9,7 +9,14 @@ export type ServiceStatus = 'ACTIVE' | 'INACTIVE';
 export type PricingType = 'PER_PAGE' | 'FIXED';
 export type SaleItemType = 'PRODUCT' | 'SERVICE';
 export type SaleStatus = 'COMPLETED' | 'VOIDED';
-export type InventoryMovementType = 'PURCHASE' | 'SALE' | 'ADJUSTMENT' | 'RETURN';
+export type PurchaseStatus = 'COMPLETED' | 'VOIDED';
+export type InventoryMovementType =
+  | 'PURCHASE'
+  | 'SALE'
+  | 'ADJUSTMENT'
+  | 'RETURN'
+  // The shelf as it stood on day one — costed, but not bought today.
+  | 'OPENING';
 export type CashSessionStatus = 'OPEN' | 'CLOSED';
 export type CashMovementType = 'DEPOSIT' | 'WITHDRAWAL';
 export type PaymentMethod = 'CASH' | 'CREDIT';
@@ -24,7 +31,22 @@ export type StockAdjustmentReason =
   | 'THEFT'
   | 'COUNT_CORRECTION'
   | 'FOUND'
+  | 'OPENING_STOCK'
   | 'OTHER';
+
+/** One line of the day-one shelf, as the opening-stock screen reads it back. */
+export interface OpeningStockRow {
+  id: string;
+  variantId: string;
+  sku: string;
+  name: string;
+  baseUnit: string;
+  quantity: number;
+  unitCost: string | null;
+  value: string;
+  recordedBy: string | null;
+  createdAt: string;
+}
 
 export interface ApiEnvelope<T> {
   success: true;
@@ -341,6 +363,10 @@ export interface Purchase {
   amountDue: string;
   notes: string | null;
   createdAt: string;
+  // Undone purchases keep their number and lines, and stop counting anywhere.
+  status: PurchaseStatus;
+  voidedAt: string | null;
+  voidReason: string | null;
   items?: PurchaseItem[];
 }
 

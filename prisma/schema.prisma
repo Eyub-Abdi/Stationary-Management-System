@@ -55,11 +55,20 @@ enum SaleStatus {
   VOIDED
 }
 
+// A purchase entered wrongly can be undone, but only while nothing has been
+// sold out of it. Voiding is a soft delete: the row stays for the audit trail
+// and drops out of every figure that counts purchases.
+enum PurchaseStatus {
+  COMPLETED
+  VOIDED
+}
+
 enum InventoryMovementType {
   PURCHASE
   SALE
   ADJUSTMENT
   RETURN
+  OPENING // stock already on the shelf when the shop started using the system
 }
 
 // Why stock was adjusted by hand. Categorised (rather than free text) so losses
@@ -75,6 +84,7 @@ enum StockAdjustmentReason {
   THEFT // known or suspected theft
   COUNT_CORRECTION // physical count disagreed with the system
   FOUND // stock discovered that the system did not know about
+  OPENING_STOCK // the shelf as it stood on day one — never a loss, never a purchase
   OTHER
 }
 
@@ -501,6 +511,12 @@ model Purchase {
   idempotencyKey String?       @unique
   createdAt      DateTime      @default(now())
 
+  // Undo. Corrections never rewrite the original row, so a voided purchase
+  // keeps its number and its lines and simply stops counting.
+  status     PurchaseStatus @default(COMPLETED)
+  voidedAt   DateTime?
+  voidReason String?
+
   supplier    Supplier?         @relation(fields: [supplierId], references: [id])
   user        User              @relation(fields: [userId], references: [id])
   cashSession CashSession?      @relation(fields: [cashSessionId], references: [id])
@@ -512,6 +528,7 @@ model Purchase {
   @@index([userId])
   @@index([cashSessionId])
   @@index([purchaseDate])
+  @@index([status])
   @@map("purchases")
 }
 

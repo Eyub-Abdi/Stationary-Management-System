@@ -64,6 +64,26 @@ export function usePurchasesDaily(range: { from?: string; to?: string }, enabled
   });
 }
 
+/** Undoes a purchase: stock off the shelf, batches gone, supplier debt and till
+ *  cash unwound. The API refuses once anything has been sold out of it. */
+export function useVoidPurchase() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      unwrap(api.post(`/purchases/${id}/void`, { reason })),
+    onSuccess: (_d, { id }) => {
+      qc.invalidateQueries({ queryKey: ['purchases'] });
+      qc.invalidateQueries({ queryKey: qk.purchase(id) });
+      qc.invalidateQueries({ queryKey: ['products'] });
+      qc.invalidateQueries({ queryKey: ['inventory'] });
+      qc.invalidateQueries({ queryKey: ['suppliers'] });
+      qc.invalidateQueries({ queryKey: ['cash'] });
+      qc.invalidateQueries({ queryKey: ['report'] });
+      qc.invalidateQueries({ queryKey: ['accounting'] });
+    },
+  });
+}
+
 export function usePurchase(id: string | undefined) {
   return useQuery({
     queryKey: qk.purchase(id ?? ''),

@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma, StockAdjustmentReason } from '@prisma/client';
 import Decimal from 'decimal.js';
 import { InventoryAdminService } from './inventory-admin.service';
@@ -23,6 +23,7 @@ describe('InventoryAdminService', () => {
       fifoCost?: number;
       components?: { variantId: string; qty: number; perPage: boolean }[];
       serviceVariant?: unknown;
+      priorOpening?: { variantId: string; createdAt: Date }[];
     } = {},
   ) => {
     // Prisma's create data, captured loosely — these are assertions about
@@ -41,8 +42,16 @@ describe('InventoryAdminService', () => {
           created.push(data);
           return Promise.resolve({ id: `adj${created.length}`, ...data });
         }),
+        // Opening stock already on the books for these variants, if any.
+        findMany: jest.fn().mockResolvedValue(opts.priorOpening ?? []),
       },
     } as unknown as Prisma.TransactionClient;
+    // Added after the cast so the two productVariant methods opening stock
+    // needs sit on the same mock object the rest of the suite reads.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (tx as any).productVariant.findMany = jest.fn().mockResolvedValue([variant]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (tx as any).productVariant.update = jest.fn().mockResolvedValue(variant);
 
     const prisma = {
       runSerializable: jest.fn().mockImplementation((cb) => cb(tx)),
@@ -228,6 +237,123 @@ describe('InventoryAdminService', () => {
       await expect(
         service.recordWastage(
           { serviceVariantId: 'sv1', quantity: 1, reasonCode: StockAdjustmentReason.JAM },
+          'u1',
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  /**
+   * Opening stock is the shelf as it stood on day one. What matters is that it
+   * lands costed (so the first sale reports honest COGS) but under a reason the
+   * profit and wastage figures skip — the two things that went wrong when the
+   * only ways in were a purchase and a positive adjustment.
+   */
+  describe('recordOpeningStock', () => {
+    it('divides a pack price down to the per-piece cost FIFO consumes in', async () => {
+      // Four reams at 50,000 each. 2,000 sheets at 100, not 2,000 at 50,000 —
+      // which is the slip that valued a shelf at 100,000,000.
+      const { service, created, inventory } = build();
+
+      const result = await service.recordOpeningStock(
+        {
+          items: [
+            { variantId: 'v1', quantity: 4, unitSize: 500, unitLabel: 'Ream', unitCost: 50000 },
+          ],
+        },
+        'u1',
+      );
+
+      expect(inventory.addBatchTx).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ quantity: 2000 }),
+      );
+      expect(inventory.addBatchTx.mock.calls[0][1].unitCost.toString()).toBe('100');
+      expect(created[0].quantityChange).toBe(2000);
+      expect(result.totalValue).toBe('200000.00');
+    });
+
+    it('books the value under OPENING_STOCK, not as stock written back on', async () => {
+      // The whole fix in one assertion: every profit and wastage figure filters
+      // on this reason, so a setup can no longer read as profit nobody earned.
+      const { service, created, movements } = build();
+
+      await service.recordOpeningStock(
+        { items: [{ variantId: 'v1', quantity: 10, unitCost: 120 }] },
+        'u1',
+      );
+
+      expect(created[0].reasonCode).toBe(StockAdjustmentReason.OPENING_STOCK);
+      expect(created[0].costImpact.toString()).toBe('1200');
+      expect(movements[0].type).toBe('OPENING');
+    });
+
+    it('dates the FIFO batch to the count, so day-one stock sells first', async () => {
+      const countedAt = new Date('2026-09-01T00:00:00.000Z');
+      const { service, inventory } = build();
+
+      await service.recordOpeningStock(
+        { countedAt, items: [{ variantId: 'v1', quantity: 5, unitCost: 100 }] },
+        'u1',
+      );
+
+      expect(inventory.addBatchTx.mock.calls[0][1].purchaseDate).toBe(countedAt);
+    });
+
+    it('refuses a second opening entry for the same variant', async () => {
+      // Almost always a recount rather than a genuine second opening, and
+      // silently doubling the shelf is far worse than saying so.
+      const { service } = build({
+        priorOpening: [{ variantId: 'v1', createdAt: new Date('2026-09-01') }],
+      });
+
+      await expect(
+        service.recordOpeningStock(
+          { items: [{ variantId: 'v1', quantity: 5, unitCost: 100 }] },
+          'u1',
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('refuses the same variant listed twice in one entry', async () => {
+      const { service } = build();
+
+      await expect(
+        service.recordOpeningStock(
+          {
+            items: [
+              { variantId: 'v1', quantity: 5, unitCost: 100 },
+              { variantId: 'v1', quantity: 3, unitCost: 100 },
+            ],
+          },
+          'u1',
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('refuses a per-piece cost above the selling price', async () => {
+      // A pack price left in the piece field. Caught here rather than six weeks
+      // later in the profit figures.
+      const { service } = build();
+
+      await expect(
+        service.recordOpeningStock(
+          { items: [{ variantId: 'v1', quantity: 4, unitCost: 50000 }] },
+          'u1',
+        ),
+      ).rejects.toThrow(/above the/);
+    });
+
+    it('keeps opening stock out of the adjustment form', async () => {
+      const { service } = build();
+
+      await expect(
+        service.adjust(
+          {
+            variantId: 'v1',
+            quantityChange: 100,
+            reasonCode: StockAdjustmentReason.OPENING_STOCK,
+          },
           'u1',
         ),
       ).rejects.toBeInstanceOf(BadRequestException);

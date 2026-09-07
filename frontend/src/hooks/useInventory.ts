@@ -6,6 +6,7 @@ import type {
   InventoryMovementType,
   Paginated,
   SortParams,
+  OpeningStockRow,
   StockAdjustmentReason,
   StockLevelRow,
 } from '@/types';
@@ -61,6 +62,50 @@ export interface RecordWastageInput {
 export interface WastageResult {
   totalCost: string;
   adjustments: { id: string; quantityChange: number }[];
+}
+
+/** One line of the shelf as it stood at setup. Quantity and cost are BOTH in
+ *  the transacted unit; unitSize divides them down to pieces server-side. */
+export interface OpeningStockItemInput {
+  variantId: string;
+  quantity: number;
+  unitSize?: number;
+  unitLabel?: string;
+  unitCost: number;
+  sellingPrice?: number;
+  wholesalePrice?: number;
+}
+
+export interface RecordOpeningStockInput {
+  items: OpeningStockItemInput[];
+  countedAt?: string;
+  notes?: string;
+}
+
+export interface OpeningStockResult {
+  countedAt: string;
+  lineCount: number;
+  totalValue: string;
+  lines: { name: string; basePieces: number; unitCost: string; lineValue: string }[];
+}
+
+export function useOpeningStock() {
+  return useQuery({
+    queryKey: qk.openingStock(),
+    queryFn: () => unwrap<OpeningStockRow[]>(api.get('/inventory/opening-stock')),
+  });
+}
+
+/** Records stock that was already on the shelf when the shop started using the
+ *  system. Costed into FIFO batches, but no cash leaves the till and nothing is
+ *  booked as a loss — which is what a purchase and an adjustment got wrong. */
+export function useRecordOpeningStock() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: RecordOpeningStockInput) =>
+      unwrap<OpeningStockResult>(api.post('/inventory/opening-stock', input)),
+    onSuccess: () => invalidateStock(qc),
+  });
 }
 
 export function useAdjustStock() {

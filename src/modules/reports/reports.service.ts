@@ -5,7 +5,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CashService } from '../cash/cash.service';
 import {
   REASON_LABELS,
+  TRADING_ADJUSTMENTS,
   isLossReason,
+  tradingAdjustmentsSql,
 } from '../inventory/adjustment-reasons';
 import { findOpenSession } from '../cash/open-session';
 import {
@@ -138,15 +140,18 @@ export class ReportsService {
         SELECT date_trunc(${unit}, "purchaseDate") AS period,
                COALESCE(SUM("totalCost"), 0)::text AS purchases
         FROM purchases
-        WHERE TRUE ${purchaseRange}
+        WHERE status = 'COMPLETED' ${purchaseRange}
         GROUP BY period;
       `),
-      // Net stock written off in the bucket, as a positive cost.
+      // Net stock written off in the bucket, as a positive cost. Opening stock
+      // is left out: it is the shelf the shop started with, not a bucket's
+      // trading, and counting it here would show the setup month as the most
+      // profitable one on record.
       this.prisma.$queryRaw<{ period: Date; stock_loss: string }[]>(Prisma.sql`
         SELECT date_trunc(${unit}, "createdAt")      AS period,
                COALESCE(-SUM("costImpact"), 0)::text AS stock_loss
         FROM inventory_adjustments
-        WHERE TRUE ${adjustmentRange}
+        WHERE TRUE ${adjustmentRange} ${tradingAdjustmentsSql()}
         GROUP BY period;
       `),
       // Returns are backed out of the bucket they were processed in, matching
@@ -255,13 +260,16 @@ export class ReportsService {
       // Stock written off by hand — jams, spoilage, shrinkage. costImpact is
       // the FIFO cost of what left the shelf, signed negative.
       this.prisma.inventoryAdjustment.aggregate({
-        where: { ...adjustmentWhere, quantityChange: { lt: 0 } },
+        where: { ...adjustmentWhere, ...TRADING_ADJUSTMENTS, quantityChange: { lt: 0 } },
         _sum: { costImpact: true },
       }),
       // Stock written back on. Value appearing without a purchase behind it, so
-      // it offsets the losses rather than counting as income.
+      // it offsets the losses rather than counting as income. Opening stock is
+      // excluded: it is not stock that reappeared, it is the shelf the shop
+      // opened with, and netting it against wastage read a 74m setup as 74m of
+      // profit that was never earned.
       this.prisma.inventoryAdjustment.aggregate({
-        where: { ...adjustmentWhere, quantityChange: { gt: 0 } },
+        where: { ...adjustmentWhere, ...TRADING_ADJUSTMENTS, quantityChange: { gt: 0 } },
         _sum: { costImpact: true },
       }),
     ]);
@@ -366,7 +374,7 @@ export class ReportsService {
                COALESCE(-SUM(a."costImpact"), 0)::text                               AS cost,
                COUNT(*)                                                              AS entries
         FROM inventory_adjustments a
-        WHERE TRUE ${range}
+        WHERE TRUE ${range} ${tradingAdjustmentsSql('a')}
         GROUP BY a."reasonCode";
       `),
       this.prisma.$queryRaw<
@@ -390,7 +398,7 @@ export class ReportsService {
         FROM inventory_adjustments a
         JOIN product_variants v ON v.id = a."variantId"
         JOIN products p         ON p.id = v."productId"
-        WHERE a."quantityChange" < 0 ${range}
+        WHERE a."quantityChange" < 0 ${range} ${tradingAdjustmentsSql('a')}
         GROUP BY v.id, p.id
         ORDER BY COALESCE(-SUM(a."costImpact"), 0) DESC;
       `),
@@ -411,12 +419,12 @@ export class ReportsService {
         FROM inventory_adjustments a
         JOIN service_variants sv ON sv.id = a."serviceVariantId"
         JOIN services s          ON s.id = sv."serviceId"
-        WHERE a."quantityChange" < 0 ${range}
+        WHERE a."quantityChange" < 0 ${range} ${tradingAdjustmentsSql('a')}
         GROUP BY sv.id, s.id
         ORDER BY COALESCE(-SUM(a."costImpact"), 0) DESC;
       `),
       this.prisma.inventoryAdjustment.aggregate({
-        where,
+        where: { ...where, ...TRADING_ADJUSTMENTS },
         _sum: { costImpact: true },
       }),
     ]);

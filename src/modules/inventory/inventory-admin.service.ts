@@ -1,18 +1,24 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, StockAdjustmentReason } from '@prisma/client';
+import {
+  InventoryMovementType,
+  Prisma,
+  StockAdjustmentReason,
+} from '@prisma/client';
 import Decimal from 'decimal.js';
 import { paginate } from '../../common/dto/pagination.dto';
 import { resolveOrderBy, SortMap } from '../../common/utils/sort';
-import { add, money, mul, toPrisma } from '../../common/utils/money';
+import { add, money, mul, round, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { REASON_LABELS } from './adjustment-reasons';
+import { isOpeningStock, REASON_LABELS } from './adjustment-reasons';
 import { AdjustStockDto } from './dto/adjust-stock.dto';
 import { MovementQueryDto } from './dto/movement-query.dto';
+import { RecordOpeningStockDto } from './dto/opening-stock.dto';
 import { RecordWastageDto } from './dto/record-wastage.dto';
 import { InventoryService } from './inventory.service';
 import { assertCostPerBaseUnit } from './unit-cost-guard';
@@ -28,6 +34,34 @@ interface AdjustmentInput {
   serviceVariantId?: string;
   /** Let stock go below zero rather than refusing — see recordWastage. */
   allowShortfall?: boolean;
+  /**
+   * How the ledger should name this movement. Opening stock reads as OPENING so
+   * the movement log tells day-one stock apart from a later correction.
+   */
+  movementType?: InventoryMovementType;
+  /**
+   * Dates the FIFO batch a positive change creates. Stock counted at setup is
+   * dated to the count, so it is consumed before anything bought after it.
+   */
+  batchDate?: Date;
+  /**
+   * The selling price the variant will carry once this call succeeds, for the
+   * cost guard. Defaults to the price it carries now.
+   */
+  sellingPrice?: Decimal;
+}
+
+/** One recorded line of the day-one shelf, as the setup screen reads it back. */
+export interface OpeningStockLine {
+  adjustmentId: string;
+  variantId: string;
+  name: string;
+  quantity: number;
+  unitLabel: string;
+  unitSize: number;
+  basePieces: number;
+  unitCost: string;
+  lineValue: string;
 }
 
 /**
@@ -54,6 +88,14 @@ export class InventoryAdminService {
   ) {}
 
   async adjust(dto: AdjustStockDto, userId: string) {
+    // Opening stock has its own screen, and routing it through here would take
+    // the shortcut that caused the problem: one variant at a time, no cost per
+    // pack, and the reason left to whoever is typing.
+    if (isOpeningStock(dto.reasonCode)) {
+      throw new BadRequestException(
+        'Stock that was already on the shelf at setup goes through Opening Stock, not an adjustment.',
+      );
+    }
     return this.prisma.runSerializable((tx) =>
       this.writeAdjustmentTx(tx, dto, userId),
     );
@@ -91,10 +133,12 @@ export class InventoryAdminService {
     if (input.quantityChange > 0) {
       const unitCost = money(input.unitCost ?? variant.buyingPrice);
       // Catches a pack price typed into a per-piece field, whether it came
-      // from the form or from the buyingPrice fallback above.
+      // from the form or from the buyingPrice fallback above. Judged against
+      // the price the variant is about to carry, so a line that sets the
+      // selling price in the same breath is measured against the new one.
       assertCostPerBaseUnit(
         unitCost,
-        money(variant.sellingPrice),
+        input.sellingPrice ?? money(variant.sellingPrice),
         variant.product,
       );
       await this.inventory.addBatchTx(tx, {
@@ -102,7 +146,7 @@ export class InventoryAdminService {
         productId,
         quantity: input.quantityChange,
         unitCost,
-        purchaseDate: new Date(),
+        purchaseDate: input.batchDate ?? new Date(),
       });
       costImpact = mul(unitCost, input.quantityChange);
       movementUnitCost = unitCost;
@@ -125,10 +169,10 @@ export class InventoryAdminService {
     const { beforeQty, afterQty } = await this.inventory.applyMovementTx(tx, {
       variantId: input.variantId,
       productId,
-      type: 'ADJUSTMENT',
+      type: input.movementType ?? 'ADJUSTMENT',
       quantity: input.quantityChange,
       userId,
-      referenceType: 'ADJUSTMENT',
+      referenceType: input.movementType ?? 'ADJUSTMENT',
       notes: reason,
       unitCost: movementUnitCost,
       // Only wastage recorded against a job may drive stock negative; a manual
@@ -241,6 +285,209 @@ export class InventoryAdminService {
     return serviceVariant.components.map((c) => ({
       variantId: c.variantId,
       quantity: c.qty * (c.perPage ? quantity : 1),
+    }));
+  }
+
+  /**
+   * Records the shelf as it stood on the day the shop started using the system.
+   *
+   * This exists because there was no honest way to enter it. A purchase takes
+   * the money out of today's till — a shop opening with 74m of stock ended up
+   * with a drawer expected to hold minus 74m, and every banking after it
+   * blocked. A positive adjustment is read by the profit figures as the
+   * opposite of wastage, so the same 74m came back as 74m of profit nobody
+   * earned. Neither is what happened: the stock is real and cost real money,
+   * but that money left long before today, and none of it is a loss.
+   *
+   * So opening stock is costed like a purchase — packs divided down to pieces,
+   * FIFO batches dated to the count — and then excluded from every trading
+   * figure. What it does affect is COGS: the first sale off that shelf reports
+   * what the goods actually cost, which is the entire point of entering a cost.
+   *
+   * One entry per variant. A second one is almost always someone recounting
+   * rather than a genuine second opening, and silently doubling the shelf is
+   * far worse than a message saying so.
+   */
+  async recordOpeningStock(dto: RecordOpeningStockDto, userId: string) {
+    const countedAt = dto.countedAt ?? new Date();
+    const variantIds = new Set<string>();
+    for (const item of dto.items) {
+      if (variantIds.has(item.variantId)) {
+        throw new BadRequestException(
+          'The same product is listed twice. Combine the lines into one.',
+        );
+      }
+      variantIds.add(item.variantId);
+    }
+
+    return this.prisma.runSerializable(async (tx) => {
+      const variants = await tx.productVariant.findMany({
+        where: { id: { in: [...variantIds] } },
+        select: {
+          id: true,
+          label: true,
+          productId: true,
+          sellingPrice: true,
+          product: {
+            select: { name: true, baseUnit: true, bulkUnit: true, unitSize: true },
+          },
+        },
+      });
+      const byId = new Map(variants.map((v) => [v.id, v]));
+
+      const already = await tx.inventoryAdjustment.findMany({
+        where: {
+          variantId: { in: [...variantIds] },
+          reasonCode: StockAdjustmentReason.OPENING_STOCK,
+        },
+        select: { variantId: true, createdAt: true },
+      });
+
+      const lines: OpeningStockLine[] = [];
+      let totalValue = money(0);
+
+      for (const item of dto.items) {
+        const variant = byId.get(item.variantId);
+        if (!variant) {
+          throw new NotFoundException(`Variant ${item.variantId} not found`);
+        }
+        const product = variant.product;
+        const name =
+          variant.label && variant.label !== 'Default'
+            ? `${product.name} — ${variant.label}`
+            : product.name;
+
+        const prior = already.find((a) => a.variantId === item.variantId);
+        if (prior) {
+          throw new ConflictException(
+            `Opening stock for ${name} was already recorded on ` +
+              `${prior.createdAt.toISOString().slice(0, 10)}. ` +
+              'Correct the quantity with a stock count correction instead.',
+          );
+        }
+
+        const unitSize = item.unitSize ?? 1;
+        const unitLabel = item.unitLabel?.trim() || product.baseUnit;
+        const basePieces = item.quantity * unitSize;
+        // Per-base-unit cost is what FIFO consumes in, and what COGS is read
+        // from for as long as the batch lasts.
+        const pieceCost = round(money(item.unitCost).dividedBy(unitSize));
+
+        // A variant with no price cannot be sold, and setup is exactly the
+        // moment to give it one rather than discovering it at the counter.
+        if (item.sellingPrice === undefined && money(variant.sellingPrice).isZero()) {
+          throw new BadRequestException(
+            `Set a selling price for ${name}. It has no price yet.`,
+          );
+        }
+        const sellingPrice =
+          item.sellingPrice !== undefined
+            ? money(item.sellingPrice)
+            : money(variant.sellingPrice);
+
+        assertCostPerBaseUnit(pieceCost, sellingPrice, product, {
+          item: name,
+          remedy:
+            unitSize > 1
+              ? `Check the pack size (${unitSize}) and the cost of one ${unitLabel}.`
+              : `If ${money(item.unitCost).toFixed(2)} is the price of a ${product.bulkUnit ?? 'pack'}, set how many ${product.baseUnit} it holds.`,
+        });
+
+        const adjustment = await this.writeAdjustmentTx(
+          tx,
+          {
+            variantId: item.variantId,
+            quantityChange: basePieces,
+            reasonCode: StockAdjustmentReason.OPENING_STOCK,
+            reason: dto.notes?.trim() || REASON_LABELS.OPENING_STOCK,
+            unitCost: pieceCost.toNumber(),
+            movementType: InventoryMovementType.OPENING,
+            batchDate: countedAt,
+            sellingPrice,
+          },
+          userId,
+        );
+
+        // Setup is also where the shop's reference prices come from, so the
+        // cost and price entered here become the variant's own.
+        await tx.productVariant.update({
+          where: { id: item.variantId },
+          data: {
+            buyingPrice: toPrisma(pieceCost),
+            ...(item.sellingPrice !== undefined
+              ? { sellingPrice: toPrisma(item.sellingPrice) }
+              : {}),
+            ...(item.wholesalePrice !== undefined
+              ? { wholesalePrice: toPrisma(item.wholesalePrice) }
+              : {}),
+          },
+        });
+
+        const lineValue = mul(pieceCost, basePieces);
+        totalValue = add(totalValue, lineValue);
+        lines.push({
+          adjustmentId: adjustment.id,
+          variantId: item.variantId,
+          name,
+          quantity: item.quantity,
+          unitLabel,
+          unitSize,
+          basePieces,
+          unitCost: pieceCost.toFixed(2),
+          lineValue: lineValue.toFixed(2),
+        });
+      }
+
+      await this.audit.recordTx(tx, {
+        userId,
+        action: 'OPENING_STOCK_RECORDED',
+        entityType: 'InventoryAdjustment',
+        entityId: lines[0].adjustmentId,
+        metadata: {
+          countedAt: countedAt.toISOString(),
+          lineCount: lines.length,
+          totalValue: totalValue.toFixed(2),
+          notes: dto.notes ?? null,
+        },
+      });
+
+      return {
+        countedAt,
+        lineCount: lines.length,
+        totalValue: totalValue.toFixed(2),
+        lines,
+      };
+    });
+  }
+
+  /**
+   * What has already been entered as opening stock, so the setup screen can
+   * show what is done and the shop can see what it started with.
+   */
+  async listOpeningStock() {
+    const rows = await this.prisma.inventoryAdjustment.findMany({
+      where: { reasonCode: StockAdjustmentReason.OPENING_STOCK },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        product: { select: { name: true, baseUnit: true } },
+        variant: { select: { sku: true, label: true } },
+        user: { select: { fullName: true } },
+      },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      variantId: r.variantId,
+      sku: r.variant.sku,
+      name:
+        r.variant.label && r.variant.label !== 'Default'
+          ? `${r.product.name} — ${r.variant.label}`
+          : r.product.name,
+      baseUnit: r.product.baseUnit,
+      quantity: r.quantityChange,
+      unitCost: r.unitCost ? money(r.unitCost).toFixed(2) : null,
+      value: money(r.costImpact ?? 0).toFixed(2),
+      recordedBy: r.user?.fullName ?? null,
+      createdAt: r.createdAt,
     }));
   }
 

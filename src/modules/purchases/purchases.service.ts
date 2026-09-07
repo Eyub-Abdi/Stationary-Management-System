@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -277,6 +278,163 @@ export class PurchasesService {
     });
   }
 
+  /**
+   * Undoes a purchase, in full, as though it had never been recorded.
+   *
+   * The stock goes back off the shelf, the FIFO batches it created are removed,
+   * a credit purchase stops being owed to the supplier, and the cash it took
+   * out of the till is returned to the drawer's expected balance. The row
+   * itself stays, voided, because a purchase number that vanishes is worse to
+   * read six months later than one marked undone.
+   *
+   * It refuses more often than it agrees, and deliberately so. Every refusal
+   * below is a case where undoing the purchase would mean rewriting something
+   * that has already been counted: stock sold, cash reconciled, a month closed.
+   * A correction dated today is the honest fix for those.
+   */
+  async void(id: string, reason: string, userId: string) {
+    return this.prisma.runSerializable(async (tx) => {
+      const purchase = await tx.purchase.findUnique({
+        where: { id },
+        include: {
+          items: true,
+          batches: true,
+          payments: { select: { id: true } },
+          cashSession: { select: { id: true, status: true } },
+        },
+      });
+      if (!purchase) throw new NotFoundException('Purchase not found');
+      if (purchase.status === 'VOIDED') {
+        throw new ConflictException('This purchase has already been undone.');
+      }
+
+      // Undoing pulls the purchase out of its month's figures, so the month has
+      // to still be open. A closed month is corrected by a new entry, not by
+      // changing what it reported.
+      await this.periods.assertOpen(purchase.purchaseDate, 'this purchase');
+
+      // The one that matters most. Once stock has been sold out of a batch, its
+      // cost is baked into the COGS on those sales; removing the batch would
+      // leave that COGS pointing at nothing, and restating it would rewrite
+      // real trading to undo a data-entry slip.
+      const sold = purchase.batches.filter(
+        (b) => b.remainingQuantity !== b.quantity,
+      );
+      if (sold.length > 0) {
+        const units = sold.reduce(
+          (a, b) => a + (b.quantity - b.remainingQuantity),
+          0,
+        );
+        throw new ConflictException(
+          `${units} unit(s) from this purchase have already been sold, so it cannot be undone. ` +
+            'Correct the stock with an adjustment instead.',
+        );
+      }
+
+      if (purchase.payments.length > 0) {
+        throw new ConflictException(
+          `${purchase.payments.length} supplier payment(s) settle against this purchase. ` +
+            'Undo those first, or correct the stock with an adjustment.',
+        );
+      }
+
+      // Cash paid from a till that has since been counted and closed cannot be
+      // put back: the drawer was reconciled against a figure that included it,
+      // and moving that figure now turns a balanced shift into a shortage.
+      if (
+        purchase.cashSession &&
+        purchase.cashSession.status === 'CLOSED' &&
+        money(purchase.amountPaid).greaterThan(0)
+      ) {
+        throw new ConflictException(
+          'The till this was paid from has already been closed and counted. ' +
+            'Record the refund as a cash movement instead of undoing the purchase.',
+        );
+      }
+
+      // Take the stock back off the shelf. Never forced: if the units are no
+      // longer there, something else has already moved them and this is not the
+      // right way to account for that.
+      for (const batch of purchase.batches) {
+        await this.inventory.applyMovementTx(tx, {
+          variantId: batch.variantId,
+          productId: batch.productId,
+          type: 'PURCHASE',
+          quantity: -batch.quantity,
+          userId,
+          referenceType: 'PURCHASE_VOID',
+          referenceId: purchase.id,
+          notes: reason,
+          unitCost: money(batch.unitCost),
+        });
+      }
+
+      await tx.inventoryBatch.deleteMany({ where: { purchaseId: purchase.id } });
+
+      // A credit purchase that never happened is not owed to anyone. Clamped at
+      // zero so a balance already settled elsewhere cannot be driven negative.
+      if (purchase.supplierId && money(purchase.amountDue).greaterThan(0)) {
+        const supplier = await tx.supplier.findUnique({
+          where: { id: purchase.supplierId },
+          select: { balance: true },
+        });
+        if (supplier) {
+          const balance = sub(supplier.balance, money(purchase.amountDue));
+          await tx.supplier.update({
+            where: { id: purchase.supplierId },
+            data: { balance: toPrisma(balance.isNegative() ? money(0) : balance) },
+          });
+        }
+      }
+
+      // The purchase overwrote each variant's reference buying price on the way
+      // in. Left behind, that price is what a blank cost field falls back to
+      // next time, which is exactly how a box price once ended up costing a
+      // single sheet. So put it back to the newest batch still on the shelf.
+      for (const variantId of new Set(purchase.items.map((i) => i.variantId))) {
+        const latest = await tx.inventoryBatch.findFirst({
+          where: { variantId, remainingQuantity: { gt: 0 } },
+          orderBy: [{ purchaseDate: 'desc' }, { createdAt: 'desc' }],
+          select: { unitCost: true },
+        });
+        if (latest) {
+          await tx.productVariant.update({
+            where: { id: variantId },
+            data: { buyingPrice: latest.unitCost },
+          });
+        }
+      }
+
+      const voided = await tx.purchase.update({
+        where: { id },
+        // Clearing amountDue keeps supplier.balance == SUM(amountDue) true.
+        data: {
+          status: 'VOIDED',
+          voidedAt: new Date(),
+          voidReason: reason,
+          amountDue: toPrisma(money(0)),
+        },
+        include: { items: true, supplier: true },
+      });
+
+      await this.audit.recordTx(tx, {
+        userId,
+        action: 'PURCHASE_VOIDED',
+        entityType: 'Purchase',
+        entityId: purchase.id,
+        metadata: {
+          purchaseNumber: purchase.purchaseNumber,
+          reason,
+          totalCost: purchase.totalCost.toString(),
+          amountPaid: purchase.amountPaid.toString(),
+          batchesRemoved: purchase.batches.length,
+        },
+      });
+
+      return voided;
+    });
+  }
+
   async findAll(
     query: PaginationQueryDto & { supplierId?: string; from?: Date; to?: Date },
   ) {
@@ -308,16 +466,17 @@ export class PurchasesService {
     return paginate(data, total, query.page, query.limit);
   }
 
-  /** Per-day purchase totals (count + total cost) for the daily-totals view. */
+  /** Per-day purchase totals (count + total cost) for the daily-totals view.
+   *  Undone purchases are left out: nothing was bought. */
   async daily(query: { from?: Date; to?: Date }) {
     const range =
       query.from && query.to
-        ? Prisma.sql`WHERE "purchaseDate" BETWEEN ${query.from} AND ${query.to}`
+        ? Prisma.sql`WHERE "purchaseDate" BETWEEN ${query.from} AND ${query.to} AND status = 'COMPLETED'`
         : query.from
-          ? Prisma.sql`WHERE "purchaseDate" >= ${query.from}`
+          ? Prisma.sql`WHERE "purchaseDate" >= ${query.from} AND status = 'COMPLETED'`
           : query.to
-            ? Prisma.sql`WHERE "purchaseDate" <= ${query.to}`
-            : Prisma.empty;
+            ? Prisma.sql`WHERE "purchaseDate" <= ${query.to} AND status = 'COMPLETED'`
+            : Prisma.sql`WHERE status = 'COMPLETED'`;
 
     const rows = await this.prisma.$queryRaw<
       { period: Date; total: string; count: bigint }[]

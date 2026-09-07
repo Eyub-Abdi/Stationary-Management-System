@@ -22,6 +22,7 @@ export const qk = {
   purchase: (id: string) => ['purchase', id] as const,
   movements: (params?: unknown) => ['inventory', 'movements', params] as const,
   valuation: () => ['inventory', 'valuation'] as const,
+  openingStock: () => ['inventory', 'opening-stock'] as const,
   expenses: (params?: unknown) => ['expenses', params] as const,
   expensesDaily: (params?: unknown) => ['expenses', 'daily', params] as const,
   expenseCategories: () => ['expense-categories'] as const,

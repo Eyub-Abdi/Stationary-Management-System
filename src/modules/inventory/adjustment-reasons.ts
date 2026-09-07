@@ -1,4 +1,4 @@
-import { StockAdjustmentReason } from '@prisma/client';
+import { Prisma, StockAdjustmentReason } from '@prisma/client';
 
 /**
  * Human labels for the adjustment categories. Kept server-side so exports, the
@@ -14,6 +14,7 @@ export const REASON_LABELS: Record<StockAdjustmentReason, string> = {
   THEFT: 'Theft',
   COUNT_CORRECTION: 'Stock count correction',
   FOUND: 'Stock found',
+  OPENING_STOCK: 'Opening stock',
   OTHER: 'Other',
 };
 
@@ -46,4 +47,35 @@ export const LOSS_REASONS: StockAdjustmentReason[] = [
 
 export function isLossReason(reason: StockAdjustmentReason): boolean {
   return LOSS_REASONS.includes(reason);
+}
+
+/**
+ * Opening stock is the shelf as it stood on the day the shop started using the
+ * system. It is entered through its own screen, never through the adjustment
+ * form, and it is the one reason that means no money changed hands today.
+ *
+ * It still carries a real FIFO cost — that is the whole point, so the first
+ * sale off that shelf reports honest COGS — but it is neither a purchase nor a
+ * loss, and every profit and wastage figure has to leave it out. Reading it as
+ * the opposite of wastage is what turned a 74m setup into 74m of profit that
+ * was never earned; reading it as a purchase is what drove the till tens of
+ * millions negative. So the exclusion lives here, once, and the reports use it
+ * rather than each remembering the rule.
+ */
+export function isOpeningStock(reason: StockAdjustmentReason): boolean {
+  return reason === StockAdjustmentReason.OPENING_STOCK;
+}
+
+/** Prisma filter: adjustments that represent actual trading activity. */
+export const TRADING_ADJUSTMENTS = {
+  reasonCode: { not: StockAdjustmentReason.OPENING_STOCK },
+} satisfies Prisma.InventoryAdjustmentWhereInput;
+
+/**
+ * The same rule for the raw-SQL reports, which need the table alias they were
+ * written with (or none, where the query has a single table).
+ */
+export function tradingAdjustmentsSql(alias?: string): Prisma.Sql {
+  const column = alias ? `${alias}."reasonCode"` : '"reasonCode"';
+  return Prisma.sql`AND ${Prisma.raw(column)} <> 'OPENING_STOCK'`;
 }

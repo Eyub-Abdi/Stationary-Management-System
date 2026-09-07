@@ -72,6 +72,7 @@ export const ADJUSTMENT_REASONS: Record<
   THEFT: { label: 'Theft', icon: 'lock_open' },
   COUNT_CORRECTION: { label: 'Stock count correction', icon: 'fact_check' },
   FOUND: { label: 'Stock found', icon: 'add_box' },
+  OPENING_STOCK: { label: 'Opening stock', icon: 'flag' },
   OTHER: { label: 'Other', icon: 'more_horiz' },
 };
 
@@ -87,7 +88,8 @@ export const STOCK_OUT_REASONS: StockAdjustmentReason[] = [
   'OTHER',
 ];
 
-/** Offered when stock is coming back on. */
+/** Offered when stock is coming back on. OPENING_STOCK is deliberately absent:
+ *  it has its own screen, and the API refuses it from here. */
 export const STOCK_IN_REASONS: StockAdjustmentReason[] = [
   'FOUND',
   'COUNT_CORRECTION',

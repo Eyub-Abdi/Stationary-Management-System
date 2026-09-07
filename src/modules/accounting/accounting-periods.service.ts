@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import { money, sub, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { TRADING_ADJUSTMENTS } from '../inventory/adjustment-reasons';
 import { ClosePeriodDto } from './dto/accounting-period.dto';
 
 /** Inclusive start / exclusive end of a calendar month, in server local time. */
@@ -57,14 +58,16 @@ export class AccountingPeriodsService {
         _sum: { amount: true },
       }),
       this.prisma.purchase.aggregate({
-        where: { purchaseDate: range },
+        where: { purchaseDate: range, status: 'COMPLETED' },
         _sum: { totalCost: true },
       }),
       // Stock written off (and back on) by hand. costImpact is signed like the
       // quantity, so summing it gives the net change in the value of stock and
-      // negating it gives the cost.
+      // negating it gives the cost. Opening stock is not part of that: it is
+      // the shelf the shop started with, so the month it was entered would
+      // otherwise close showing its whole value as profit.
       this.prisma.inventoryAdjustment.aggregate({
-        where: { createdAt: range },
+        where: { createdAt: range, ...TRADING_ADJUSTMENTS },
         _sum: { costImpact: true },
       }),
     ]);

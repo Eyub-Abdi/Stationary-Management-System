@@ -248,6 +248,9 @@ export default function PurchasesPage() {
                   <TR key={p.id} onClick={() => navigate(`/purchases/${p.id}`)}>
                     <TD>
                       <DocLink kind="purchase" id={p.id}>{p.purchaseNumber}</DocLink>
+                      {p.status === 'VOIDED' && (
+                        <Badge tone="error" className="ml-2">Undone</Badge>
+                      )}
                     </TD>
                     <TD>
                       {first ? (
@@ -268,7 +271,14 @@ export default function PurchasesPage() {
                         {p.paymentMethod === 'CREDIT' ? 'Credit' : 'Cash'}
                       </Badge>
                     </TD>
-                    <TD align="right" className="font-mono-data font-semibold">{currency(p.totalCost)}</TD>
+                    <TD
+                      align="right"
+                      className={`font-mono-data font-semibold ${
+                        p.status === 'VOIDED' ? 'text-on-surface-variant line-through' : ''
+                      }`}
+                    >
+                      {currency(p.totalCost)}
+                    </TD>
                     <TD align="right" className="font-mono-data">
                       {num(p.amountDue) > 0 ? (
                         <span className="font-semibold text-error">{currency(p.amountDue)}</span>

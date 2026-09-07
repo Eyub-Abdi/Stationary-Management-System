@@ -64,8 +64,9 @@ export async function computeBreakdown(
         _sum: { totalRefund: true, creditApplied: true },
       }),
       // Cash paid out of the till for stock purchases (down payment / full).
+      // An undone purchase never took the money, so the drawer expects it back.
       client.purchase.aggregate({
-        where: { cashSessionId: sessionId },
+        where: { cashSessionId: sessionId, status: 'COMPLETED' },
         _sum: { amountPaid: true },
       }),
       client.supplierPayment.aggregate({
