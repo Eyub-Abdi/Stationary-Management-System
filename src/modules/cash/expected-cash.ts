@@ -14,6 +14,7 @@ export interface CashBreakdown {
   refunds: string;
   withdrawals: string;
   expenses: string;
+  expensePayments: string;
   purchases: string;
   supplierPayments: string;
   expectedAmount: string;
@@ -36,8 +37,17 @@ export async function computeBreakdown(
     select: { openingBalance: true },
   });
 
-  const [sales, custPayments, deposits, withdrawals, expenses, returns, purchases, supPayments] =
-    await Promise.all([
+  const [
+    sales,
+    custPayments,
+    deposits,
+    withdrawals,
+    expenses,
+    expPayments,
+    returns,
+    purchases,
+    supPayments,
+  ] = await Promise.all([
       // Only the CASH actually collected at sale time (credit balances excluded).
       client.sale.aggregate({
         where: { cashSessionId: sessionId, status: 'COMPLETED' },
@@ -55,7 +65,17 @@ export async function computeBreakdown(
         where: { cashSessionId: sessionId, type: 'WITHDRAWAL' },
         _sum: { amount: true },
       }),
+      // Only the cash actually paid out of this drawer. An office purchase taken
+      // on credit costs the shop on its own date but takes nothing from the
+      // till, so charging its full amount here would report a shortage that
+      // nobody spent.
       client.expense.aggregate({
+        where: { cashSessionId: sessionId },
+        _sum: { amountPaid: true },
+      }),
+      // Settling one of those debts later: the cash leaves the till of the day
+      // it is handed over, which is this one.
+      client.expensePayment.aggregate({
         where: { cashSessionId: sessionId },
         _sum: { amount: true },
       }),
@@ -80,7 +100,8 @@ export async function computeBreakdown(
   const custPay = money(custPayments._sum.amount ?? 0);
   const dep = money(deposits._sum.amount ?? 0);
   const wd = money(withdrawals._sum.amount ?? 0);
-  const exp = money(expenses._sum.amount ?? 0);
+  const exp = money(expenses._sum.amountPaid ?? 0);
+  const expPay = money(expPayments._sum.amount ?? 0);
   // Only the cash portion of refunds leaves the till; credit-applied refunds
   // reduce the customer's balance instead.
   const refunds = sub(
@@ -91,9 +112,10 @@ export async function computeBreakdown(
   const supPay = money(supPayments._sum.amount ?? 0);
 
   // Expected = opening + cashSales + customerPayments + deposits
-  //            − expenses − withdrawals − refunds − purchases − supplierPayments
+  //            − expenses − expensePayments − withdrawals − refunds
+  //            − purchases − supplierPayments
   const inflow = add(opening, cashSales, custPay, dep);
-  const outflow = add(exp, wd, refunds, purch, supPay);
+  const outflow = add(exp, expPay, wd, refunds, purch, supPay);
   const expected: Decimal = sub(inflow, outflow);
 
   return {
@@ -104,6 +126,7 @@ export async function computeBreakdown(
     refunds: refunds.toFixed(2),
     withdrawals: wd.toFixed(2),
     expenses: exp.toFixed(2),
+    expensePayments: expPay.toFixed(2),
     purchases: purch.toFixed(2),
     supplierPayments: supPay.toFixed(2),
     expectedAmount: expected.toFixed(2),

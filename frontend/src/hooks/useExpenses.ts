@@ -4,7 +4,11 @@ import { qk } from './keys';
 import type {
   DailyTotalPoint,
   Expense,
+  ExpensePayment,
+  OfficePurchasesOutstanding,
   Paginated,
+  PaymentMethod,
+  PaymentSource,
   SortParams,
 } from '@/types';
 
@@ -25,6 +29,8 @@ export interface CreateExpenseInput {
   amount: number;
   expenseDate: string;
   description?: string;
+  /** TILL needs an open session; HELD_CASH spends the cash held at the shop. */
+  paidFrom?: PaymentSource;
 }
 
 export type UpdateExpenseInput = Partial<CreateExpenseInput>;
@@ -57,6 +63,8 @@ export function useCreateExpense() {
       qc.invalidateQueries({ queryKey: ['expenses'] });
       qc.invalidateQueries({ queryKey: ['report'] });
       qc.invalidateQueries({ queryKey: ['cash-session'] });
+      // Paid from held cash, the money moves on the Bank page instead.
+      qc.invalidateQueries({ queryKey: ['hand'] });
     },
   });
 }
@@ -71,6 +79,8 @@ export function useUpdateExpense() {
       qc.invalidateQueries({ queryKey: ['expenses'] });
       qc.invalidateQueries({ queryKey: ['report'] });
       qc.invalidateQueries({ queryKey: ['cash-session'] });
+      // Paid from held cash, the money moves on the Bank page instead.
+      qc.invalidateQueries({ queryKey: ['hand'] });
     },
   });
 }
@@ -84,6 +94,8 @@ export function useDeleteExpense() {
       qc.invalidateQueries({ queryKey: ['office-purchases'] });
       qc.invalidateQueries({ queryKey: ['report'] });
       qc.invalidateQueries({ queryKey: ['cash-session'] });
+      // Paid from held cash, the money moves on the Bank page instead.
+      qc.invalidateQueries({ queryKey: ['hand'] });
     },
   });
 }
@@ -95,6 +107,8 @@ export interface OfficePurchaseFilters extends SortParams {
   limit?: number;
   from?: string;
   to?: string;
+  /** UNPAID is the working list: what still has to be settled with a vendor. */
+  settlement?: 'UNPAID' | 'PAID';
 }
 
 export interface OfficePurchaseItemInput {
@@ -107,6 +121,12 @@ export interface CreateOfficePurchaseInput {
   purchaseDate: string;
   supplierName?: string;
   description?: string;
+  /** CASH pays out of the till now; CREDIT leaves it owed to the vendor. */
+  paymentMethod?: PaymentMethod;
+  /** Part-payment handed over now, on a CREDIT purchase. */
+  amountPaid?: number;
+  /** Which pot pays for it. Ignored when nothing is paid now. */
+  paidFrom?: PaymentSource;
   items: OfficePurchaseItemInput[];
 }
 
@@ -130,6 +150,15 @@ export function useOfficePurchase(id: string | undefined) {
   });
 }
 
+/** What the shop still owes vendors — the payable side of office purchases. */
+export function useOfficePurchasesOutstanding() {
+  return useQuery({
+    queryKey: qk.officePurchasesOutstanding(),
+    queryFn: () =>
+      unwrap<OfficePurchasesOutstanding>(api.get('/expenses/office/outstanding')),
+  });
+}
+
 export function useCreateOfficePurchase() {
   const qc = useQueryClient();
   return useMutation({
@@ -140,6 +169,42 @@ export function useCreateOfficePurchase() {
       qc.invalidateQueries({ queryKey: ['expenses'] });
       qc.invalidateQueries({ queryKey: ['report'] });
       qc.invalidateQueries({ queryKey: ['cash-session'] });
+      // Paid from held cash, the money moves on the Bank page instead.
+      qc.invalidateQueries({ queryKey: ['hand'] });
+    },
+  });
+}
+
+/**
+ * Pays down an office purchase bought on credit. The cash leaves today's till,
+ * so the open session has to be refreshed alongside the purchase itself.
+ */
+export function usePayOfficePurchase() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      amount,
+      notes,
+      paidFrom,
+    }: {
+      id: string;
+      amount: number;
+      notes?: string;
+      paidFrom?: PaymentSource;
+    }) =>
+      unwrap<{ payment: ExpensePayment; amountPaid: string; amountDue: string }>(
+        api.post(`/expenses/office/${id}/payments`, clean({ amount, notes, paidFrom }), {
+          headers: { 'Idempotency-Key': crypto.randomUUID() },
+        }),
+      ),
+    onSuccess: (_d, { id }) => {
+      qc.invalidateQueries({ queryKey: ['office-purchases'] });
+      qc.invalidateQueries({ queryKey: qk.officePurchase(id) });
+      qc.invalidateQueries({ queryKey: ['expenses'] });
+      qc.invalidateQueries({ queryKey: ['cash-session'] });
+      qc.invalidateQueries({ queryKey: ['hand'] });
+      qc.invalidateQueries({ queryKey: qk.moneyPosition() });
     },
   });
 }

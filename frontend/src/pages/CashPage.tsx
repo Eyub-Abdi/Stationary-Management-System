@@ -135,6 +135,7 @@ function ActiveSessionPanel({ session }: { session: CashSession }) {
           <Cell label="Deposits" value={currency(b?.deposits ?? 0)} icon="add_card" tone="secondary" />
           <Cell label="Withdrawals" value={currency(b?.withdrawals ?? 0)} icon="remove" tone="error" />
           <Cell label="Expenses" value={currency(b?.expenses ?? 0)} icon="payments" tone="error" />
+          <Cell label="Vendor Payments" value={currency(b?.expensePayments ?? 0)} icon="receipt_long" tone="error" />
           <Cell label="Refunds" value={currency(b?.refunds ?? 0)} icon="undo" tone="error" />
           <Cell label="Purchases" value={currency(b?.purchases ?? 0)} icon="shopping_cart" tone="error" />
           <Cell label="Supplier Payments" value={currency(b?.supplierPayments ?? 0)} icon="local_shipping" tone="error" />
@@ -148,7 +149,7 @@ function ActiveSessionPanel({ session }: { session: CashSession }) {
             {currency(b?.expectedAmount ?? 0)}
           </p>
           <p className="mt-3 text-body-sm text-on-surface-variant">
-            Opening + cash sales + customer payments + deposits − expenses − withdrawals − refunds − purchases − supplier payments
+            Opening + cash sales + customer payments + deposits − expenses − vendor payments − withdrawals − refunds − purchases − supplier payments
           </p>
         </div>
       </Card>
@@ -383,8 +384,11 @@ function CloseSessionModal({
   const [actual, setActual] = useState('');
   const [withdrawal, setWithdrawal] = useState('');
   // Where the cash goes as it leaves. Asked here because this is the only
-  // moment anyone actually knows the answer.
-  const [destination, setDestination] = useState<'BANK' | 'KEPT'>('BANK');
+  // moment anyone actually knows the answer — and it starts on "held", since
+  // the takings sit at the shop until someone makes the trip, which may be
+  // once a week. Defaulting to the bank would credit the bank ledger days
+  // before the money arrived there.
+  const [destination, setDestination] = useState<'BANK' | 'HAND'>('HAND');
   const [notes, setNotes] = useState('');
 
   const expected = num(session.breakdown?.expectedAmount ?? 0);
@@ -408,13 +412,13 @@ function CloseSessionModal({
         id: session.id,
         actualAmount: counted,
         withdrawal: withdrawal === '' ? undefined : takingOut,
-        withdrawalTo: takingOut > 0 && destination === 'BANK' ? 'BANK' : undefined,
+        withdrawalTo: takingOut > 0 ? destination : undefined,
         notes: notes.trim() || undefined,
       });
       toast.success(
         'Session closed',
         takingOut > 0
-          ? `${currency(takingOut)} ${destination === 'BANK' ? 'banked' : 'taken out'} · ${currency(leftInDrawer)} left for the next shift.`
+          ? `${currency(takingOut)} ${destination === 'BANK' ? 'banked' : 'held on hand'} · ${currency(leftInDrawer)} left for the next shift.`
           : balanced
             ? 'Drawer balanced.'
             : `Variance ${currency(variance ?? 0)}`,
@@ -452,7 +456,7 @@ function CloseSessionModal({
               drawer and this only decides what is still there in the morning. */}
           <Field
             label="Cash taken out now"
-            hint="Banked or taken home. Leave blank if it all stays in the drawer."
+            hint="Held at the shop or banked. Leave blank if it all stays in the drawer."
             error={takingTooMuch ? 'More than was counted in the drawer.' : undefined}
           >
             <Input
@@ -471,16 +475,16 @@ function CloseSessionModal({
               label="Where it is going"
               hint={
                 destination === 'BANK'
-                  ? 'Recorded on the bank ledger straight away'
-                  : 'Someone is holding it, not recorded anywhere else'
+                  ? 'Going to the bank today — recorded on the bank ledger straight away'
+                  : 'Held at the shop until someone banks it'
               }
             >
               <Select
                 value={destination}
-                onChange={(e) => setDestination(e.target.value as 'BANK' | 'KEPT')}
+                onChange={(e) => setDestination(e.target.value as 'BANK' | 'HAND')}
               >
-                <option value="BANK">To the bank</option>
-                <option value="KEPT">Kept by someone</option>
+                <option value="HAND">Kept on hand</option>
+                <option value="BANK">Banked today</option>
               </Select>
             </Field>
           )}
@@ -514,7 +518,7 @@ function CloseSessionModal({
             </div>
             {takingOut > 0 && !takingTooMuch && (
               <LedgerRow
-                label={destination === 'BANK' ? 'To the bank' : 'Taken out'}
+                label={destination === 'BANK' ? 'To the bank' : 'Kept on hand'}
                 value={`− ${currency(takingOut)}`}
               />
             )}

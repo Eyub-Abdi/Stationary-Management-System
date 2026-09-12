@@ -108,7 +108,7 @@ export function useCloseCashSession() {
       id: string;
       actualAmount: number;
       withdrawal?: number;
-      withdrawalTo?: 'BANK';
+      withdrawalTo?: 'BANK' | 'HAND';
       notes?: string;
     }) =>
       unwrap<CashSession>(

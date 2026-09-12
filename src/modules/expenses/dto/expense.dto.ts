@@ -1,7 +1,14 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import {
+  ApiProperty,
+  ApiPropertyOptional,
+  OmitType,
+  PartialType,
+} from '@nestjs/swagger';
+import { PaymentSource } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsDate,
+  IsEnum,
   IsNumber,
   IsOptional,
   IsString,
@@ -30,9 +37,22 @@ export class CreateExpenseDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiPropertyOptional({
+    enum: PaymentSource,
+    default: PaymentSource.TILL,
+    description:
+      'Which pot the money came out of. TILL needs an open session and shows in its count. HELD_CASH pays straight from the cash being held at the shop and touches no till.',
+  })
+  @IsOptional()
+  @IsEnum(PaymentSource)
+  paidFrom?: PaymentSource;
 }
 
-export class UpdateExpenseDto extends PartialType(CreateExpenseDto) {}
+/** The source is a fact about the payment, not a field to revise afterwards. */
+export class UpdateExpenseDto extends PartialType(
+  OmitType(CreateExpenseDto, ['paidFrom'] as const),
+) {}
 
 export class ExpenseQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({ format: 'uuid' })

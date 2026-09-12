@@ -425,7 +425,35 @@ export interface Expense {
   /** Present on list reads; a CLOSED session freezes the entry. */
   cashSession?: { status: CashSessionStatus } | null;
   items?: ExpenseItem[];
+  /** How the cost was settled. CREDIT leaves amountDue owed to the vendor. */
+  paymentMethod: PaymentMethod;
+  amountPaid: string;
+  amountDue: string;
+  /** Which pot settled it. Null while nothing has been paid. */
+  paidFrom: PaymentSource | null;
+  payments?: ExpensePayment[];
   createdAt: string;
+}
+
+/** A payment handed to a vendor against an office purchase bought on credit. */
+export interface ExpensePayment {
+  id: string;
+  expenseId: string;
+  userId: string;
+  user?: { fullName: string };
+  cashSessionId: string | null;
+  paidFrom: PaymentSource;
+  amount: string;
+  notes: string | null;
+  createdAt: string;
+}
+
+/** What the shop still owes vendors on office purchases. */
+export interface OfficePurchasesOutstanding {
+  total: string;
+  count: number;
+  oldest: string | null;
+  oldestSupplier: string | null;
 }
 
 export interface CashMovement {
@@ -446,6 +474,7 @@ export interface CashBreakdown {
   refunds: string;
   withdrawals: string;
   expenses: string;
+  expensePayments: string;
   purchases: string;
   supplierPayments: string;
   expectedAmount: string;
@@ -684,6 +713,45 @@ export interface BankSummary {
   openingBalanceSet: boolean;
 }
 
+/** Cash held at the shop between bank trips: neither in the till nor banked. */
+export type HandTransactionType =
+  | 'OPENING_BALANCE'
+  | 'FROM_TILL'
+  | 'TO_BANK'
+  | 'TO_TILL'
+  | 'SPENT'
+  | 'CORRECTION';
+
+/**
+ * Which pot a payment came out of. Not MoneyLocation, where HAND means the
+ * drawer — these two are both cash, and the point is telling them apart.
+ */
+export type PaymentSource = 'TILL' | 'HELD_CASH';
+
+export interface HandTransaction {
+  id: string;
+  type: HandTransactionType;
+  // Signed against the balance: positive adds to what is held, negative removes.
+  amount: string;
+  occurredAt: string;
+  notes: string | null;
+  user?: { fullName: string };
+  cashSessionId: string | null;
+  /** Set on SPENT rows: what the money actually paid for. */
+  expenseId?: string | null;
+  expensePaymentId?: string | null;
+  createdAt: string;
+}
+
+export interface HandSummary {
+  balance: string;
+  transactionCount: number;
+  openingBalanceSet: boolean;
+  /** When cash was last lifted from the till — how long it has sat unbanked. */
+  heldSince: string | null;
+  lastFromTill: string | null;
+}
+
 export interface LoanRepayment {
   id: string;
   loanId: string;
@@ -727,7 +795,10 @@ export interface LoanSummary {
 }
 
 export interface MoneyPosition {
+  /** In the drawer. */
   inHand: string;
+  /** Held at the shop, out of the drawer but not yet banked. */
+  onHand: string;
   atBank: string;
   liquid: string;
   owedByMembers: string;

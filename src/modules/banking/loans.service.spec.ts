@@ -80,6 +80,7 @@ describe('LoansService', () => {
           return Promise.resolve({});
         }),
       },
+      expensePayment: { aggregate: noSum },
       auditLog: { create: jest.fn().mockResolvedValue({}) },
     } as unknown as Prisma.TransactionClient;
 

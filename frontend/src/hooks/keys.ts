@@ -30,6 +30,7 @@ export const qk = {
   monthlyStatement: (params?: unknown) => ['accounting', 'statement', params] as const,
   officePurchases: (params?: unknown) => ['office-purchases', params] as const,
   officePurchase: (id: string) => ['office-purchase', id] as const,
+  officePurchasesOutstanding: () => ['office-purchases', 'outstanding'] as const,
   cashSessions: (params?: unknown) => ['cash-sessions', params] as const,
   cashSession: (id: string) => ['cash-session', id] as const,
   // Shares the 'cash-session' prefix so every mutation that already busts a
@@ -43,6 +44,8 @@ export const qk = {
   report: (name: string, params?: unknown) => ['report', name, params] as const,
   bankSummary: () => ['bank', 'summary'] as const,
   bankStatement: (params?: unknown) => ['bank', 'statement', params] as const,
+  handSummary: () => ['hand', 'summary'] as const,
+  handStatement: (params?: unknown) => ['hand', 'statement', params] as const,
   loans: (params?: unknown) => ['loans', params] as const,
   loan: (id: string) => ['loan', id] as const,
   loanSummary: () => ['loans', 'summary'] as const,

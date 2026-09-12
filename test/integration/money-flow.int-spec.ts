@@ -9,6 +9,7 @@ import { PurchasesService } from '../../src/modules/purchases/purchases.service'
 import { CashService } from '../../src/modules/cash/cash.service';
 import { AccountingPeriodsService } from '../../src/modules/accounting/accounting-periods.service';
 import { BankService } from '../../src/modules/banking/bank.service';
+import { HandService } from '../../src/modules/banking/hand.service';
 
 /**
  * End-to-end money flow against a REAL Postgres (a throwaway DB). Unlike the
@@ -55,7 +56,8 @@ describeDb('Money flow (integration)', () => {
     const periods = new AccountingPeriodsService(prisma, audit);
     sales = new SalesService(prisma, inventory, sequences, audit, customers, periods);
     purchases = new PurchasesService(prisma, inventory, sequences, audit, periods);
-    cash = new CashService(prisma, audit, new BankService(prisma, audit));
+    const bank = new BankService(prisma, audit);
+    cash = new CashService(prisma, audit, bank, new HandService(prisma, audit, bank));
 
     // Clean slate (order-independent thanks to CASCADE).
     await prisma.$executeRawUnsafe(`

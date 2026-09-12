@@ -12,6 +12,7 @@ import { add, money, sub, toPrisma } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { BankService } from '../banking/bank.service';
+import { HandService } from '../banking/hand.service';
 import {
   CashMovementDto,
   CashSessionQueryDto,
@@ -40,6 +41,7 @@ export class CashService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly bank: BankService,
+    private readonly hand: HandService,
   ) {}
 
   /**
@@ -202,23 +204,41 @@ export class CashService {
         },
       });
 
-      // Money leaving the drawer is easiest to account for at the moment it
-      // leaves, which is the only moment anyone knows where it is going. Told
-      // it went to the bank, we put it on the bank ledger here rather than
-      // hoping someone records the trip tomorrow.
+      // Cash out of the till stays in hand unless someone says otherwise. The
+      // shop banks its takings when it banks them — often once a week — so
+      // assuming a deposit every evening would put money on the bank ledger
+      // days before it reached the bank, and show a balance the statement does
+      // not have. Told the trip was actually made, we record it here rather
+      // than hoping someone remembers tomorrow.
       //
       // Deliberately NOT a CashMovement: this happens after the count, so
       // treating it as one would move `expected` and turn a balanced drawer
       // into a variance.
-      if (withdrawal.greaterThan(0) && dto.withdrawalTo === 'BANK') {
-        await this.bank.writeTx(tx, {
-          type: 'TRANSFER_IN',
-          amount: withdrawal,
-          userId,
-          cashSessionId: sessionId,
-          notes: 'Banked at close of day',
-          action: 'BANK_TRANSFER_IN',
-        });
+      const destination = dto.withdrawalTo ?? 'HAND';
+      if (withdrawal.greaterThan(0)) {
+        if (destination === 'BANK') {
+          await this.bank.writeTx(tx, {
+            type: 'TRANSFER_IN',
+            amount: withdrawal,
+            userId,
+            cashSessionId: sessionId,
+            notes: 'Banked at close of day',
+            action: 'BANK_TRANSFER_IN',
+          });
+        } else {
+          // Held at the shop. This is the half that used to be missing: the
+          // count takes the money out of the drawer, so without a row here it
+          // left the drawer and arrived nowhere, and the weekly bank trip had
+          // nothing to draw against.
+          await this.hand.writeTx(tx, {
+            type: 'FROM_TILL',
+            amount: withdrawal,
+            userId,
+            cashSessionId: sessionId,
+            notes: 'Kept on hand at close of day',
+            action: 'HAND_FROM_TILL',
+          });
+        }
       }
 
       await this.audit.recordTx(tx, {
@@ -231,6 +251,7 @@ export class CashService {
           actualAmount: actual.toFixed(2),
           variance: variance.toFixed(2),
           closingWithdrawal: withdrawal.toFixed(2),
+          withdrawalTo: withdrawal.greaterThan(0) ? destination : null,
           leftInDrawer: leftInDrawer.toFixed(2),
         },
       });

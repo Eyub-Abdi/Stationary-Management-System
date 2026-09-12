@@ -7,7 +7,8 @@ import { CashService } from './cash.service';
  * formula, including the money-sensitive rules:
  *   - credit sales only contribute the cash actually paid (amountPaid),
  *   - refunds applied to a customer's credit balance don't leave the till,
- *   - cash purchases and supplier payments are outflows.
+ *   - cash purchases and supplier payments are outflows,
+ *   - an expense bought on credit takes nothing from the drawer until paid.
  */
 describe('CashService.computeBreakdown', () => {
   const D = (n: number) => new Prisma.Decimal(n);
@@ -18,7 +19,8 @@ describe('CashService.computeBreakdown', () => {
     customerPayments: number;
     deposits: number;
     withdrawals: number;
-    expenses: number;
+    expenses: number; // sum of expense.amountPaid
+    expensePayments: number;
     refundTotal: number;
     creditApplied: number;
     purchases: number; // sum of purchase.amountPaid
@@ -41,7 +43,12 @@ describe('CashService.computeBreakdown', () => {
           }),
         ),
       },
-      expense: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: D(s.expenses) } }) },
+      expense: {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { amountPaid: D(s.expenses) } }),
+      },
+      expensePayment: {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { amount: D(s.expensePayments) } }),
+      },
       saleReturn: {
         aggregate: jest.fn().mockResolvedValue({
           _sum: { totalRefund: D(s.refundTotal), creditApplied: D(s.creditApplied) },
@@ -54,7 +61,7 @@ describe('CashService.computeBreakdown', () => {
     }) as unknown as Prisma.TransactionClient;
 
   const compute = (s: Scenario) => {
-    const service = new CashService({} as never, {} as never, {} as never);
+    const service = new CashService({} as never, {} as never, {} as never, {} as never);
     // computeBreakdown is private; exercise it directly with a mocked client.
     return (service as never as { computeBreakdown: Function }).computeBreakdown(
       makeClient(s),
@@ -70,6 +77,7 @@ describe('CashService.computeBreakdown', () => {
       deposits: 2000,
       withdrawals: 1000,
       expenses: 1500,
+      expensePayments: 0,
       refundTotal: 4000,
       creditApplied: 1000, // → only 3000 cash refunded
       purchases: 8000,
@@ -93,6 +101,7 @@ describe('CashService.computeBreakdown', () => {
       deposits: 0,
       withdrawals: 0,
       expenses: 0,
+      expensePayments: 0,
       refundTotal: 0,
       creditApplied: 0,
       purchases: 0,
@@ -110,6 +119,7 @@ describe('CashService.computeBreakdown', () => {
       deposits: 0,
       withdrawals: 0,
       expenses: 0,
+      expensePayments: 0,
       refundTotal: 4000,
       creditApplied: 4000,
       purchases: 0,
@@ -117,6 +127,44 @@ describe('CashService.computeBreakdown', () => {
     });
     expect(b.refunds).toBe('0.00');
     expect(b.expectedAmount).toBe('20000.00');
+  });
+
+  it('leaves the till alone for an office purchase taken on credit', async () => {
+    // A 60,000 purchase on account: the cost is on the books, but amountPaid is
+    // 0, so the drawer still holds every shilling it started with.
+    const b = await compute({
+      opening: 40000,
+      cashSales: 0,
+      customerPayments: 0,
+      deposits: 0,
+      withdrawals: 0,
+      expenses: 0,
+      expensePayments: 0,
+      refundTotal: 0,
+      creditApplied: 0,
+      purchases: 0,
+      supplierPayments: 0,
+    });
+    expect(b.expenses).toBe('0.00');
+    expect(b.expectedAmount).toBe('40000.00');
+  });
+
+  it('charges the till on the day a credit purchase is settled', async () => {
+    const b = await compute({
+      opening: 40000,
+      cashSales: 0,
+      customerPayments: 0,
+      deposits: 0,
+      withdrawals: 0,
+      expenses: 0,
+      expensePayments: 15000,
+      refundTotal: 0,
+      creditApplied: 0,
+      purchases: 0,
+      supplierPayments: 0,
+    });
+    expect(b.expensePayments).toBe('15000.00');
+    expect(b.expectedAmount).toBe('25000.00');
   });
 
   it('treats cash purchases as a till outflow', async () => {
@@ -127,6 +175,7 @@ describe('CashService.computeBreakdown', () => {
       deposits: 0,
       withdrawals: 0,
       expenses: 0,
+      expensePayments: 0,
       refundTotal: 0,
       creditApplied: 0,
       purchases: 35000,
@@ -151,7 +200,7 @@ describe('CashService.open', () => {
     const prisma = { cashSession: { findFirst, create } };
     const audit = { record: jest.fn().mockResolvedValue(undefined) };
     return {
-      service: new CashService(prisma as never, audit as never, {} as never),
+      service: new CashService(prisma as never, audit as never, {} as never, {} as never),
       create,
     };
   };
@@ -231,7 +280,8 @@ describe('CashService.close — banking the takings', () => {
           return Promise.resolve({});
         }),
       },
-      expense: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) },
+      expense: { aggregate: jest.fn().mockResolvedValue({ _sum: { amountPaid: null } }) },
+      expensePayment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) },
       saleReturn: {
         aggregate: jest
           .fn()
@@ -250,11 +300,23 @@ describe('CashService.close — banking the takings', () => {
         return Promise.resolve({ id: 'bt1' });
       }),
     };
+    const hand = {
+      writeTx: jest.fn().mockImplementation((_tx, e) => {
+        record('hand.write', e);
+        return Promise.resolve({ id: 'ht1' });
+      }),
+    };
 
     return {
-      service: new CashService(prisma as never, audit as never, bank as never),
+      service: new CashService(
+        prisma as never,
+        audit as never,
+        bank as never,
+        hand as never,
+      ),
       calls,
       bank,
+      hand,
     };
   };
 
@@ -288,6 +350,56 @@ describe('CashService.close — banking the takings', () => {
   it('does not touch the bank when the cash is simply held', async () => {
     const { service, calls } = build();
     await service.close('sess1', { actualAmount: 100000, withdrawal: 80000 }, 'u1');
+    expect(calls['bank.write']).toBeUndefined();
+  });
+
+  it('keeps closing cash in hand unless the bank trip was actually made', async () => {
+    // The shop banks its takings perhaps once a week. Assuming a deposit every
+    // evening would credit the bank ledger days before the money got there.
+    const { service, calls } = build();
+    await service.close('sess1', { actualAmount: 100000, withdrawal: 80000 }, 'u1');
+    expect(calls['bank.write']).toBeUndefined();
+
+    const explicit = build();
+    await explicit.service.close(
+      'sess1',
+      { actualAmount: 100000, withdrawal: 80000, withdrawalTo: 'HAND' },
+      'u1',
+    );
+    expect(explicit.calls['bank.write']).toBeUndefined();
+  });
+
+  it('puts cash kept on hand onto the held-cash ledger', async () => {
+    // The half that used to be missing: the count takes it out of the drawer,
+    // so with no row here the money left the till and arrived nowhere.
+    const { service, calls } = build();
+    await service.close('sess1', { actualAmount: 100000, withdrawal: 80000 }, 'u1');
+
+    const write = calls['hand.write'][0] as {
+      type: string;
+      amount: { toFixed(n: number): string };
+      cashSessionId: string;
+    };
+    expect(write.type).toBe('FROM_TILL');
+    expect(write.amount.toFixed(2)).toBe('80000.00');
+    expect(write.cashSessionId).toBe('sess1');
+  });
+
+  it('never writes to both ledgers for the same shillings', async () => {
+    const banked = build();
+    await banked.service.close(
+      'sess1',
+      { actualAmount: 100000, withdrawal: 80000, withdrawalTo: 'BANK' },
+      'u1',
+    );
+    expect(banked.calls['hand.write']).toBeUndefined();
+    expect(banked.calls['bank.write']).toHaveLength(1);
+  });
+
+  it('records nothing anywhere when the drawer is left untouched', async () => {
+    const { service, calls } = build();
+    await service.close('sess1', { actualAmount: 100000 }, 'u1');
+    expect(calls['hand.write']).toBeUndefined();
     expect(calls['bank.write']).toBeUndefined();
   });
 });

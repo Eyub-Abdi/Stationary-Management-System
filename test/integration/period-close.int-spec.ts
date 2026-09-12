@@ -3,6 +3,8 @@ import { PrismaService } from '../../src/prisma/prisma.service';
 import { AuditService } from '../../src/modules/audit/audit.service';
 import { AccountingPeriodsService } from '../../src/modules/accounting/accounting-periods.service';
 import { ExpenseCategoriesService } from '../../src/modules/expense-categories/expense-categories.service';
+import { BankService } from '../../src/modules/banking/bank.service';
+import { HandService } from '../../src/modules/banking/hand.service';
 import { ExpensesService } from '../../src/modules/expenses/expenses.service';
 
 /**
@@ -42,7 +44,8 @@ describeDb('Month-end close (integration)', () => {
     const audit = new AuditService(prisma);
     periods = new AccountingPeriodsService(prisma, audit);
     const categories = new ExpenseCategoriesService(prisma, audit);
-    expenses = new ExpensesService(prisma, audit, categories, periods);
+    const hand = new HandService(prisma, audit, new BankService(prisma, audit));
+    expenses = new ExpensesService(prisma, audit, categories, periods, hand);
 
     await prisma.$executeRawUnsafe(`
       TRUNCATE TABLE

@@ -4,6 +4,8 @@ import { qk } from './keys';
 import type {
   BankSummary,
   BankTransaction,
+  HandSummary,
+  HandTransaction,
   Loan,
   LoanStatus,
   LoanSummary,
@@ -27,6 +29,7 @@ function useMoneyMutation<TArgs, TResult>(fn: (args: TArgs) => Promise<TResult>)
     mutationFn: fn,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bank'] });
+      qc.invalidateQueries({ queryKey: ['hand'] });
       qc.invalidateQueries({ queryKey: ['loans'] });
       qc.invalidateQueries({ queryKey: ['loan'] });
       qc.invalidateQueries({ queryKey: ['cash-session'] });
@@ -78,6 +81,53 @@ export function useTransferToTill() {
 export function useBankCorrection() {
   return useMoneyMutation((body: { amount: number; reason: string }) =>
     unwrap<BankTransaction>(api.post('/bank/correction', body)),
+  );
+}
+
+// ---- Cash held at the shop --------------------------------------------------
+
+export function useHandSummary(enabled = true) {
+  return useQuery({
+    queryKey: qk.handSummary(),
+    enabled,
+    queryFn: () => unwrap<HandSummary>(api.get('/hand/summary')),
+  });
+}
+
+export function useHandStatement(filters: { page?: number; limit?: number } & SortParams) {
+  return useQuery({
+    queryKey: qk.handStatement(filters),
+    queryFn: async () => {
+      const res = await api.get<Paginated<HandTransaction>>('/hand/statement', {
+        params: clean({ ...filters }),
+      });
+      return res.data;
+    },
+  });
+}
+
+export function useSetHandOpeningBalance() {
+  return useMoneyMutation((body: { amount: number; notes?: string }) =>
+    unwrap<HandTransaction>(api.post('/hand/opening-balance', body)),
+  );
+}
+
+/** The weekly trip: held cash finally deposited. Never touches the till. */
+export function useBankHeldCash() {
+  return useMoneyMutation((body: { amount: number; notes?: string }) =>
+    unwrap<HandTransaction>(api.post('/hand/to-bank', body)),
+  );
+}
+
+export function useReturnHeldCashToTill() {
+  return useMoneyMutation((body: { amount: number; notes?: string }) =>
+    unwrap<HandTransaction>(api.post('/hand/to-till', body)),
+  );
+}
+
+export function useHandCorrection() {
+  return useMoneyMutation((body: { amount: number; reason: string }) =>
+    unwrap<HandTransaction>(api.post('/hand/correction', body)),
   );
 }
 

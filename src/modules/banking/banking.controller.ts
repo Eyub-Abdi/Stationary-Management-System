@@ -19,17 +19,20 @@ import { BankService } from './bank.service';
 import {
   BankCorrectionDto,
   BankStatementQueryDto,
+  HandCorrectionDto,
   IssueLoanDto,
   LoanQueryDto,
   OpeningBalanceDto,
   RepayLoanDto,
   TransferDto,
 } from './dto/banking.dto';
+import { HandService } from './hand.service';
 import { LoansService } from './loans.service';
 
 /**
- * The shop's money away from the counter: what sits in the bank, and what shop
- * members have taken for themselves.
+ * The shop's money away from the counter: what sits in the bank, what is being
+ * held at the shop between bank trips, and what shop members have taken for
+ * themselves.
  *
  * Everything that moves money is admin-only. Staff get exactly one window in:
  * their own loans, so they can see what they owe.
@@ -40,6 +43,7 @@ import { LoansService } from './loans.service';
 export class BankingController {
   constructor(
     private readonly bank: BankService,
+    private readonly hand: HandService,
     private readonly loans: LoansService,
   ) {}
 
@@ -91,6 +95,59 @@ export class BankingController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.bank.correct(dto, user.id);
+  }
+
+  // ---- Cash held at the shop ----------------------------------------------
+
+  @Get('hand/summary')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Cash being held outside the till and the bank' })
+  handSummary() {
+    return this.hand.summary();
+  }
+
+  @Get('hand/statement')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Held-cash ledger, newest first' })
+  handStatement(@Query() query: BankStatementQueryDto) {
+    return this.hand.statement(query);
+  }
+
+  @Post('hand/opening-balance')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Record what is already being held today (once)' })
+  handOpeningBalance(
+    @Body() dto: OpeningBalanceDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.hand.setOpeningBalance(dto, user.id);
+  }
+
+  @Post('hand/to-bank')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary:
+      'Deposit held cash at the bank — the weekly trip. Does not touch the till: the money left it days ago.',
+  })
+  handToBank(@Body() dto: TransferDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.hand.bankHeldCash(dto, user.id);
+  }
+
+  @Post('hand/to-till')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Put held cash back into the drawer' })
+  handToTill(@Body() dto: TransferDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.hand.returnToTill(dto, user.id);
+  }
+
+  @Post('hand/correction')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Adjust the figure after counting what is held' })
+  handCorrect(
+    @Body() dto: HandCorrectionDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.hand.correct(dto, user.id);
   }
 
   // ---- Loans --------------------------------------------------------------

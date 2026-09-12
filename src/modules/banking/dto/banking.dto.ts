@@ -54,6 +54,21 @@ export class BankCorrectionDto {
   reason!: string;
 }
 
+export class HandCorrectionDto {
+  @ApiProperty({
+    example: -2500,
+    description:
+      'Signed: negative reduces what is held, positive adds to it. Use after counting the cash actually being held.',
+  })
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  amount!: number;
+
+  @ApiProperty({ description: 'Why the figure was wrong — required.' })
+  @IsString()
+  reason!: string;
+}
+
 export class IssueLoanDto {
   @ApiProperty({
     description:

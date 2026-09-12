@@ -34,16 +34,18 @@ export class ReportsService {
   /**
    * Where the shop's money is sitting right now, as opposed to what it earned.
    *
-   * Profit answers "did we do well"; this answers "where is it". The three are
-   * kept apart on purpose: cash in the drawer, cash at the bank, and cash a shop
-   * member is holding. That last one is a debt owed to the shop — an asset, not
-   * a cost — so it appears here and never in the profit figures.
+   * Profit answers "did we do well"; this answers "where is it". The four are
+   * kept apart on purpose: cash in the drawer, cash held at the shop between
+   * bank trips, cash at the bank, and cash a shop member is holding. That last
+   * one is a debt owed to the shop — an asset, not a cost — so it appears here
+   * and never in the profit figures.
    */
   async moneyPosition() {
     const openSession = await findOpenSession(this.prisma);
 
-    const [bank, loans, lastClosed] = await Promise.all([
+    const [bank, held, loans, lastClosed] = await Promise.all([
       this.prisma.bankTransaction.aggregate({ _sum: { amount: true } }),
+      this.prisma.handTransaction.aggregate({ _sum: { amount: true } }),
       this.prisma.loan.findMany({
         where: { status: 'OUTSTANDING' },
         select: {
@@ -81,15 +83,20 @@ export class ReportsService {
     }
 
     const atBank = money(bank._sum.amount ?? 0);
+    // Takings lifted from the drawer at close and not yet banked. Counted apart
+    // from the drawer because it is not there, and apart from the bank because
+    // nobody has taken it there yet.
+    const onHand = money(held._sum.amount ?? 0);
 
     return {
       inHand: inHand.toFixed(2),
+      onHand: onHand.toFixed(2),
       atBank: atBank.toFixed(2),
       // Cash the shop still controls, wherever it sits.
-      liquid: add(inHand, atBank).toFixed(2),
+      liquid: add(inHand, onHand, atBank).toFixed(2),
       owedByMembers: owed.toFixed(2),
       overdueFromMembers: overdue.toFixed(2),
-      total: add(inHand, atBank, owed).toFixed(2),
+      total: add(inHand, onHand, atBank, owed).toFixed(2),
       tillOpen: !!openSession,
       asOf: new Date().toISOString(),
     };

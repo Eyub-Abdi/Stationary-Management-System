@@ -112,6 +112,25 @@ enum MoneyLocation {
   BANK
 }
 
+// Which pot a payment came out of. Deliberately not MoneyLocation, where HAND
+// means the drawer — these two are both "cash", and the whole point is telling
+// them apart: the one in the till, and the one in somebody's pocket.
+enum PaymentSource {
+  TILL // the open drawer, reconciled by the day's count
+  HELD_CASH // takings kept at the shop between bank trips
+}
+
+// Every row of the held-cash ledger, and like the bank one the reason for a
+// movement rather than its direction.
+enum HandTransactionType {
+  OPENING_BALANCE // cash already being held when the ledger began
+  FROM_TILL // lifted out of the drawer at close and kept at the shop
+  TO_BANK // the trip to the bank finally made
+  TO_TILL // put back into the drawer
+  SPENT // a bill paid straight out of the held cash, never via the drawer
+  CORRECTION // manual fix, e.g. after counting what is actually held
+}
+
 // Every row of the bank ledger. The balance is the sum of their amounts, so the
 // type is the reason for a movement rather than its direction.
 enum BankTransactionType {
@@ -179,12 +198,14 @@ model User {
   inventoryAdjustments InventoryAdjustment[]
   customerPayments     CustomerPayment[]
   supplierPayments     SupplierPayment[]
+  expensePayments      ExpensePayment[]
   auditLogs            AuditLog[]
   closedPeriods        AccountingPeriod[]
   loans                Loan[]                @relation("LoanBorrower")
   loansIssued          Loan[]                @relation("LoanIssuer")
   loanRepayments       LoanRepayment[]
   bankTransactions     BankTransaction[]
+  handTransactions     HandTransaction[]
 
   @@index([role])
   @@index([isActive])
@@ -878,29 +899,72 @@ model ExpenseCategory {
 }
 
 model Expense {
-  id            String   @id @default(uuid()) @db.Uuid
-  categoryId    String   @db.Uuid
-  amount        Decimal  @db.Decimal(14, 2)
+  id            String        @id @default(uuid()) @db.Uuid
+  categoryId    String        @db.Uuid
+  amount        Decimal       @db.Decimal(14, 2)
   expenseDate   DateTime
   description   String?
   // Optional free-text vendor, used by itemized office purchases.
   supplierName  String?
-  userId        String   @db.Uuid
-  // Linked to the cash session if paid from the till.
-  cashSessionId String?  @db.Uuid
-  createdAt     DateTime @default(now())
+  userId        String        @db.Uuid
+  // Linked to the cash session the money was paid out of. Null on a purchase
+  // taken on credit — nothing left the drawer, so no till owns it.
+  cashSessionId String?       @db.Uuid
+  // How the cost was settled. The expense counts against profit on its date
+  // either way; CREDIT simply leaves amountDue owed to the vendor instead of
+  // charging the till, and is paid down later like a supplier payable.
+  // Invariant: amountPaid + amountDue == amount.
+  paymentMethod PaymentMethod @default(CASH)
+  amountPaid    Decimal       @default(0) @db.Decimal(14, 2)
+  amountDue     Decimal       @default(0) @db.Decimal(14, 2)
+  // Which pot the money came out of, when any was paid. HELD_CASH means it was
+  // settled straight from the cash being held at the shop and never went
+  // through a drawer, so cashSessionId is null and no till has to account for
+  // it. Null when nothing has been paid yet.
+  paidFrom      PaymentSource?
+  createdAt     DateTime      @default(now())
 
-  user        User            @relation(fields: [userId], references: [id])
-  cashSession CashSession?    @relation(fields: [cashSessionId], references: [id])
-  category    ExpenseCategory @relation(fields: [categoryId], references: [id])
+  user        User             @relation(fields: [userId], references: [id])
+  cashSession CashSession?     @relation(fields: [cashSessionId], references: [id])
+  category    ExpenseCategory  @relation(fields: [categoryId], references: [id])
   // Line items for itemized expenses (office/internal-use purchases).
-  items       ExpenseItem[]
+  items            ExpenseItem[]
+  payments         ExpensePayment[]
+  handTransactions HandTransaction[]
 
   @@index([categoryId])
   @@index([expenseDate])
   @@index([userId])
   @@index([cashSessionId])
+  @@index([amountDue])
   @@map("expenses")
+}
+
+// A payment made against an expense taken on credit (an office purchase the
+// shop asked to settle later). Mirrors SupplierPayment: the cash leaves the
+// till the day it is handed over, not the day the goods arrived, so each
+// payment carries the session it came out of.
+model ExpensePayment {
+  id             String        @id @default(uuid()) @db.Uuid
+  expenseId      String        @db.Uuid
+  userId         String        @db.Uuid
+  // The till it came out of, or null when it was paid from held cash.
+  cashSessionId  String?       @db.Uuid
+  paidFrom       PaymentSource @default(TILL)
+  amount         Decimal       @db.Decimal(14, 2)
+  notes          String?
+  idempotencyKey String?       @unique
+  createdAt      DateTime      @default(now())
+
+  expense          Expense           @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  user             User              @relation(fields: [userId], references: [id])
+  cashSession      CashSession?      @relation(fields: [cashSessionId], references: [id])
+  handTransactions HandTransaction[]
+
+  @@index([expenseId])
+  @@index([cashSessionId])
+  @@index([createdAt])
+  @@map("expense_payments")
 }
 
 // Line items of an itemized expense (office/internal-use purchase). Names are
@@ -1000,7 +1064,9 @@ model CashSession {
   purchases        Purchase[]
   customerPayments CustomerPayment[]
   supplierPayments SupplierPayment[]
+  expensePayments  ExpensePayment[]
   bankTransactions BankTransaction[]
+  handTransactions HandTransaction[]
   loans            Loan[]
   loanRepayments   LoanRepayment[]
 
@@ -1065,6 +1131,48 @@ model BankTransaction {
   @@index([type])
   @@index([cashSessionId])
   @@map("bank_transactions")
+}
+
+/// Cash the shop is holding outside both the drawer and the bank — the takings
+/// lifted from the till at close and kept until someone walks them to the bank,
+/// which may be once a week rather than every evening.
+///
+/// Without this the money vanished: the close subtracted it from the drawer,
+/// nothing added it anywhere, and there was no honest way to record the bank
+/// trip when it finally happened (a transfer withdraws from the till, and the
+/// money is no longer there).
+///
+/// Same discipline as the bank ledger: `amount` is signed against the balance,
+/// so the balance is SUM(amount) and cannot drift from the rows that made it.
+/// One shop pool, like the till — it records what is held, not who is holding it.
+model HandTransaction {
+  id            String              @id @default(uuid()) @db.Uuid
+  type          HandTransactionType
+  amount        Decimal             @db.Decimal(14, 2)
+  occurredAt    DateTime            @default(now())
+  notes         String?
+  userId        String              @db.Uuid
+  // Set when the money came out of, or went back into, a drawer.
+  cashSessionId String?             @db.Uuid
+  // The bank row this trip produced, when the cash was finally deposited.
+  bankTxId      String?             @db.Uuid
+  // What a SPENT row paid for — the expense itself, or one payment against an
+  // expense bought on credit. Exactly one of the two, and neither on any other
+  // row type.
+  expenseId        String?          @db.Uuid
+  expensePaymentId String?          @db.Uuid
+  createdAt     DateTime            @default(now())
+
+  user           User            @relation(fields: [userId], references: [id])
+  cashSession    CashSession?    @relation(fields: [cashSessionId], references: [id])
+  expense        Expense?        @relation(fields: [expenseId], references: [id])
+  expensePayment ExpensePayment? @relation(fields: [expensePaymentId], references: [id])
+
+  @@index([occurredAt])
+  @@index([type])
+  @@index([cashSessionId])
+  @@index([expenseId])
+  @@map("hand_transactions")
 }
 
 /// Money a shop member has taken for themselves. This is a debt owed TO the
@@ -1169,27 +1277,27 @@ model AuditLog {
 // ----------------------------------------------------------------------------
 
 model AppSetting {
-  id                String    @id @default("singleton")
-  businessName      String    @default("KJ Stationery")
-  branchName        String    @default("Main Branch")
+  id                  String    @id @default("singleton")
+  businessName        String    @default("KJ Stationery")
+  branchName          String    @default("Main Branch")
   // Opening stock is setup work, not trading: on most days there is nothing to
   // enter, so the screen is hidden unless an admin turns it on for the stretch
   // where it is being used.
-  openingStockEnabled Boolean @default(false)
+  openingStockEnabled Boolean   @default(false)
   // Automatic database backups to local disk (drive D on Windows by default).
-  autoBackupEnabled Boolean   @default(false)
+  autoBackupEnabled   Boolean   @default(false)
   // Local time of day (HH:mm, 24h) the daily backup should run.
-  backupTime        String    @default("22:00")
+  backupTime          String    @default("22:00")
   // Optional custom folder; null = OS default (D:\STMS-Backups on Windows).
-  backupDir         String?
+  backupDir           String?
   // How many backup files to keep. Each new backup replaces the oldest once
   // this many exist — old copies are not worth the disk on a shop machine.
-  backupKeep        Int       @default(3)
-  lastBackupAt      DateTime?
+  backupKeep          Int       @default(3)
+  lastBackupAt        DateTime?
   // "ok" after a successful run, or a short error message; null = never run.
-  lastBackupStatus  String?
-  lastBackupPath    String?
-  updatedAt         DateTime  @updatedAt
+  lastBackupStatus    String?
+  lastBackupPath      String?
+  updatedAt           DateTime  @updatedAt
 
   @@map("app_settings")
 }

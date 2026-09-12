@@ -1,14 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { CashMovementType, CashSessionStatus } from '@prisma/client';
+import { CashMovementType, CashSessionStatus, MoneyLocation } from '@prisma/client';
 import { Type } from 'class-transformer';
-import {
-  IsEnum,
-  IsIn,
-  IsNumber,
-  IsOptional,
-  IsString,
-  Min,
-} from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
 
 export class OpenSessionDto {
@@ -44,12 +37,13 @@ export class CloseSessionDto {
 
   @ApiPropertyOptional({
     description:
-      'Where that cash went. BANK records it on the bank ledger; omit it when someone is simply holding the money.',
-    enum: ['BANK'],
+      'Where that cash went. Defaults to HAND — money out of the till is held at the shop until someone actually walks it to the bank, which may be once a week. BANK records it on the bank ledger straight away, so pass it only on the day of the trip.',
+    enum: MoneyLocation,
+    default: MoneyLocation.HAND,
   })
   @IsOptional()
-  @IsIn(['BANK'])
-  withdrawalTo?: 'BANK';
+  @IsEnum(MoneyLocation)
+  withdrawalTo?: MoneyLocation;
 
   @ApiPropertyOptional({ description: 'Notes, e.g. explanation of any variance.' })
   @IsOptional()

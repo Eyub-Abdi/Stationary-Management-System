@@ -27,6 +27,7 @@ import {
   Textarea,
 } from '@/components/ui';
 import { useToast } from '@/providers/ToastProvider';
+import { PaidFromField, useHeldCash } from '@/features/expenses/PaidFromField';
 import { useAuth } from '@/providers/AuthProvider';
 import {
   useCreateExpense,
@@ -42,7 +43,7 @@ import { DEFAULT_EXPENSE_ICON, PAGE_SIZE } from '@/lib/constants';
 import { extractMessage } from '@/lib/api';
 import { currency, endOfToday, formatDate, num, startOfMonth } from '@/lib/utils';
 import { rangeFor, toDateInput, type RangeKey } from '@/lib/dateRange';
-import type { Expense, ExpenseCategory } from '@/types';
+import type { Expense, ExpenseCategory, PaymentSource } from '@/types';
 
 type ViewKey = 'list' | 'daily';
 
@@ -437,6 +438,10 @@ function ExpenseFormModal({
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [description, setDescription] = useState('');
+  // Where the money comes from. Only asked when there is held cash to spend
+  // and the user is allowed to spend it; otherwise it stays the till.
+  const [paidFrom, setPaidFrom] = useState<PaymentSource>('TILL');
+  const held = useHeldCash();
 
   useEffect(() => {
     if (!open) return;
@@ -444,6 +449,7 @@ function ExpenseFormModal({
     setAmount(expense?.amount ?? '');
     setDate((expense?.expenseDate ?? new Date().toISOString()).slice(0, 10));
     setDescription(expense?.description ?? '');
+    setPaidFrom('TILL');
   }, [open, expense]);
 
   // A category chosen before it was archived stays selectable while editing.
@@ -459,6 +465,9 @@ function ExpenseFormModal({
       return toast.error('Enter an amount greater than zero');
     }
     if (!isItemized && !categoryId) return toast.error('Pick a category');
+    if (!isEdit && paidFrom === 'HELD_CASH' && num(amount) > held) {
+      return toast.error('More than is held', `Only ${currency(held)} is being held.`);
+    }
     const name = shownOptions.find((o) => o.id === categoryId)?.name ?? '';
     try {
       if (isEdit) {
@@ -479,8 +488,14 @@ function ExpenseFormModal({
           amount: num(amount),
           expenseDate: new Date(date).toISOString(),
           description: description.trim() || undefined,
+          paidFrom,
         });
-        toast.success('Expense recorded', `${currency(amount)} — ${name}`);
+        toast.success(
+          'Expense recorded',
+          paidFrom === 'HELD_CASH'
+            ? `${currency(amount)} — ${name} · paid from held cash`
+            : `${currency(amount)} — ${name}`,
+        );
       }
       onClose();
     } catch (e) {
@@ -496,7 +511,9 @@ function ExpenseFormModal({
       subtitle={
         isEdit
           ? 'Changes flow through to the till and your reports'
-          : 'If a cash session is open, this is deducted from the till'
+          : paidFrom === 'HELD_CASH'
+            ? 'Paid from the cash being held at the shop — no till involved'
+            : 'If a cash session is open, this is deducted from the till'
       }
       footer={
         <>
@@ -541,6 +558,9 @@ function ExpenseFormModal({
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
         </div>
+        {/* The source is a fact about the payment, so it is asked only when
+            recording one — an edit cannot move money that already moved. */}
+        {!isEdit && <PaidFromField value={paidFrom} onChange={setPaidFrom} />}
         <Field label="Description">
           <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional details…" />
         </Field>

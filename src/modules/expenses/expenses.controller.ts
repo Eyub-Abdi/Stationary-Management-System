@@ -3,14 +3,16 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import { IDEMPOTENCY_HEADER } from '../../common/constants';
 import {
   AuthenticatedUser,
   CurrentUser,
@@ -24,6 +26,7 @@ import {
 import {
   CreateOfficePurchaseDto,
   OfficePurchaseQueryDto,
+  PayOfficePurchaseDto,
 } from './dto/office-purchase.dto';
 import { ExpensesService } from './expenses.service';
 
@@ -74,11 +77,41 @@ export class ExpensesController {
     return this.expenses.findOfficePurchases(query);
   }
 
+  // Declared before 'office/:id' so the param route does not swallow it.
+  @Get('office/outstanding')
+  @Permission('officePurchases')
+  @ApiOperation({
+    summary: 'Total still owed to vendors on office purchases bought on credit.',
+  })
+  officePurchasesOutstanding() {
+    return this.expenses.officePurchasesOutstanding();
+  }
+
   @Get('office/:id')
   @Permission('officePurchases')
   @ApiOperation({ summary: 'Fetch a single office/internal-use purchase with its line items.' })
-  findOfficePurchase(@Param('id') id: string) {
+  findOfficePurchase(@Param('id', ParseUUIDPipe) id: string) {
     return this.expenses.findOneOfficePurchase(id);
+  }
+
+  @Post('office/:id/payments')
+  @Permission('officePurchases')
+  @ApiOperation({
+    summary:
+      'Pay down an office purchase bought on credit. The cash comes out of the open till today, not on the purchase date.',
+  })
+  @ApiHeader({
+    name: IDEMPOTENCY_HEADER,
+    required: false,
+    description: 'Unique key to safely retry without recording a duplicate payment.',
+  })
+  payOfficePurchase(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: PayOfficePurchaseDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Headers(IDEMPOTENCY_HEADER) idempotencyKey?: string,
+  ) {
+    return this.expenses.payOfficePurchase(id, dto, user.id, idempotencyKey);
   }
 
   @Patch(':id')
