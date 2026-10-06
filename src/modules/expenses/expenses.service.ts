@@ -226,6 +226,10 @@ export class ExpensesService {
       data: {
         categoryId: dto.categoryId,
         amount: dto.amount === undefined ? undefined : toPrisma(dto.amount),
+        // Only an ordinary expense reaches here with an amount (itemized ones
+        // are refused above), and those are paid in full as recorded — so the
+        // paid half moves with the total and amountPaid + amountDue == amount.
+        amountPaid: dto.amount === undefined ? undefined : toPrisma(dto.amount),
         expenseDate: dto.expenseDate,
         description: dto.description,
       },

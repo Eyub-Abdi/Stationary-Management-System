@@ -57,7 +57,7 @@ describe('ExpensesService — salaries', () => {
         ),
         update: jest.fn().mockImplementation(({ data }) => {
           record('expense.update', data);
-          return Promise.resolve({ ...data, amount: new Prisma.Decimal(1) });
+          return Promise.resolve({ ...data, amount: new Prisma.Decimal(1), category: { name: 'X' } });
         }),
         findMany: jest.fn().mockImplementation((args) => {
           record('expense.findMany', args);
@@ -173,5 +173,19 @@ describe('ExpensesService — salaries', () => {
     await service.remove('exp1', 'u1', true);
     expect(calls['hand.write']).toBeUndefined();
     expect(calls['expense.delete']).toHaveLength(1);
+  });
+
+  it('moves the amount paid with the amount when an ordinary expense is corrected', async () => {
+    // Not a salary, so the generic edit owns it; the till counts amountPaid.
+    const { service, calls } = build({
+      categoryId: 'cat-transport',
+      userId: 'u1',
+      paidFrom: 'TILL',
+      category: { name: 'Transport' },
+    });
+    await service.update('exp1', { amount: 12000 }, 'u1', true);
+    const data = calls['expense.update'][0] as Record<string, unknown>;
+    expect(String(data.amount)).toBe('12000');
+    expect(String(data.amountPaid)).toBe('12000');
   });
 });
