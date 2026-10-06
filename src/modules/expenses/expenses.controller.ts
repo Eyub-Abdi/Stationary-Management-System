@@ -18,6 +18,7 @@ import {
   CurrentUser,
 } from '../../common/decorators/current-user.decorator';
 import { Permission } from '../../common/decorators/permission.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 import {
   CreateExpenseDto,
   ExpenseQueryDto,
@@ -28,6 +29,7 @@ import {
   OfficePurchaseQueryDto,
   PayOfficePurchaseDto,
 } from './dto/office-purchase.dto';
+import { CreateSalaryDto, SalaryQueryDto, UpdateSalaryDto } from './dto/salary.dto';
 import { ExpensesService } from './expenses.service';
 
 @ApiTags('Expenses')
@@ -112,6 +114,47 @@ export class ExpensesController {
     @Headers(IDEMPOTENCY_HEADER) idempotencyKey?: string,
   ) {
     return this.expenses.payOfficePurchase(id, dto, user.id, idempotencyKey);
+  }
+
+  // ---- Salaries: expenses under the Salary category, read by person -------
+
+  @Post('salaries')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Record a salary payment: who was paid, for which month, and how much.' })
+  createSalary(@Body() dto: CreateSalaryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.expenses.createSalary(dto, user.id);
+  }
+
+  @Get('salaries')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'List salary payments.' })
+  findSalaries(@Query() query: SalaryQueryDto) {
+    return this.expenses.findSalaries(query);
+  }
+
+  @Get('salaries/summary')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Salary totals per person for a date range.' })
+  salarySummary(@Query() query: SalaryQueryDto) {
+    return this.expenses.salarySummary(query);
+  }
+
+  @Get('salaries/payees')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Names to suggest when recording a salary.' })
+  salaryPayees() {
+    return this.expenses.salaryPayees();
+  }
+
+  @Patch('salaries/:id')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Edit a salary payment (same freeze rules as any expense).' })
+  updateSalary(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateSalaryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.expenses.updateSalary(id, dto, user.id);
   }
 
   @Patch(':id')

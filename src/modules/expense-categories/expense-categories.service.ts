@@ -14,7 +14,12 @@ import {
 
 /** Categories the code itself resolves; they may be renamed but never removed. */
 export const OFFICE_SUPPLIES_KEY = 'OFFICE_SUPPLIES';
-const PROTECTED_KEYS = [OFFICE_SUPPLIES_KEY];
+export const SALARY_KEY = 'SALARY';
+/** The screen each protected category belongs to, for the refusal message. */
+const PROTECTED_KEYS: Record<string, string> = {
+  [OFFICE_SUPPLIES_KEY]: 'office purchases',
+  [SALARY_KEY]: 'salaries',
+};
 
 @Injectable()
 export class ExpenseCategoriesService {
@@ -76,15 +81,12 @@ export class ExpenseCategoriesService {
       await this.assertNameFree(name);
     }
 
-    // Office purchases are booked against this category by code — archiving it
-    // would leave that feature with nowhere to post.
-    if (
-      dto.isActive === false &&
-      existing.systemKey &&
-      PROTECTED_KEYS.includes(existing.systemKey)
-    ) {
+    // Office purchases and salaries are booked against these by code —
+    // archiving one would leave that feature with nowhere to post.
+    const usedBy = existing.systemKey ? PROTECTED_KEYS[existing.systemKey] : undefined;
+    if (dto.isActive === false && usedBy) {
       throw new BadRequestException(
-        `"${existing.name}" is used by office purchases and cannot be archived. You can rename it or change its icon instead.`,
+        `"${existing.name}" is used by ${usedBy} and cannot be archived. You can rename it or change its icon instead.`,
       );
     }
 
@@ -118,9 +120,10 @@ export class ExpenseCategoriesService {
   async remove(id: string, userId: string) {
     const existing = await this.findOne(id);
 
-    if (existing.systemKey && PROTECTED_KEYS.includes(existing.systemKey)) {
+    const usedBy = existing.systemKey ? PROTECTED_KEYS[existing.systemKey] : undefined;
+    if (usedBy) {
       throw new BadRequestException(
-        `"${existing.name}" is used by office purchases and cannot be deleted.`,
+        `"${existing.name}" is used by ${usedBy} and cannot be deleted.`,
       );
     }
 
@@ -156,6 +159,20 @@ export class ExpenseCategoriesService {
     if (!category) {
       throw new NotFoundException(
         'The office purchases category is missing. Re-run the database seed to restore it.',
+      );
+    }
+    return category.id;
+  }
+
+  /** The category salaries are booked against. */
+  async salaryCategoryId() {
+    const category = await this.prisma.expenseCategory.findUnique({
+      where: { systemKey: SALARY_KEY },
+      select: { id: true },
+    });
+    if (!category) {
+      throw new NotFoundException(
+        'The salary category is missing. Re-run the database seed to restore it.',
       );
     }
     return category.id;

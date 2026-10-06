@@ -24,6 +24,7 @@ import SuppliersPage from '@/pages/SuppliersPage';
 import SupplierDetailPage from '@/pages/SupplierDetailPage';
 import ExpensesPage from '@/pages/ExpensesPage';
 import OfficePurchasesPage from '@/pages/OfficePurchasesPage';
+import SalariesPage from '@/pages/SalariesPage';
 import OfficePurchaseDetailPage from '@/pages/OfficePurchaseDetailPage';
 import BankPage from '@/pages/BankPage';
 import CashPage from '@/pages/CashPage';
@@ -147,6 +148,14 @@ export default function App() {
           }
         />
         <Route path="/expenses" element={<ExpensesPage />} />
+        <Route
+          path="/salaries"
+          element={
+            <AdminRoute>
+              <SalariesPage />
+            </AdminRoute>
+          }
+        />
         <Route
           path="/office-purchases"
           element={

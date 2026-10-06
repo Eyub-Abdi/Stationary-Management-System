@@ -47,10 +47,14 @@ import type { Expense, ExpenseCategory, PaymentSource } from '@/types';
 
 type ViewKey = 'list' | 'daily';
 
+/** Salaries are recorded on their own page, which asks who was paid and for
+ *  which month — so they never appear in this page's lists or pickers. */
+const notSalary = (c: ExpenseCategory) => c.systemKey !== 'SALARY';
+
 /** Categories offered when recording: active ones the caller may actually use.
  *  The API already hides management-only categories from staff. */
 const selectableCategories = (categories: ExpenseCategory[] | undefined) =>
-  (categories ?? []).filter((c) => c.isActive);
+  (categories ?? []).filter((c) => c.isActive && notSalary(c));
 
 /** Mirrors the backend rule: anything in a closed till is frozen, and staff may
  *  only correct their own entries on the day they recorded them. */
@@ -237,7 +241,7 @@ export default function ExpensesPage() {
               >
                 <option value="">All categories</option>
                 {/* Archived categories still filter, so past entries stay reachable. */}
-                {(categories ?? []).map((c) => (
+                {(categories ?? []).filter(notSalary).map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}{c.isActive ? '' : ' (archived)'}
                   </option>
@@ -433,6 +437,8 @@ function ExpenseFormModal({
   const isEdit = !!expense;
   // Office purchases derive their amount and category from their line items.
   const isItemized = (expense?.items?.length ?? 0) > 0;
+  // Held cash keeps its own row for this money, so the API refuses a new amount.
+  const amountLocked = isEdit && expense!.paidFrom === 'HELD_CASH';
 
   const [categoryId, setCategoryId] = useState('');
   const [amount, setAmount] = useState('');
@@ -544,13 +550,17 @@ function ExpenseFormModal({
           </Select>
         </Field>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Amount" required>
+          <Field
+            label="Amount"
+            required
+            hint={amountLocked ? 'Paid from held cash — delete and re-record to change it' : undefined}
+          >
             <Input
               type="number"
               min="0.01"
               step="0.01"
               value={amount}
-              disabled={isItemized}
+              disabled={isItemized || amountLocked}
               onChange={(e) => setAmount(e.target.value)}
             />
           </Field>

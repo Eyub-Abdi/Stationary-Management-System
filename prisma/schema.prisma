@@ -906,6 +906,11 @@ model Expense {
   description   String?
   // Optional free-text vendor, used by itemized office purchases.
   supplierName  String?
+  // Salary rows only: who was paid, and the month the pay covers (stored as
+  // its first day). A name rather than a user, because not everyone on the
+  // payroll has a login.
+  payeeName     String?
+  payPeriod     DateTime?     @db.Date
   userId        String        @db.Uuid
   // Linked to the cash session the money was paid out of. Null on a purchase
   // taken on credit — nothing left the drawer, so no till owns it.
@@ -937,6 +942,7 @@ model Expense {
   @@index([userId])
   @@index([cashSessionId])
   @@index([amountDue])
+  @@index([payeeName])
   @@map("expenses")
 }
 

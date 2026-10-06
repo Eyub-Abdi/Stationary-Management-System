@@ -9,6 +9,7 @@ import type {
   Paginated,
   PaymentMethod,
   PaymentSource,
+  SalarySummary,
   SortParams,
 } from '@/types';
 
@@ -92,6 +93,7 @@ export function useDeleteExpense() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['expenses'] });
       qc.invalidateQueries({ queryKey: ['office-purchases'] });
+      qc.invalidateQueries({ queryKey: ['salaries'] });
       qc.invalidateQueries({ queryKey: ['report'] });
       qc.invalidateQueries({ queryKey: ['cash-session'] });
       // Paid from held cash, the money moves on the Bank page instead.
@@ -206,5 +208,84 @@ export function usePayOfficePurchase() {
       qc.invalidateQueries({ queryKey: ['hand'] });
       qc.invalidateQueries({ queryKey: qk.moneyPosition() });
     },
+  });
+}
+
+// --- Salaries (expenses under the Salary category, read by person) ----------
+
+export interface SalaryFilters extends SortParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  payeeName?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface CreateSalaryInput {
+  payeeName: string;
+  /** The month the pay covers, as YYYY-MM. */
+  payPeriod: string;
+  amount: number;
+  /** The day the money was handed over. */
+  paidOn: string;
+  description?: string;
+  paidFrom?: PaymentSource;
+}
+
+export type UpdateSalaryInput = Partial<Omit<CreateSalaryInput, 'paidFrom'>>;
+
+export function useSalaries(filters: SalaryFilters) {
+  return useQuery({
+    queryKey: qk.salaries(filters),
+    queryFn: async () => {
+      const res = await api.get<Paginated<Expense>>('/expenses/salaries', {
+        params: clean({ ...filters }),
+      });
+      return res.data;
+    },
+  });
+}
+
+export function useSalarySummary(range: { from?: string; to?: string }) {
+  return useQuery({
+    queryKey: qk.salarySummary(range),
+    queryFn: () =>
+      unwrap<SalarySummary>(api.get('/expenses/salaries/summary', { params: clean({ ...range }) })),
+  });
+}
+
+/** Everyone paid before plus every active user — suggestions for the name field. */
+export function useSalaryPayees() {
+  return useQuery({
+    queryKey: qk.salaryPayees(),
+    queryFn: () => unwrap<string[]>(api.get('/expenses/salaries/payees')),
+  });
+}
+
+/** A salary is an expense, so everything an expense refreshes, this does too. */
+function invalidateSalaryViews(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ['salaries'] });
+  qc.invalidateQueries({ queryKey: ['expenses'] });
+  qc.invalidateQueries({ queryKey: ['report'] });
+  qc.invalidateQueries({ queryKey: ['cash-session'] });
+  qc.invalidateQueries({ queryKey: ['hand'] });
+}
+
+export function useCreateSalary() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateSalaryInput) =>
+      unwrap<Expense>(api.post('/expenses/salaries', input)),
+    onSuccess: () => invalidateSalaryViews(qc),
+  });
+}
+
+export function useUpdateSalary() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateSalaryInput }) =>
+      unwrap<Expense>(api.patch(`/expenses/salaries/${id}`, input)),
+    onSuccess: () => invalidateSalaryViews(qc),
   });
 }

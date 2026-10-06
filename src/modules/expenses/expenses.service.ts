@@ -25,11 +25,20 @@ import {
   OfficePurchaseQueryDto,
   PayOfficePurchaseDto,
 } from './dto/office-purchase.dto';
+import {
+  CreateSalaryDto,
+  monthStart,
+  SalaryQueryDto,
+  UpdateSalaryDto,
+} from './dto/salary.dto';
 
 /** Categories are joined on every read so the UI gets the name and icon. */
 const CATEGORY_SELECT = {
   select: { id: true, name: true, icon: true, staffAllowed: true, systemKey: true },
 } as const;
+
+/** `2026-10-01` — enough to tell one entry from another in a ledger note. */
+const formatDay = (d: Date) => d.toISOString().slice(0, 10);
 
 /** Columns the expense list can be ordered by. */
 const EXPENSE_SORTS: SortMap<Prisma.ExpenseOrderByWithRelationInput[]> = {
@@ -49,6 +58,33 @@ const OFFICE_PURCHASE_SORTS: SortMap<Prisma.ExpenseOrderByWithRelationInput[]> =
   amount: (dir) => [{ amount: dir }],
   amountDue: (dir) => [{ amountDue: dir }, { expenseDate: 'desc' }],
 };
+
+/** Columns the salary list can be ordered by. */
+const SALARY_SORTS: SortMap<Prisma.ExpenseOrderByWithRelationInput[]> = {
+  payeeName: (dir) => [{ payeeName: dir }, { expenseDate: 'desc' }],
+  payPeriod: (dir) => [{ payPeriod: dir }, { expenseDate: dir }],
+  expenseDate: (dir) => [{ expenseDate: dir }, { createdAt: dir }],
+  user: (dir) => [{ user: { fullName: dir } }],
+  amount: (dir) => [{ amount: dir }],
+};
+
+/** What a salary row needs on screen, including whether its till is closed. */
+const SALARY_INCLUDE = {
+  category: CATEGORY_SELECT,
+  user: { select: { fullName: true } },
+  cashSession: { select: { status: true } },
+} satisfies Prisma.ExpenseInclude;
+
+/** An expense already paid in full, from the till or from held cash. */
+interface PaidExpenseInput {
+  categoryId: string;
+  amount: number;
+  expenseDate: Date;
+  description?: string;
+  paidFrom?: 'TILL' | 'HELD_CASH';
+  payeeName?: string;
+  payPeriod?: Date;
+}
 
 /** Vendor, lines and what has been paid — everything a credit purchase needs. */
 const OFFICE_PURCHASE_INCLUDE = {
@@ -79,6 +115,16 @@ export class ExpensesService {
     // Throws if the category is archived, or is management-only and the caller
     // is staff (fixed overheads like salary stay confidential).
     await this.categories.assertUsable(dto.categoryId, isAdmin);
+    await this.assertNotSalary(dto.categoryId);
+    return this.recordPaid(dto, userId);
+  }
+
+  /**
+   * Books an expense paid there and then. Shared by ordinary expenses and
+   * salaries, so a salary moves the till and the held cash exactly as any
+   * other cost does.
+   */
+  private async recordPaid(dto: PaidExpenseInput, userId: string) {
     // Backdating into a month whose books are closed would move its net profit.
     await this.periods.assertOpen(dto.expenseDate, 'an expense dated then');
 
@@ -98,6 +144,8 @@ export class ExpensesService {
           amount: toPrisma(amount),
           expenseDate: dto.expenseDate,
           description: dto.description,
+          payeeName: dto.payeeName,
+          payPeriod: dto.payPeriod,
           userId,
           cashSessionId: session?.id,
           // An ordinary expense is money already handed over as it is recorded;
@@ -114,7 +162,9 @@ export class ExpensesService {
         await this.hand.spendTx(tx, {
           amount,
           userId,
-          notes: `${row.category.name}${dto.description ? `: ${dto.description}` : ''}`,
+          notes: `${row.category.name}${
+            dto.payeeName ? ` — ${dto.payeeName}` : ''
+          }${dto.description ? `: ${dto.description}` : ''}`,
           expenseId: row.id,
         });
       }
@@ -129,6 +179,7 @@ export class ExpensesService {
           amount: row.amount.toString(),
           paidFrom,
           cashSessionId: session?.id ?? null,
+          ...(dto.payeeName ? { payeeName: dto.payeeName, payPeriod: dto.payPeriod } : {}),
         },
       });
 
@@ -146,6 +197,11 @@ export class ExpensesService {
   async update(id: string, dto: UpdateExpenseDto, userId: string, isAdmin: boolean) {
     const expense = await this.loadEditable(id, userId, isAdmin, 'edit');
 
+    // A salary carries who was paid and for which month; this form knows
+    // neither, so salaries are only edited from their own page.
+    await this.assertNotSalary(expense.categoryId);
+    if (dto.categoryId) await this.assertNotSalary(dto.categoryId);
+
     // Itemized office purchases derive their total from their line items, so
     // the amount and category are owned by that flow, not this one.
     if (expense.items.length > 0 && (dto.amount !== undefined || dto.categoryId)) {
@@ -153,6 +209,8 @@ export class ExpensesService {
         'This is an itemized office purchase — its amount and category come from its line items. You can still edit its date and description.',
       );
     }
+
+    this.assertHeldCashAmountKept(expense, dto.amount, 'expense');
 
     if (dto.categoryId && dto.categoryId !== expense.categoryId) {
       await this.categories.assertUsable(dto.categoryId, isAdmin);
@@ -196,25 +254,70 @@ export class ExpensesService {
     return updated;
   }
 
+  /**
+   * Held cash is a ledger: what an expense took from it is a row of its own,
+   * and changing the amount here would leave that row saying something else.
+   * Deleting does put the money back, so that is the way to correct it.
+   */
+  private assertHeldCashAmountKept(
+    expense: { paidFrom: string | null; amount: Prisma.Decimal },
+    amount: number | undefined,
+    noun: 'expense' | 'salary',
+  ) {
+    if (
+      amount !== undefined &&
+      expense.paidFrom === 'HELD_CASH' &&
+      !money(amount).equals(money(expense.amount))
+    ) {
+      throw new BadRequestException(
+        `This ${noun} was paid from held cash, so its amount cannot be changed here. Delete it — the money goes back to held cash — and record it again with the right amount.`,
+      );
+    }
+  }
+
   /** Deletes a recorded expense, under the same rules as {@link update}. */
   async remove(id: string, userId: string, isAdmin: boolean) {
     const expense = await this.loadEditable(id, userId, isAdmin, 'delete');
 
-    // Line items cascade with the expense.
-    await this.prisma.expense.delete({ where: { id } });
+    await this.prisma.runSerializable(async (tx) => {
+      // Whatever this expense took from the held cash goes back. The SPENT row
+      // stays, as the ledger never rewrites itself, and a correction beside it
+      // returns the money; without it the cash would stay spent on a bill that
+      // no longer exists.
+      const spent = await tx.handTransaction.aggregate({
+        where: { expenseId: id },
+        _sum: { amount: true },
+      });
+      const toReturn = money(spent._sum.amount ?? 0).negated();
+      if (toReturn.greaterThan(0)) {
+        await this.hand.writeTx(tx, {
+          type: 'CORRECTION',
+          amount: toReturn,
+          userId,
+          notes: `Returned: deleted ${expense.category.name.toLowerCase()}${
+            expense.payeeName ? ` — ${expense.payeeName}` : ''
+          } of ${formatDay(expense.expenseDate)}`,
+          action: 'HAND_CORRECTED',
+        });
+      }
 
-    await this.audit.record({
-      userId,
-      action: 'EXPENSE_DELETED',
-      entityType: 'Expense',
-      entityId: id,
-      metadata: {
-        category: expense.category.name,
-        amount: expense.amount.toString(),
-        expenseDate: expense.expenseDate,
-        items: expense.items.length,
-        amountDue: expense.amountDue.toString(),
-      },
+      // Line items cascade with the expense.
+      await tx.expense.delete({ where: { id } });
+
+      await this.audit.recordTx(tx, {
+        userId,
+        action: 'EXPENSE_DELETED',
+        entityType: 'Expense',
+        entityId: id,
+        metadata: {
+          category: expense.category.name,
+          amount: expense.amount.toString(),
+          expenseDate: expense.expenseDate,
+          items: expense.items.length,
+          amountDue: expense.amountDue.toString(),
+          heldCashReturned: toReturn.toFixed(2),
+        },
+      });
     });
 
     return { message: 'Expense deleted' };
@@ -597,6 +700,9 @@ export class ExpensesService {
       ...(query.from || query.to
         ? { expenseDate: { gte: query.from, lte: query.to } }
         : {}),
+      // Salaries have their own page. They still count as expenses everywhere
+      // money is totted up — reports, profit, the till — just not in this list.
+      NOT: { categoryId: await this.categories.salaryCategoryId() },
     };
 
     if (isAdmin) {
@@ -633,7 +739,9 @@ export class ExpensesService {
   /** Per-day expense totals (count + total) for the daily-totals view.
    *  Staff only ever see their petty-cash categories. */
   async daily(query: { from?: Date; to?: Date }, isAdmin: boolean) {
-    const conditions: Prisma.Sql[] = [];
+    // Kept in step with findAll: salaries are summed on their own page.
+    const salaryId = await this.categories.salaryCategoryId();
+    const conditions: Prisma.Sql[] = [Prisma.sql`"categoryId" <> ${salaryId}::uuid`];
     if (query.from && query.to) {
       conditions.push(Prisma.sql`"expenseDate" BETWEEN ${query.from} AND ${query.to}`);
     } else if (query.from) {
@@ -670,5 +778,189 @@ export class ExpensesService {
       total: r.total,
       count: Number(r.count),
     }));
+  }
+
+  // ---- Salaries ------------------------------------------------------------
+  // A salary is an ordinary expense under the Salary category, so reports,
+  // profit and the till treat it like any other cost. What it adds is who was
+  // paid and which month the pay covers, and a page that reads by person.
+
+  /** Refuses the Salary category on the generic expense routes. */
+  private async assertNotSalary(categoryId: string) {
+    if (categoryId === (await this.categories.salaryCategoryId())) {
+      throw new BadRequestException(
+        'Salaries are recorded and edited on the Salaries page, where you say who was paid and for which month.',
+      );
+    }
+  }
+
+  async createSalary(dto: CreateSalaryDto, userId: string) {
+    return this.recordPaid(
+      {
+        categoryId: await this.categories.salaryCategoryId(),
+        amount: dto.amount,
+        expenseDate: dto.paidOn,
+        description: dto.description,
+        paidFrom: dto.paidFrom,
+        payeeName: dto.payeeName,
+        payPeriod: monthStart(dto.payPeriod),
+      },
+      userId,
+    );
+  }
+
+  /** Same freeze rules as any expense: a closed till or month locks it. */
+  async updateSalary(id: string, dto: UpdateSalaryDto, userId: string) {
+    const expense = await this.loadEditable(id, userId, true, 'edit');
+    if (expense.categoryId !== (await this.categories.salaryCategoryId())) {
+      throw new NotFoundException('Salary payment not found');
+    }
+    if (dto.paidOn) {
+      await this.periods.assertOpen(dto.paidOn, 'a salary paid then');
+    }
+    this.assertHeldCashAmountKept(expense, dto.amount, 'salary');
+
+    const updated = await this.prisma.expense.update({
+      where: { id },
+      data: {
+        payeeName: dto.payeeName,
+        payPeriod: dto.payPeriod ? monthStart(dto.payPeriod) : undefined,
+        amount: dto.amount === undefined ? undefined : toPrisma(dto.amount),
+        // Nothing is ever owed on a salary, so paid moves with the amount.
+        amountPaid: dto.amount === undefined ? undefined : toPrisma(dto.amount),
+        expenseDate: dto.paidOn,
+        description: dto.description,
+      },
+      include: SALARY_INCLUDE,
+    });
+
+    await this.audit.record({
+      userId,
+      action: 'EXPENSE_UPDATED',
+      entityType: 'Expense',
+      entityId: id,
+      metadata: {
+        before: {
+          payeeName: expense.payeeName,
+          payPeriod: expense.payPeriod,
+          amount: expense.amount.toString(),
+          expenseDate: expense.expenseDate,
+        },
+        after: {
+          payeeName: updated.payeeName,
+          payPeriod: updated.payPeriod,
+          amount: updated.amount.toString(),
+          expenseDate: updated.expenseDate,
+        },
+      },
+    });
+
+    return updated;
+  }
+
+  private async salaryWhere(query: {
+    from?: Date;
+    to?: Date;
+    payeeName?: string;
+    search?: string;
+  }): Promise<Prisma.ExpenseWhereInput> {
+    const search = query.search?.trim();
+    return {
+      categoryId: await this.categories.salaryCategoryId(),
+      ...(query.from || query.to
+        ? { expenseDate: { gte: query.from, lte: query.to } }
+        : {}),
+      ...(query.payeeName
+        ? { payeeName: { equals: query.payeeName, mode: 'insensitive' } }
+        : {}),
+      ...(search
+        ? {
+            OR: [
+              { payeeName: { contains: search, mode: 'insensitive' } },
+              { description: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+  }
+
+  async findSalaries(query: SalaryQueryDto) {
+    const where = await this.salaryWhere(query);
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.expense.findMany({
+        where,
+        include: SALARY_INCLUDE,
+        orderBy: resolveOrderBy(query, SALARY_SORTS, [
+          { expenseDate: 'desc' },
+          { createdAt: 'desc' },
+        ]),
+        skip: query.skip,
+        take: query.limit,
+      }),
+      this.prisma.expense.count({ where }),
+    ]);
+    return paginate(data, total, query.page, query.limit);
+  }
+
+  /**
+   * One row per person paid in the range: how many payments, how much, and the
+   * latest one. Rows with no name (entered before salaries had their own page)
+   * are grouped together under null.
+   */
+  async salarySummary(query: { from?: Date; to?: Date }) {
+    const where = await this.salaryWhere(query);
+    const [groups, overall] = await Promise.all([
+      this.prisma.expense.groupBy({
+        by: ['payeeName'],
+        where,
+        _sum: { amount: true },
+        _count: true,
+        _max: { expenseDate: true, payPeriod: true },
+      }),
+      this.prisma.expense.aggregate({ where, _sum: { amount: true }, _count: true }),
+    ]);
+
+    const staff = groups
+      .map((g) => ({
+        payeeName: g.payeeName,
+        payments: g._count,
+        total: money(g._sum.amount ?? 0).toFixed(2),
+        lastPaidOn: g._max.expenseDate,
+        lastPayPeriod: g._max.payPeriod,
+      }))
+      .sort((a, b) => money(b.total).comparedTo(money(a.total)));
+
+    return {
+      total: money(overall._sum.amount ?? 0).toFixed(2),
+      payments: overall._count,
+      staff,
+    };
+  }
+
+  /**
+   * Names to suggest when recording a salary: everyone paid before, plus every
+   * active user, without case-only duplicates.
+   */
+  async salaryPayees() {
+    const [paid, users] = await Promise.all([
+      this.prisma.expense.findMany({
+        where: {
+          categoryId: await this.categories.salaryCategoryId(),
+          payeeName: { not: null },
+        },
+        distinct: ['payeeName'],
+        select: { payeeName: true },
+      }),
+      this.prisma.user.findMany({
+        where: { isActive: true },
+        select: { fullName: true },
+      }),
+    ]);
+    const byKey = new Map<string, string>();
+    for (const name of [...paid.map((p) => p.payeeName!), ...users.map((u) => u.fullName)]) {
+      const key = name.trim().toLowerCase();
+      if (key && !byKey.has(key)) byKey.set(key, name.trim());
+    }
+    return [...byKey.values()].sort((a, b) => a.localeCompare(b));
   }
 }

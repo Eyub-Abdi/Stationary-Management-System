@@ -34,6 +34,8 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/purchases', label: 'Purchases', icon: 'shopping_cart', permission: 'purchases' },
   { to: '/suppliers', label: 'Suppliers', icon: 'local_shipping', permission: 'suppliers' },
   { to: '/expenses', label: 'Expenses', icon: 'payments', staffLabel: 'Petty Cash' },
+  // Still expenses underneath; this is where they are recorded and read by person.
+  { to: '/salaries', label: 'Salaries', icon: 'badge', adminOnly: true },
   { to: '/office-purchases', label: 'Office Purchases', icon: 'business_center', permission: 'officePurchases' },
   // Three money entries sit together, so each needs a silhouette of its own:
   // the drawer, the bank building, the handshake.

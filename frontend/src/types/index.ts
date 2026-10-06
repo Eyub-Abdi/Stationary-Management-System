@@ -419,6 +419,10 @@ export interface Expense {
   expenseDate: string;
   description: string | null;
   supplierName?: string | null;
+  /** Salary rows only: who was paid. */
+  payeeName?: string | null;
+  /** Salary rows only: first day of the month the pay covers. */
+  payPeriod?: string | null;
   userId: string;
   user?: { fullName: string };
   cashSessionId: string | null;
@@ -433,6 +437,20 @@ export interface Expense {
   paidFrom: PaymentSource | null;
   payments?: ExpensePayment[];
   createdAt: string;
+}
+
+/** Salaries per person for a range, newest-biggest first. */
+export interface SalarySummary {
+  total: string;
+  payments: number;
+  staff: {
+    /** Null for salaries entered before they had a name. */
+    payeeName: string | null;
+    payments: number;
+    total: string;
+    lastPaidOn: string | null;
+    lastPayPeriod: string | null;
+  }[];
 }
 
 /** A payment handed to a vendor against an office purchase bought on credit. */
