@@ -211,17 +211,7 @@ export class PurchasesService {
           },
         });
 
-        await this.inventory.addBatchTx(tx, {
-          variantId: r.variant.id,
-          productId: r.variant.productId,
-          quantity: r.basePieces,
-          unitCost: r.pieceCost,
-          purchaseDate: dto.purchaseDate,
-          purchaseId: purchase.id,
-          purchaseItemId: purchaseItem.id,
-        });
-
-        await this.inventory.applyMovementTx(tx, {
+        const { beforeQty } = await this.inventory.applyMovementTx(tx, {
           variantId: r.variant.id,
           productId: r.variant.productId,
           type: 'PURCHASE',
@@ -230,6 +220,21 @@ export class PurchasesService {
           referenceType: 'PURCHASE',
           referenceId: purchase.id,
           unitCost: r.pieceCost,
+        });
+
+        // Stock below zero means units were sold before any batch held them.
+        // This delivery is what those units came out of, so the batch arrives
+        // with them already gone and the batches stay equal to the shelf.
+        const owed = Math.min(r.basePieces, Math.max(0, -beforeQty));
+        await this.inventory.addBatchTx(tx, {
+          variantId: r.variant.id,
+          productId: r.variant.productId,
+          quantity: r.basePieces,
+          remainingQuantity: r.basePieces - owed,
+          unitCost: r.pieceCost,
+          purchaseDate: dto.purchaseDate,
+          purchaseId: purchase.id,
+          purchaseItemId: purchaseItem.id,
         });
 
         // Refresh the variant's reference buying price (per base unit), and

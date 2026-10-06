@@ -90,4 +90,36 @@ describe('InventoryService (FIFO engine)', () => {
       { id: 'b2', data: { increment: 5 } },
     ]);
   });
+
+  describe('applyMovementTx', () => {
+    const makeMoveTx = (currentStock: number) =>
+      ({
+        $queryRaw: jest.fn().mockResolvedValue([{ currentStock }]),
+        productVariant: { update: jest.fn().mockResolvedValue({}) },
+        inventoryMovement: { create: jest.fn().mockResolvedValue({}) },
+      }) as unknown as Prisma.TransactionClient;
+
+    it('lets stock come in onto a negative balance, even if it stays negative', async () => {
+      const tx = makeMoveTx(-52);
+      const res = await service.applyMovementTx(tx, {
+        variantId: 'v1',
+        productId: 'p1',
+        type: 'PURCHASE',
+        quantity: 20,
+      });
+      expect(res).toEqual({ beforeQty: -52, afterQty: -32 });
+    });
+
+    it('still blocks a removal that would go below zero', async () => {
+      const tx = makeMoveTx(5);
+      await expect(
+        service.applyMovementTx(tx, {
+          variantId: 'v1',
+          productId: 'p1',
+          type: 'SALE',
+          quantity: -10,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
 });

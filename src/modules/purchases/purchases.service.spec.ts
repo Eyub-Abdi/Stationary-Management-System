@@ -25,7 +25,9 @@ describe('PurchasesService.create', () => {
     },
   };
 
-  const build = (opts: { session?: { id: string } | null } = {}) => {
+  const build = (
+    opts: { session?: { id: string } | null; stockBefore?: number } = {},
+  ) => {
     const calls: Record<string, unknown[]> = {};
     const record = (k: string, v: unknown) => (calls[k] = [...(calls[k] ?? []), v]);
 
@@ -74,7 +76,8 @@ describe('PurchasesService.create', () => {
       }),
       applyMovementTx: jest.fn().mockImplementation((_tx, p) => {
         record('movement', p);
-        return Promise.resolve({ beforeQty: 0, afterQty: p.quantity });
+        const beforeQty = opts.stockBefore ?? 0;
+        return Promise.resolve({ beforeQty, afterQty: beforeQty + p.quantity });
       }),
     };
     const sequences = { next: jest.fn().mockResolvedValue('PUR-1') };
@@ -122,6 +125,29 @@ describe('PurchasesService.create', () => {
 
   // The Limination Poach mistake: a pack bought as one base unit at the pack
   // price, so its whole cost lands on a single piece and inflates COGS.
+  it('starts the batch with full stock when the shelf was not negative', async () => {
+    const { service, calls } = build({ stockBefore: 3 });
+    await service.create(baseDto(), 'u1');
+    const batch = calls['addBatch'][0] as { quantity: number; remainingQuantity: number };
+    expect(batch.remainingQuantity).toBe(batch.quantity);
+  });
+
+  it('cancels out stock sold below zero from the new batch', async () => {
+    // 60 pieces arrive onto a shelf at -52: the batch keeps only 8.
+    const { service, calls } = build({ stockBefore: -52 });
+    await service.create(baseDto(), 'u1');
+    const batch = calls['addBatch'][0] as { quantity: number; remainingQuantity: number };
+    expect(batch.quantity).toBe(60);
+    expect(batch.remainingQuantity).toBe(8);
+  });
+
+  it('leaves nothing in the batch when it does not cover the shortfall', async () => {
+    const { service, calls } = build({ stockBefore: -100 });
+    await service.create(baseDto(), 'u1');
+    const batch = calls['addBatch'][0] as { quantity: number; remainingQuantity: number };
+    expect(batch.remainingQuantity).toBe(0);
+  });
+
   it('rejects a pack price entered as a single base unit', async () => {
     const { service } = build();
     await expect(

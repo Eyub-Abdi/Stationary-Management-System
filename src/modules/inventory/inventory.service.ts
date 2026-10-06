@@ -57,7 +57,9 @@ export class InventoryService {
     }
     const beforeQty = locked[0].currentStock;
     const afterQty = beforeQty + input.quantity;
-    if (afterQty < 0 && !input.allowNegative) {
+    // Only a removal can be short. Stock coming in onto a negative balance
+    // (paper sold ahead of a delivery) still leaves it below zero, but closer.
+    if (input.quantity < 0 && afterQty < 0 && !input.allowNegative) {
       throw new ConflictException(
         `Insufficient stock: have ${beforeQty}, attempted to remove ${-input.quantity}`,
       );
@@ -101,6 +103,9 @@ export class InventoryService {
       purchaseDate: Date;
       purchaseId?: string;
       purchaseItemId?: string;
+      /** Units still on the shelf; defaults to all of them. Lower when the
+       *  batch arrives already owed to units sold while stock was negative. */
+      remainingQuantity?: number;
     },
   ): Promise<string> {
     const batch = await tx.inventoryBatch.create({
@@ -108,7 +113,7 @@ export class InventoryService {
         variantId: params.variantId,
         productId: params.productId,
         quantity: params.quantity,
-        remainingQuantity: params.quantity,
+        remainingQuantity: params.remainingQuantity ?? params.quantity,
         unitCost: toPrisma(params.unitCost),
         purchaseDate: params.purchaseDate,
         purchaseId: params.purchaseId,
